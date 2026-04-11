@@ -1,47 +1,82 @@
 {
   "rules": {
+    "Administrative": {
+      ".read": true,
+      ".write": false
+    },
     "Users": {
       ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["email"],
       "$uid": {
-        ".read": "auth != null",
-        ".write": "auth.uid === $uid"
+        ".read": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        ".write": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        "penalty_history": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+          ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true"
+        }
       }
     },
-    "Chats": {
-      ".read": "auth != null",
-      ".indexOn": ["employee", "contractor"],
-      "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+    "badges": {
+      "$userId": {
+        ".read": "$userId === auth.uid",
+        ".write": "$userId === auth.uid"
       }
     },
-    "ChatMessages": {
-      "$chatId": {
-        ".indexOn": ["read_by_employee", "read_by_contractor"],
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
+    "admin_access_logs": {
+      ".read": "auth != null && auth.token.admin === true",
+      ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true"
+    },
+    "Code": {
+      ".read": false,
+      ".write": false
     },
     "vacancy": {
+      ".read": "true",
+      ".indexOn": ["contractor", "email", "created_at", "status", "state", "updated_at"],
+      ".write": "auth != null"
+    },
+    "complaints": {
       ".read": "auth != null",
-      ".indexOn": ["status", "updated_at", "created_at"],
-      "$vacancyId": {
+      ".write": "auth != null",
+      ".indexOn": ["type"]
+    },
+    "ComplaintsArchived": {
+      ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
+      ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
+      ".indexOn": ["type"]
+    },
+    "reporteds_chat": {
+      ".read": "auth != null",
+      ".indexOn": ["contractor", "email"],
+      ".write": "auth != null"
+    },
+    "reports": {
+      ".indexOn": ["denuncianteId", "denunciadoId"],
+      "$reportId": {
         ".read": "auth != null",
         ".write": "auth != null"
       }
     },
     "professionals": {
       ".read": "auth != null",
-      ".indexOn": ["status", "updated_at", "created_at"],
-      "$professionalId": {
+      ".write": "auth != null",
+      ".indexOn": ["updated_at", "status", "state"]
+    },
+    "Chats": {
+      ".read": "auth != null",
+      ".indexOn": ["contractor", "employee"],
+      "$chatId": {
         ".read": "auth != null",
         ".write": "auth != null"
       }
     },
-    "badges": {
-      "$uid": {
+    "ChatMessages": {
+      ".read": "auth != null",
+      "$chatId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null",
+        ".indexOn": ["timestamp", "read_by_contractor", "read_by_employee"]
       }
     },
     "user_requests": {
@@ -61,10 +96,6 @@
           }
         }
       }
-    },
-    "Complaints": {
-      ".read": "auth != null",
-      ".write": "auth != null"
     }
   }
 }

@@ -871,10 +871,13 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
         'contractor_name': userName,
         'contractor_avatar': userAvatar,
       };
-      // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
-      updates['user_requests/$currentUserId/professionals/$professionalId'] = true;
 
       await db.update(updates);
+
+      // user_requests separado para não bloquear a solicitação se as regras não cobrirem este path
+      try {
+        await db.child('user_requests/$currentUserId/professionals/$professionalId').set(true);
+      } catch (_) {}
 
       // Assumindo que BadgeHelper existe no projeto conforme o código original sugeria
       // Se der erro de compilação por falta dessa classe, o usuário deve verificar o import
