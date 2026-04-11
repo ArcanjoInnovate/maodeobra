@@ -714,8 +714,7 @@ class _ChatListTile extends StatelessWidget {
 
           // ── Stream do MEU unreadCount (para badge e negrito)
           return StreamBuilder<int>(
-            stream: ChatServiceFinal()
-                .getUnreadCountStream(chat.chatId, userRole),
+            stream:  BadgeHelper.getUnreadMessageCountStream(chat.chatId, userRole),
             initialData: 0,
             builder: (context, myUnreadSnapshot) {
               final myUnreadCount = myUnreadSnapshot.data ?? 0;

@@ -1,9 +1,11 @@
 // lib/screens/feed/professional_profile.dart
 // ✅ Design premium — mesmo sistema visual das telas anteriores
 // ✅ Cards de detalhes em COLUNA (igual my_vacancy e my_profile)
+// ✅ NOTIFICAÇÃO DE CHAT REQUEST implementada
 
 import 'package:dartobra_new/screens/app_home/complaints/complaint_professional.dart';
 import 'package:dartobra_new/services/services_vacancy/profile_validation_service.dart';
+import 'package:dartobra_new/models/search_model/professional_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -74,10 +76,12 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
         CurvedAnimation(parent: _avatarCtrl, curve: Curves.elasticOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 180),
-        () { if (mounted) _avatarCtrl.forward(); });
-    Future.delayed(const Duration(milliseconds: 250),
-        () { if (mounted) _contentCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 180), () {
+      if (mounted) _avatarCtrl.forward();
+    });
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _contentCtrl.forward();
+    });
   }
 
   @override
@@ -91,9 +95,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
   @override
   Widget build(BuildContext context) {
     final p = widget.professional;
-    final skills = p['skills'] != null
-        ? List<String>.from(p['skills'])
-        : <String>[];
+    final skills =
+        p['skills'] != null ? List<String>.from(p['skills']) : <String>[];
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -228,9 +231,11 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               child: Stack(
                 children: [
                   Positioned(
-                    top: -70, right: -50,
+                    top: -70,
+                    right: -50,
                     child: Container(
-                      width: 220, height: 220,
+                      width: 220,
+                      height: 220,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white.withOpacity(0.05),
@@ -238,9 +243,11 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                     ),
                   ),
                   Positioned(
-                    bottom: 20, left: -60,
+                    bottom: 20,
+                    left: -60,
                     child: Container(
-                      width: 200, height: 200,
+                      width: 200,
+                      height: 200,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white.withOpacity(0.04),
@@ -268,8 +275,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                                       shape: BoxShape.circle,
                                       color: Colors.white.withOpacity(0.2),
                                       border: Border.all(
-                                          color:
-                                              Colors.white.withOpacity(0.4),
+                                          color: Colors.white.withOpacity(0.4),
                                           width: 2.5),
                                     ),
                                   ),
@@ -277,8 +283,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                               ),
                               CircleAvatar(
                                 radius: 48,
-                                backgroundColor:
-                                    Colors.white.withOpacity(0.15),
+                                backgroundColor: Colors.white.withOpacity(0.15),
                                 backgroundImage: p['avatar'] != null &&
                                         (p['avatar'] as String).isNotEmpty
                                     ? NetworkImage(p['avatar'])
@@ -310,8 +315,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                         ),
                         const SizedBox(height: 16),
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
                           child: Text(
                             p['name'] ?? 'Profissional',
                             textAlign: TextAlign.center,
@@ -329,8 +333,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                           ClipRRect(
                             borderRadius: BorderRadius.circular(30),
                             child: BackdropFilter(
-                              filter:
-                                  ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 8),
@@ -409,8 +412,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 18, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
                 color: _blueSurface,
                 borderRadius: BorderRadius.circular(30),
@@ -418,8 +420,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.location_on_rounded,
-                      color: _blue, size: 14),
+                  const Icon(Icons.location_on_rounded, color: _blue, size: 14),
                   const SizedBox(width: 6),
                   Text(
                     '${p['city']}, ${p['state']}',
@@ -440,7 +441,14 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
           const SizedBox(height: 12),
           _buildInfoList(p),
           const SizedBox(height: 28),
-
+          
+          if (_hasContactInfo()) ...[
+            _sectionLabel('CONTATO'),
+            const SizedBox(height: 12),
+            _buildContactSection(),
+            const SizedBox(height: 28),
+          ],
+          
           // ── Habilidades ───────────────────────────────────────────────
           if (skills.isNotEmpty) ...[
             _sectionLabel('HABILIDADES'),
@@ -450,8 +458,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
           ],
 
           // ── Sobre ─────────────────────────────────────────────────────
-          if (p['summary'] != null &&
-              (p['summary'] as String).isNotEmpty) ...[
+          if (p['summary'] != null && (p['summary'] as String).isNotEmpty) ...[
             _sectionLabel('SOBRE'),
             const SizedBox(height: 12),
             _buildTextCard(p['summary']),
@@ -471,6 +478,114 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
+  bool _hasContactInfo() {
+    final email = widget.professional['email']?.toString() ?? '';
+    final telefone = widget.professional['telefone']?.toString() ?? '';
+    return (email.isNotEmpty && email != 'Não definido') ||
+        (telefone.isNotEmpty && telefone != 'Não definido');
+  }
+
+  Widget _buildContactSection() {
+    final email = widget.professional['email']?.toString() ?? '';
+    final telefone = widget.professional['telefone']?.toString() ?? '';
+    final hasEmail = email.isNotEmpty && email != 'Não definido';
+    final hasTelefone = telefone.isNotEmpty && telefone != 'Não definido';
+
+    return Column(
+      children: [
+        if (hasEmail)
+          _contactRow(
+            icon: Icons.mail_outline_rounded,
+            label: 'Email',
+            value: email,
+            color: _blue,
+            onTap: () => _copyToClipboard(email, 'Email copiado!'),
+          ),
+        if (hasEmail && hasTelefone) const SizedBox(height: 10),
+        if (hasTelefone)
+          _contactRow(
+            icon: Icons.phone_outlined,
+            label: 'Telefone',
+            value: telefone,
+            color: const Color(0xFF059669),
+            onTap: () => _copyToClipboard(telefone, 'Telefone copiado!'),
+          ),
+      ],
+    );
+  }
+
+  Widget _contactRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.09),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: _muted,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3)),
+                  const SizedBox(height: 2),
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          color: _ink,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            Icon(Icons.copy_rounded, size: 16, color: _muted),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   Widget _sectionLabel(String text) => Text(
         text,
         style: const TextStyle(
@@ -481,11 +596,10 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
         ),
       );
 
-  // ── Info list — COLUNA vertical full-width (igual my_vacancy e my_profile) ────
+  // ── Info list — COLUNA vertical full-width ────
   Widget _buildInfoList(Map<String, dynamic> p) {
     final items = <Map<String, dynamic>>[
-      if (p['legal_type'] != null &&
-          (p['legal_type'] as String).isNotEmpty)
+      if (p['legal_type'] != null && (p['legal_type'] as String).isNotEmpty)
         {
           'icon': Icons.badge_rounded,
           'label': 'Tipo de contrato',
@@ -509,7 +623,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
     if (items.isEmpty) return const SizedBox.shrink();
 
-    // ✅ COLUNA — igual my_vacancy e my_profile
     return Column(
       children: [
         for (int i = 0; i < items.length; i++)
@@ -525,7 +638,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     final Color iconColor = item['color'] as Color;
 
     return Container(
-      width: double.infinity, // ✅ Full width
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -542,7 +655,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Ícone
           Container(
             width: 42,
             height: 42,
@@ -550,11 +662,9 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               color: iconColor.withOpacity(0.10),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(item['icon'] as IconData,
-                color: iconColor, size: 20),
+            child: Icon(item['icon'] as IconData, color: iconColor, size: 20),
           ),
           const SizedBox(width: 14),
-          // Label + Value — ocupa toda a largura restante, nunca corta
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -577,7 +687,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                     fontWeight: FontWeight.w600,
                     height: 1.3,
                   ),
-                  // ✅ sem maxLines, sem ellipsis — texto sempre completo
                   softWrap: true,
                 ),
               ],
@@ -595,13 +704,11 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       runSpacing: 8,
       children: skills.map((skill) {
         return Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-                color: _blueLight.withOpacity(0.4), width: 1.5),
+            border: Border.all(color: _blueLight.withOpacity(0.4), width: 1.5),
             boxShadow: [
               BoxShadow(
                   color: _blue.withOpacity(0.06),
@@ -615,8 +722,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               Container(
                 width: 6,
                 height: 6,
-                decoration: BoxDecoration(
-                    color: _blueLight, shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: _blueLight, shape: BoxShape.circle),
               ),
               const SizedBox(width: 7),
               Text(skill,
@@ -632,7 +739,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
-  // ── Text card (Sobre / Experiência) ───────────────────────────────────────
+  // ── Text card ─────────────────────────────────────────────────────────────
   Widget _buildTextCard(String text) {
     return Container(
       width: double.infinity,
@@ -650,8 +757,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       ),
       child: Text(
         text,
-        style: const TextStyle(
-            fontSize: 14, color: _ink, height: 1.7),
+        style: const TextStyle(fontSize: 14, color: _ink, height: 1.7),
       ),
     );
   }
@@ -682,13 +788,10 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                     height: 18,
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
-                : const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 18),
+                : const Icon(Icons.chat_bubble_outline_rounded, size: 18),
             label: Text(
               _isRequesting ? 'Enviando...' : 'Solicitar Chat',
-              style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: _blue,
@@ -706,15 +809,14 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
   }
 
   // ══════════════════════════════
-  // LÓGICA ORIGINAL — sem alterações
+  // LÓGICA COM NOTIFICAÇÃO
   // ══════════════════════════════
 
   void _showReportDialog() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Container(
@@ -729,8 +831,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
             ),
             const SizedBox(width: 12),
             const Text('Denunciar Perfil',
-                style: TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
         content: const Text(
@@ -741,8 +842,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar',
-                style: TextStyle(
-                    color: _muted, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -768,12 +868,10 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            const Text('Você precisa estar logado para denunciar'),
+        content: const Text('Você precisa estar logado para denunciar'),
         backgroundColor: Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
       return;
     }
@@ -791,6 +889,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
   Future<void> _requestChat() async {
     setState(() => _isRequesting = true);
+    
     final validation =
         await ProfileValidationService.validateContractorProfile();
     if (!validation.isValid) {
@@ -801,6 +900,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
     final db = FirebaseDatabase.instance.ref();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    
     if (currentUserId == null) {
       setState(() => _isRequesting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -811,23 +911,24 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     }
 
     try {
-      final userSnapshot =
-          await db.child('Users/$currentUserId').get();
+      // 1. Busca dados do usuário atual
+      final userSnapshot = await db.child('Users/$currentUserId').get();
       String userName = 'Usuário';
       String userAvatar = '';
+      
       if (userSnapshot.exists) {
-        final userData =
-            Map<String, dynamic>.from(userSnapshot.value as Map);
-        userName =
-            userData['Name'] ?? userData['name'] ?? 'Usuário';
+        final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+        userName = userData['Name'] ?? userData['name'] ?? 'Usuário';
         userAvatar = userData['avatar'] ?? '';
       }
 
+      // 2. Verifica se já solicitou
       final requestsRef = db
           .child('professionals')
           .child(widget.professionalId)
           .child('requests');
       final snapshot = await requestsRef.get();
+      
       List<dynamic> requestsList = [];
       if (snapshot.exists && snapshot.value is List) {
         requestsList = List.from(snapshot.value as List);
@@ -836,24 +937,23 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       if (requestsList.contains(currentUserId)) {
         setState(() => _isRequesting = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text(
-              'Você já solicitou chat com este profissional'),
+          content: const Text('Você já solicitou chat com este profissional'),
           backgroundColor: Colors.orange.shade700,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ));
         return;
       }
 
+      // 3. Adiciona à lista de requests
       requestsList.add(currentUserId);
 
+      // 4. Atualiza banco - inclui dados para notificação push
       final updates = <String, dynamic>{};
-      updates['professionals/${widget.professionalId}/requests'] =
-          requestsList;
+      updates['professionals/${widget.professionalId}/requests'] = requestsList;
       updates[
-              'professionals/${widget.professionalId}/views/request_views/$currentUserId'] =
-          {
+          'professionals/${widget.professionalId}/views/request_views/$currentUserId'] = {
         'viewed_by_owner': false,
         'requested_at': DateTime.now().millisecondsSinceEpoch,
         'contractor_name': userName,
@@ -861,24 +961,26 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       };
 
       await db.update(updates);
+      
       setState(() => _isRequesting = false);
 
+      // 5. Feedback de sucesso
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Chat solicitado com sucesso!'),
         backgroundColor: const Color(0xFF059669),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
+      
       Navigator.pop(context);
+      
     } catch (e) {
       setState(() => _isRequesting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Erro ao solicitar chat: $e'),
         backgroundColor: Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ));
     }
   }

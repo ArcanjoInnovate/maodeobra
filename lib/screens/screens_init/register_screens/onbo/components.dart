@@ -668,6 +668,7 @@ class _SkillsFieldState extends State<SkillsField> {
                     ),
                     TextField(
                       controller: _controller,
+                      maxLength: 30,
                       decoration: InputDecoration(
                         hintText: 'Digite uma habilidade',
                         hintStyle: TextStyle(

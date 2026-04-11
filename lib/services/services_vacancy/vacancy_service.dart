@@ -1,10 +1,13 @@
 // lib/services/services_vacancy/vacancy_service.dart
+// VERSÃO ATUALIZADA COM EXPIRAÇÃO DE 7 DIAS
 
 import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:dartobra_new/services/expiration_service.dart';
 
 class VacancyService {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
+  final ExpirationService _expirationService = ExpirationService();
 
   final Map<String, Map<String, dynamic>> _vacancyCache = {};
   final Map<String, List<Map<String, dynamic>>> _userVacanciesCache = {};
@@ -16,13 +19,13 @@ class VacancyService {
   VacancyService._internal();
 
   // ════════════════════════════════════════════════
-  // 1. VAGAS DO USUÁRIO
+  // 1. VAGAS DO USUÁRIO (com filtro de expiração)
   // ════════════════════════════════════════════════
 
   Future<List<Map<String, dynamic>>> getUserVacancies(String localId,
-      {bool forceRefresh = false}) async {
+      {bool forceRefresh = false, bool includeExpired = false}) async {
     if (!forceRefresh && _userVacanciesCache.containsKey(localId)) {
-      return _userVacanciesCache[localId]!;
+      return _filterExpiredVacancies(_userVacanciesCache[localId]!, includeExpired);
     }
 
     try {
@@ -53,18 +56,34 @@ class VacancyService {
       }
 
       _userVacanciesCache[localId] = vacancies;
-      return vacancies;
+      return _filterExpiredVacancies(vacancies, includeExpired);
     } catch (e) {
       print('❌ getUserVacancies erro: $e');
       return [];
     }
   }
 
+  /// Filtra vagas expiradas se necessário
+  List<Map<String, dynamic>> _filterExpiredVacancies(
+    List<Map<String, dynamic>> vacancies, 
+    bool includeExpired
+  ) {
+    if (includeExpired) return vacancies;
+    
+    return vacancies.where((vacancy) {
+      final status = vacancy['status']?.toString().toLowerCase() ?? '';
+      return status != 'expirada';
+    }).toList();
+  }
+
   // ════════════════════════════════════════════════
-  // 2. STREAM EM TEMPO REAL
+  // 2. STREAM EM TEMPO REAL (com filtro de expiração)
   // ════════════════════════════════════════════════
 
-  Stream<List<Map<String, dynamic>>> getUserVacanciesStream(String localId) {
+  Stream<List<Map<String, dynamic>>> getUserVacanciesStream(
+    String localId, 
+    {bool includeExpired = false}
+  ) {
     final controller = StreamController<List<Map<String, dynamic>>>();
 
     final query = _database
@@ -95,7 +114,7 @@ class VacancyService {
       }
 
       _userVacanciesCache[localId] = vacancies;
-      controller.add(vacancies);
+      controller.add(_filterExpiredVacancies(vacancies, includeExpired));
     });
 
     _activeListeners['user_vacancies_$localId'] = subscription;
@@ -201,17 +220,24 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 5. CRIAR VAGA
+  // 5. CRIAR VAGA (COM EXPIRAÇÃO DE 7 DIAS)
   // ════════════════════════════════════════════════
 
   Future<String?> createVacancy(Map<String, dynamic> vacancyData) async {
     try {
       final newRef = _database.child('vacancy').push();
+      
+      // ✅ ADICIONA DATA DE EXPIRAÇÃO (7 dias)
+      vacancyData['expires_at'] = _expirationService.getExpirationDateISO();
+      vacancyData['expiration_timestamp'] = _expirationService.getExpirationTimestamp();
+      
       await newRef.set(vacancyData);
       final vacancyId = newRef.key!;
       vacancyData['id'] = vacancyId;
       _vacancyCache[vacancyId] = vacancyData;
       _userVacanciesCache.remove(vacancyData['local_id']);
+      
+      print('✅ Vaga criada com expiração em 7 dias: ${vacancyData['expires_at']}');
       return vacancyId;
     } catch (e) {
       print('❌ createVacancy erro: $e');
@@ -240,14 +266,13 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 7. EXCLUIR VAGA ← AQUI ESTÁ O FIX DO BADGE
+  // 7. EXCLUIR VAGA
   // ════════════════════════════════════════════════
 
   Future<bool> deleteVacancy(String vacancyId, String ownerLocalId) async {
     print('🗑️ deleteVacancy chamado — vaga: $vacancyId  dono: $ownerLocalId');
 
     try {
-      // PASSO 1: lê candidaturas não visualizadas ANTES de deletar
       final viewsSnap = await _database
           .child('vacancy/$vacancyId/views/request_views')
           .get();
@@ -258,7 +283,6 @@ class VacancyService {
         final raw = viewsSnap.value;
         print('📋 request_views raw: $raw');
 
-        // Firebase pode retornar Map<Object?, Object?> — trata os dois casos
         Map<dynamic, dynamic> views = {};
         if (raw is Map) {
           views = raw as Map<dynamic, dynamic>;
@@ -270,7 +294,6 @@ class VacancyService {
             final viewedByOwner = v['viewed_by_owner'];
             print(
                 '   candidato ${entry.key}: viewed_by_owner = $viewedByOwner');
-            // Conta como não visto se for false, null ou ausente
             if (viewedByOwner == false || viewedByOwner == null) {
               unviewedCount++;
             }
@@ -282,15 +305,12 @@ class VacancyService {
 
       print('📊 Candidaturas não vistas: $unviewedCount');
 
-      // PASSO 2: deleta a vaga
       await _database.child('vacancy/$vacancyId').remove();
       print('✅ Vaga $vacancyId deletada do Firebase');
 
-      // PASSO 3: limpa cache
       _vacancyCache.remove(vacancyId);
       _userVacanciesCache.remove(ownerLocalId);
 
-      // PASSO 4: decrementa badge
       if (unviewedCount > 0) {
         await _decrementOwnerBadge(ownerLocalId, unviewedCount);
       } else {
@@ -346,6 +366,62 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
+  // 9. RENOVAR VAGA (ADICIONA MAIS 7 DIAS)
+  // ════════════════════════════════════════════════
+
+  Future<bool> renewVacancy(String vacancyId) async {
+    try {
+      final success = await _expirationService.renewVacancy(vacancyId);
+      
+      if (success) {
+        // Limpa cache para forçar reload
+        _vacancyCache.remove(vacancyId);
+        
+        final vacancy = await getVacancy(vacancyId, forceRefresh: true);
+        if (vacancy != null) {
+          final localId = vacancy['local_id'];
+          if (localId != null) {
+            _userVacanciesCache.remove(localId);
+          }
+        }
+      }
+      
+      return success;
+    } catch (e) {
+      print('❌ renewVacancy erro: $e');
+      return false;
+    }
+  }
+
+  // ════════════════════════════════════════════════
+  // 10. OBTER INFORMAÇÕES DE EXPIRAÇÃO
+  // ════════════════════════════════════════════════
+
+  Future<Map<String, dynamic>?> getVacancyExpirationInfo(String vacancyId) async {
+    return await _expirationService.getVacancyExpirationInfo(vacancyId);
+  }
+
+  bool isVacancyExpired(Map<String, dynamic> vacancy) {
+    final expiresAt = vacancy['expires_at'];
+    return _expirationService.isExpired(expiresAt);
+  }
+
+  bool isVacancyNearExpiration(Map<String, dynamic> vacancy) {
+    final expiresAt = vacancy['expires_at'];
+    return _expirationService.isNearExpiration(expiresAt);
+  }
+
+  int vacancyDaysUntilExpiration(Map<String, dynamic> vacancy) {
+    final expiresAt = vacancy['expires_at'];
+    return _expirationService.daysUntilExpiration(expiresAt);
+  }
+
+  String getVacancyExpirationMessage(Map<String, dynamic> vacancy) {
+    final expiresAt = vacancy['expires_at'];
+    return _expirationService.getExpirationMessage(expiresAt);
+  }
+
+  // ════════════════════════════════════════════════
   // PRIVADO: DECREMENTA BADGE
   // ════════════════════════════════════════════════
 
@@ -358,7 +434,6 @@ class VacancyService {
       final badgeRef =
           _database.child('badges/$ownerLocalId/unread_requests');
 
-      // Lê valor atual
       final snap = await badgeRef.get();
       print('📊 Badge snapshot exists: ${snap.exists}  value: ${snap.value}');
 
@@ -379,7 +454,7 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 9. MARCAR CANDIDATOS COMO VISUALIZADOS
+  // 11. MARCAR CANDIDATOS COMO VISUALIZADOS
   // ════════════════════════════════════════════════
 
   Future<bool> markCandidatesAsViewed(
@@ -402,7 +477,7 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 10. CACHE
+  // 12. CACHE
   // ════════════════════════════════════════════════
 
   void clearCache({String? vacancyId, String? localId}) {

@@ -3,6 +3,7 @@
 // ignore_for_file: unused_field, unnecessary_cast
 
 import 'dart:async';
+import 'package:dartobra_new/helpers/badge_helper.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../../models/chat_model/chat_model.dart';
 import '../../models/chat_model/message_model.dart';
@@ -149,17 +150,29 @@ class ChatServiceFinal {
     }
   }
 
-  Future<void> _incrementUnreadCount(String chatId, String userRole) async {
-    try {
-      final countRef = _firebase.database.ref('Chats/$chatId/unreadCount/$userRole');
-      await countRef.runTransaction((current) {
-        final currentCount = (current as int?) ?? 0;
-        return Transaction.success(currentCount + 1);
-      });
-    } catch (e) {
-      print('❌ Erro ao incrementar unreadCount: $e');
-    }
+Future<void> _incrementUnreadCount(String chatId, String userRole) async {
+  try {
+    final countRef = _firebase.database.ref('Chats/$chatId/unreadCount/$userRole');
+    
+    // Lê o valor ANTES da transação
+    final before = await countRef.get();
+    print('🔢 ANTES da transação: ${before.value} (tipo: ${before.value.runtimeType})');
+    
+    final result = await countRef.runTransaction((current) {
+      print('🔄 current dentro da transação: $current (tipo: ${current.runtimeType})');
+      if (current == null) return Transaction.success(1);
+      final currentCount = (current as num).toInt();
+      print('✅ novo valor será: ${currentCount + 1}');
+      return Transaction.success(currentCount + 1);
+    });
+    
+    print('💾 resultado commitado: ${result.committed} | valor: ${result.snapshot.value}');
+    
+  } catch (e, stack) {
+    print('❌ Erro ao incrementar unreadCount: $e');
+    print('Stack: $stack');
   }
+}
 
   // ========================================
   // 4️⃣ STREAM DE MENSAGENS
@@ -378,7 +391,11 @@ class ChatServiceFinal {
       await _firebase.database
           .ref('Chats/$chatId/unreadCount/$userRole')
           .set(0);
-
+      // ✅ ADICIONAR NO FINAL - após zerar unreadCount
+    print('✅ unreadCount/$userRole zerado');
+    
+    // 🔥 CRÍTICO: Recalcular badge global
+    await _recalculateBadgeForUserInChat(chatId, userRole);
       print('✅ unreadCount/$userRole zerado');
       print('═══════════════════════════════════════');
     } catch (e) {
@@ -386,6 +403,29 @@ class ChatServiceFinal {
     }
   }
 
+  Future<void> _recalculateBadgeForUserInChat(String chatId, String userRole) async {
+  try {
+    // Pega contractorId e employeeId do chat
+    final chatRef = _firebase.chatRef(chatId);
+    final chatSnapshot = await chatRef.get();
+    
+    if (!chatSnapshot.exists) return;
+    
+    final chatData = chatSnapshot.value as Map<dynamic, dynamic>;
+    final contractorId = chatData['contractor']?.toString() ?? '';
+    final employeeId = chatData['employee']?.toString() ?? '';
+    
+    // Recalcula para AMBOS os usuários do chat
+    if (contractorId.isNotEmpty) {
+      await BadgeHelper.recalculateChatBadge(contractorId);
+    }
+    if (employeeId.isNotEmpty && employeeId != contractorId) {
+      await BadgeHelper.recalculateChatBadge(employeeId);
+    }
+  } catch (e) {
+    print('❌ Erro ao recalcular badge do chat: $e');
+  }
+}
   // ========================================
   // 7️⃣ STATUS DO OUTRO USUÁRIO
   // ========================================

@@ -65,11 +65,15 @@ class Chat {
         }
       }
 
-      // Parse unreadCount
+      // Parse unreadCount — Firebase retorna num, nunca fazer cast direto para int
       final unreadCountMap = map['unreadCount'] as Map<dynamic, dynamic>?;
       final unreadCount = <String, int>{
-        'contractor': unreadCountMap?['contractor'] as int? ?? 0,
-        'employee': unreadCountMap?['employee'] as int? ?? 0,
+        'contractor': unreadCountMap?['contractor'] == null
+            ? 0
+            : (unreadCountMap!['contractor'] as num).toInt(),
+        'employee': unreadCountMap?['employee'] == null
+            ? 0
+            : (unreadCountMap!['employee'] as num).toInt(),
       };
 
       return Chat(
@@ -139,7 +143,6 @@ class Chat {
     };
   }
 
-  // ✅ CORRIGIDO: blockDialog adicionado ao copyWith
   Chat copyWith({
     String? chatId,
     String? contractorId,
@@ -178,8 +181,13 @@ class ChatMetadata {
     return ChatMetadata(
       lastMessage: map['last_message'] as String? ?? '',
       lastSender: map['last_sender'] as String? ?? '',
-      lastTimestamp: map['last_timestamp'] as int? ?? 0,
-      createdAt: map['created_at'] as int?,
+      // Firebase retorna num, nunca fazer cast direto para int
+      lastTimestamp: map['last_timestamp'] == null
+          ? 0
+          : (map['last_timestamp'] as num).toInt(),
+      createdAt: map['created_at'] == null
+          ? null
+          : (map['created_at'] as num).toInt(),
     );
   }
 

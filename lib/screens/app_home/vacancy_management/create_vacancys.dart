@@ -1,5 +1,6 @@
 // ignore_for_file: unused_field
 
+import 'package:dartobra_new/services/expiration_service.dart';
 import 'package:dartobra_new/services/services_storage/service_moderation_image.dart';
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
 import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
@@ -41,6 +42,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
   final TextEditingController _salaryController = TextEditingController();
 
   // FocusNodes
+  final ExpirationService _expirationService = ExpirationService();
   final FocusNode _titleFocus = FocusNode();
   final FocusNode _descriptionFocus = FocusNode();
   final FocusNode _salaryFocus = FocusNode();
@@ -264,7 +266,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
     );
   }
 
-  static const int _descMinLength = 80;
+  static const int _descMinLength = 40;
 
   bool _validateFields() {
     // 1. Profissão, estado e cidade obrigatórios
@@ -305,74 +307,80 @@ class _CreateVacancysState extends State<CreateVacancys> {
   }
 
   Future<void> _saveVacancy() async {
-    if (!_validateFields()) return;
-
-    setState(() {
-      _isUploading = true;
-      _uploadStatus = 'Preparando arquivos...';
-      _uploadProgress = 0.0;
-    });
-
-    try {
-      final (:imageUrls, :videoUrls) = await _uploadAllMedia();
-
-      String finalSalary = 'A combinar';
-      if (selectedSalaryType != null && selectedSalaryType != 'A combinar') {
-        final salaryText = _salaryController.text.trim();
-        finalSalary =
-            salaryText.isNotEmpty ? salaryText : selectedSalaryType!;
-      }
-
-      setState(() => _uploadStatus = 'Salvando vaga...');
-
-      final now = DateTime.now().toIso8601String();
-      final titleText = _titleController.text.trim();
-
-      final Map<String, dynamic> vacancyData = {
-        'title': titleText.isNotEmpty ? titleText : selectedProfession!,
-        'profession': selectedProfession,
-        'state': selectedState,
-        'city': selectedCity,
-        'email_contact': widget.emailContact,
-        'phone_contact': widget.phoneContact,
-        'description': _descriptionController.text.trim(),
-        'requests': [],
-        'salary': finalSalary,
-        'salary_type': selectedSalaryType ?? 'A combinar',
-        'local_id': widget.localId,
-        'midia': {
-          'images': imageUrls,
-          'videos': videoUrls,
-        },
-        'created_at': now,
-        'updated_at': now,
-        'status': 'Aberta',
-        'views': {
-          'request_views': {},
-        },
-        'stats': {
-          'total_views': 0,
-          'total_applications': 0,
-          'created_timestamp': DateTime.now().millisecondsSinceEpoch,
-        },
-      };
-
-      final vacancyId = await _vacancyService.createVacancy(vacancyData);
-
-      setState(() => _isUploading = false);
-
-      if (vacancyId != null) {
-        _showSnackBar('Vaga criada com sucesso!', Colors.green);
-        await Future.delayed(const Duration(milliseconds: 800));
-        if (mounted) Navigator.pop(context, vacancyId);
-      } else {
-        _showSnackBar('Erro ao criar vaga', Colors.red);
-      }
-    } catch (e) {
-      debugPrint('Erro ao salvar vaga: $e');
-      setState(() => _isUploading = false);
-      _showSnackBar('Erro ao salvar vaga. Tente novamente.', Colors.red);
+  if (!_validateFields()) return;
+ 
+  setState(() {
+    _isUploading = true;
+    _uploadStatus = 'Preparando arquivos...';
+    _uploadProgress = 0.0;
+  });
+ 
+  try {
+    final (:imageUrls, :videoUrls) = await _uploadAllMedia();
+ 
+    String finalSalary = 'A combinar';
+    if (selectedSalaryType != null && selectedSalaryType != 'A combinar') {
+      final salaryText = _salaryController.text.trim();
+      finalSalary =
+          salaryText.isNotEmpty ? salaryText : selectedSalaryType!;
     }
+ 
+    setState(() => _uploadStatus = 'Salvando vaga...');
+ 
+    final now = DateTime.now().toIso8601String();
+    final titleText = _titleController.text.trim();
+ 
+    final Map<String, dynamic> vacancyData = {
+      'title': titleText.isNotEmpty ? titleText : selectedProfession!,
+      'profession': selectedProfession,
+      'state': selectedState,
+      'city': selectedCity,
+      'email_contact': widget.emailContact,
+      'phone_contact': widget.phoneContact,
+      'description': _descriptionController.text.trim(),
+      'requests': [],
+      'salary': finalSalary,
+      'salary_type': selectedSalaryType ?? 'A combinar',
+      'local_id': widget.localId,
+      'midia': {
+        'images': imageUrls,
+        'videos': videoUrls,
+      },
+      'created_at': now,
+      'updated_at': now,
+      'status': 'Aberta',
+      
+      // ✅ ADICIONA DATA DE EXPIRAÇÃO (7 DIAS)
+      'expires_at': _expirationService.getExpirationDateISO(),
+      'expiration_timestamp': _expirationService.getExpirationTimestamp(),
+      
+      'views': {
+        'request_views': {},
+      },
+      'stats': {
+        'total_views': 0,
+        'total_applications': 0,
+        'created_timestamp': DateTime.now().millisecondsSinceEpoch,
+      },
+    };
+ 
+    final vacancyId = await _vacancyService.createVacancy(vacancyData);
+ 
+    setState(() => _isUploading = false);
+ 
+    if (vacancyId != null) {
+      _showSnackBar('Vaga criada com sucesso! Válida por 2 dias.', Colors.green);
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) Navigator.pop(context, vacancyId);
+    } else {
+      _showSnackBar('Erro ao criar vaga', Colors.red);
+    }
+  } catch (e) {
+    debugPrint('Erro ao salvar vaga: $e');
+    setState(() => _isUploading = false);
+    _showSnackBar('Erro ao salvar vaga. Tente novamente.', Colors.red);
+  }
+
   }
 
   void _viewImageFullscreen(File imageFile, int initialIndex) {
@@ -529,6 +537,31 @@ class _CreateVacancysState extends State<CreateVacancys> {
                     ),
                   ),
                   SizedBox(height: 20),
+                  Container(
+  margin: const EdgeInsets.only(top: 12),
+  padding: const EdgeInsets.all(12),
+  decoration: BoxDecoration(
+    color: const Color(0xFFEFF6FF),
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: const Color(0xFFBFDBFE)),
+  ),
+  child: Row(
+    children: [
+      const Icon(Icons.info_outline, color: Color(0xFF2563EB), size: 18),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          'Esta vaga ficará ativa por 2 dias. Você poderá renová-la quando estiver próxima do vencimento.',
+          style: TextStyle(
+            fontSize: 12,
+            color: const Color(0xFF2563EB),
+            height: 1.4,
+          ),
+        ),
+      ),
+    ],
+  ),
+),
                 ],
               ),
             ),

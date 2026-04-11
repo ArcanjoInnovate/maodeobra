@@ -1,5 +1,4 @@
 // lib/services/services_feed/feed_service.dart
-// VERSÃO AJUSTADA - MOSTRA PRÓPRIAS VAGAS
 
 import 'package:dartobra_new/models/search_model/professional_model.dart';
 import 'package:dartobra_new/models/search_model/vacancy_model.dart';
@@ -14,6 +13,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// ✅ Paginação real funcionando
 /// ✅ Máximo controle de reads por página
 /// ✅ MOSTRA PRÓPRIAS VAGAS E PROFISSIONAIS
+/// ✅ FILTRA VAGAS E PERFIS EXPIRADOS
 
 class FirebaseFeedService {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
@@ -24,7 +24,7 @@ class FirebaseFeedService {
   // ===============================
   /// ESTRATÉGIA:
   /// 1. Busca vagas ordenadas por created_at (índice)
-  /// 2. Filtra client-side: status, já candidatadas
+  /// 2. Filtra client-side: status, já candidatadas, EXPIRADAS
   /// 3. EXCLUSÃO: vagas de pessoas com quem já tem chat (EXCETO PRÓPRIAS)
   /// 4. Paginação com cursor
   /// 5. ✅ MOSTRA PRÓPRIAS VAGAS
@@ -53,7 +53,7 @@ class FirebaseFeedService {
       // ✅ QUERY BASE: ordenada por data de criação
       Query query = _database
           .child('vacancy')
-          .orderByChild('created_at');
+          .orderByChild('updated_at');
 
       // ✅ PAGINAÇÃO: busca itens ANTES do cursor (mais antigos)
       if (lastCreatedAt != null && lastKey != null) {
@@ -93,9 +93,15 @@ class FirebaseFeedService {
           
           final vacancy = _parseVacancy(key, data);
           
-          // ✅ FILTRO 1: Status deve ser "Aberta"
+          // ✅ FILTRO 1: Status deve ser "Aberta" E NÃO EXPIRADA
           final status = vacancy.status.toLowerCase();
           if (status != 'aberta' && status != 'open') {
+            continue;
+          }
+          
+          // ✅ NOVO: Não mostra vagas expiradas
+          if (status == 'expirada' || status == 'expired') {
+            print('  🚫 Excluindo vaga ${vacancy.id} - expirada');
             continue;
           }
           
@@ -147,7 +153,7 @@ class FirebaseFeedService {
       }
 
       // ✅ ORDENA: mais recentes primeiro
-      vacancies.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      vacancies.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       // Tem mais se a query retornou items suficientes
       final hasMore = snapshot.children.length >= fetchLimit && vacancies.length >= limit;
@@ -233,10 +239,16 @@ class FirebaseFeedService {
           
           final prof = _parseProfessional(key, data);
           
-          // ✅ FILTRO 1: Status ativo (exclui 'paused')
+          // ✅ FILTRO 1: Status ativo (exclui 'paused' e 'expired')
           final status = prof.status.toLowerCase();
           if (status != 'active' && status != 'ativo') {
             print('  🚫 Excluindo profissional ${prof.id} - status: $status');
+            continue;
+          }
+          
+          // ✅ NOVO: Não mostra perfis expirados
+          if (status == 'expired') {
+            print('  🚫 Excluindo profissional ${prof.id} - expirado');
             continue;
           }
           
@@ -497,6 +509,7 @@ class FirebaseFeedService {
       title: data['title'] ?? '',
       type: data['type'] ?? '',
       updatedAt: data['updated_at'] ?? data['created_at'] ?? '',
+      expiresAt: data['expires_at']?.toString() ?? '',
     );
   }
 
@@ -515,8 +528,11 @@ class FirebaseFeedService {
       state: data['state'] ?? '',
       status: data['status'] ?? '',
       summary: data['summary'] ?? '',
+      email: data['email']?.toString() ?? '',
+      telefone: data['telefone']?.toString() ?? '',
       type: data['type'] ?? '',
       updatedAt: data['updated_at'] ?? data['created_at'] ?? '',
+      expiresAt: data['expires_at']?.toString() ?? '', // ✅ NOVO!
     );
   }
 

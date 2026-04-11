@@ -23,8 +23,10 @@ class Message {
       id: id,
       text: map['text'] as String? ?? '',
       sender: map['sender'] as String? ?? '',
-      timestamp: map['timestamp'] as int? ?? 0,
-      // ✅ lê os campos exatos do banco (snake_case)
+      // Firebase retorna num, nunca fazer cast direto para int
+      timestamp: map['timestamp'] == null
+          ? 0
+          : (map['timestamp'] as num).toInt(),
       readByContractor: map['read_by_contractor'] as bool? ?? false,
       readByEmployee: map['read_by_employee'] as bool? ?? false,
     );
@@ -35,7 +37,7 @@ class Message {
       'text': text,
       'sender': sender,
       'timestamp': timestamp,
-      // ✅ salva em snake_case igual ao banco
+      // salva em snake_case igual ao banco
       'read_by_contractor': readByContractor,
       'read_by_employee': readByEmployee,
     };

@@ -1,5 +1,5 @@
 // lib/screens/app_home/search_vacancy/my_professional_profile.dart
-// ✅ Ativar/Pausar perfil profissional integrado
+// ✅ Ativar/Pausar perfil profissional + seção de contato padronizada
 
 import 'package:dartobra_new/models/search_model/professional_model.dart';
 import 'package:dartobra_new/services/services_vacancy/professional_status_service.dart';
@@ -22,8 +22,8 @@ class MyProfessionalProfilePage extends StatefulWidget {
       _MyProfessionalProfilePageState();
 }
 
-class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
-    with TickerProviderStateMixin {
+class _MyProfessionalProfilePageState
+    extends State<MyProfessionalProfilePage> with TickerProviderStateMixin {
   late AnimationController _heroCtrl;
   late AnimationController _contentCtrl;
   late AnimationController _avatarCtrl;
@@ -37,40 +37,54 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
   bool _isTogglingStatus = false;
 
   // Paleta
-  static const Color _emerald        = Color(0xFF059669);
-  static const Color _emeraldLight   = Color(0xFF10B981);
+  static const Color _emerald = Color(0xFF059669);
+  static const Color _emeraldLight = Color(0xFF10B981);
   static const Color _emeraldSurface = Color(0xFFD1FAE5);
-  static const Color _surface        = Color(0xFFFAFAFA);
-  static const Color _ink            = Color(0xFF111827);
-  static const Color _muted          = Color(0xFF6B7280);
-  static const Color _border         = Color(0xFFE5E7EB);
-  static const Color _amber          = Color(0xFFF59E0B);
-  static const Color _amberSurface   = Color(0xFFFEF3C7);
+  static const Color _surface = Color(0xFFFAFAFA);
+  static const Color _ink = Color(0xFF111827);
+  static const Color _muted = Color(0xFF6B7280);
+  static const Color _border = Color(0xFFE5E7EB);
+  static const Color _amber = Color(0xFFF59E0B);
+  static const Color _amberSurface = Color(0xFFFEF3C7);
+  static const Color _blue = Color(0xFF2563EB);
 
   @override
   void initState() {
     super.initState();
 
-    _isActive = widget.professional.status.toLowerCase() == 'active';
+    _isActive =
+        widget.professional.status.toLowerCase() == 'active';
 
-    _heroCtrl    = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-    _contentCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
-    _avatarCtrl  = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+    _heroCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _contentCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _avatarCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
 
-    _heroScale = Tween<double>(begin: 1.08, end: 1.0)
-        .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic));
-    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _heroCtrl, curve: const Interval(0.0, 0.6)));
-    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOutCubic));
-    _contentOpacity = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
-    _avatarScale = Tween<double>(begin: 0.7, end: 1.0)
-        .animate(CurvedAnimation(parent: _avatarCtrl, curve: Curves.elasticOut));
+    _heroScale = Tween<double>(begin: 1.08, end: 1.0).animate(
+        CurvedAnimation(
+            parent: _heroCtrl, curve: Curves.easeOutCubic));
+    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+            parent: _heroCtrl,
+            curve: const Interval(0.0, 0.6)));
+    _contentSlide =
+        Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+            .animate(CurvedAnimation(
+                parent: _contentCtrl, curve: Curves.easeOutCubic));
+    _contentOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+            parent: _contentCtrl, curve: Curves.easeOut));
+    _avatarScale = Tween<double>(begin: 0.7, end: 1.0).animate(
+        CurvedAnimation(
+            parent: _avatarCtrl, curve: Curves.elasticOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 180), () { if (mounted) _avatarCtrl.forward(); });
-    Future.delayed(const Duration(milliseconds: 250), () { if (mounted) _contentCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 180),
+        () { if (mounted) _avatarCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 250),
+        () { if (mounted) _contentCtrl.forward(); });
   }
 
   @override
@@ -81,9 +95,7 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
     super.dispose();
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // TOGGLE STATUS — adaptado ao novo service (localId + professionalId)
-  // ══════════════════════════════════════════════════════════════
+  // ── TOGGLE STATUS ─────────────────────────────────────────────
 
   Future<void> _toggleStatus() async {
     if (_isActive) {
@@ -93,8 +105,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
 
     setState(() => _isTogglingStatus = true);
 
-    // Novo service exige localId (Users uid) e professionalId (chave em professionals/)
-    final success = await ProfessionalStatusService.toggleProfessionalStatus(
+    final success =
+        await ProfessionalStatusService.toggleProfessionalStatus(
       localId: widget.professional.localId,
       professionalId: widget.professional.id,
       currentlyActive: _isActive,
@@ -132,7 +144,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
             ? (_isActive ? _emerald : _amber)
             : Colors.red.shade600,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 3),
       ));
     }
@@ -142,7 +155,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
             title: Row(
               children: [
                 Container(
@@ -151,12 +165,15 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                     color: _amberSurface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.pause_circle_outline_rounded,
-                      color: _amber, size: 22),
+                  child: const Icon(
+                      Icons.pause_circle_outline_rounded,
+                      color: _amber,
+                      size: 22),
                 ),
                 const SizedBox(width: 12),
                 const Text('Pausar perfil?',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                    style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700)),
               ],
             ),
             content: const Text(
@@ -168,7 +185,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                 onPressed: () => Navigator.pop(context, false),
                 child: Text('Cancelar',
                     style: TextStyle(
-                        color: _muted, fontWeight: FontWeight.w600)),
+                        color: _muted,
+                        fontWeight: FontWeight.w600)),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
@@ -180,7 +198,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                       borderRadius: BorderRadius.circular(10)),
                 ),
                 child: const Text('Pausar',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -188,9 +207,7 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
         false;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // BUILD
-  // ══════════════════════════════════════════════════════════════
+  // ── BUILD ─────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -314,14 +331,17 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                             children: [
                               ClipOval(
                                 child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                                  filter: ImageFilter.blur(
+                                      sigmaX: 6, sigmaY: 6),
                                   child: Container(
                                     width: 112, height: 112,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white
+                                          .withOpacity(0.2),
                                       border: Border.all(
-                                          color: Colors.white.withOpacity(0.4),
+                                          color: Colors.white
+                                              .withOpacity(0.4),
                                           width: 2.5),
                                     ),
                                   ),
@@ -331,21 +351,22 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                                 radius: 48,
                                 backgroundColor:
                                     Colors.white.withOpacity(0.15),
-                                backgroundImage:
-                                    widget.professional.avatar.isNotEmpty
-                                        ? NetworkImage(
-                                            widget.professional.avatar)
-                                        : null,
-                                child: widget.professional.avatar.isEmpty
+                                backgroundImage: widget
+                                        .professional.avatar.isNotEmpty
+                                    ? NetworkImage(
+                                        widget.professional.avatar)
+                                    : null,
+                                child: widget
+                                        .professional.avatar.isEmpty
                                     ? const Icon(Icons.person_rounded,
                                         color: Colors.white, size: 48)
                                     : null,
                               ),
-                              // Badge de status sobre o avatar
                               Positioned(
                                 bottom: 4, right: 4,
                                 child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 300),
+                                  duration:
+                                      const Duration(milliseconds: 300),
                                   width: 22, height: 22,
                                   decoration: BoxDecoration(
                                     color: _isActive
@@ -386,18 +407,19 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                             ClipRRect(
                               borderRadius: BorderRadius.circular(30),
                               child: BackdropFilter(
-                                filter:
-                                    ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                filter: ImageFilter.blur(
+                                    sigmaX: 8, sigmaY: 8),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 14, vertical: 7),
                                   decoration: BoxDecoration(
-                                    color:
-                                        Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(30),
+                                    color: Colors.white
+                                        .withOpacity(0.15),
+                                    borderRadius:
+                                        BorderRadius.circular(30),
                                     border: Border.all(
-                                        color:
-                                            Colors.white.withOpacity(0.25),
+                                        color: Colors.white
+                                            .withOpacity(0.25),
                                         width: 1),
                                   ),
                                   child: Row(
@@ -425,7 +447,6 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Status pill animado
                             AnimatedContainer(
                               duration: const Duration(milliseconds: 300),
                               padding: const EdgeInsets.symmetric(
@@ -493,8 +514,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
                 color: _emeraldSurface,
                 borderRadius: BorderRadius.circular(30),
@@ -502,7 +523,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.verified_rounded, color: _emerald, size: 15),
+                  Icon(Icons.verified_rounded,
+                      color: _emerald, size: 15),
                   const SizedBox(width: 7),
                   Text(
                     'Meu Perfil Profissional',
@@ -523,6 +545,14 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
           _buildInfoGrid(),
           const SizedBox(height: 28),
 
+          // ── CONTATO (padronizado igual professional_profile_page) ──
+          if (_hasContactInfo()) ...[
+            _sectionLabel('CONTATO'),
+            const SizedBox(height: 12),
+            _buildContactSection(),
+            const SizedBox(height: 28),
+          ],
+
           if (widget.professional.skills.isNotEmpty) ...[
             _sectionLabel('HABILIDADES'),
             const SizedBox(height: 12),
@@ -541,103 +571,112 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
     );
   }
 
-  Widget _buildStatusBanner() {
-    final color    = _isActive ? _emerald : _amber;
-    final bgColor  = _isActive ? _emeraldSurface : _amberSurface;
-    final icon     = _isActive
-        ? Icons.visibility_rounded
-        : Icons.visibility_off_rounded;
-    final title    = _isActive
-        ? 'Perfil visível nas buscas'
-        : 'Perfil pausado';
-    final subtitle = _isActive
-        ? 'Contratantes podem te encontrar e solicitar chat.'
-        : 'Você está invisível. Ative para aparecer nas buscas.';
+  // ── CONTATO (padronizado igual professional_profile_page) ──
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.3), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 22),
+  bool _hasContactInfo() =>
+      widget.professional.email.isNotEmpty ||
+      widget.professional.telefone.isNotEmpty;
+
+  Widget _buildContactSection() {
+    return Column(
+      children: [
+        if (widget.professional.email.isNotEmpty)
+          _contactRow(
+            icon: Icons.mail_outline_rounded,
+            label: 'Email',
+            value: widget.professional.email,
+            color: _blue,
+            onTap: () => _copyToClipboard(
+                widget.professional.email, 'Email copiado!'),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
-                const SizedBox(height: 3),
-                Text(subtitle,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: color.withOpacity(0.8),
-                        height: 1.4)),
-              ],
-            ),
+        if (widget.professional.email.isNotEmpty &&
+            widget.professional.telefone.isNotEmpty)
+          const SizedBox(height: 10),
+        if (widget.professional.telefone.isNotEmpty)
+          _contactRow(
+            icon: Icons.phone_outlined,
+            label: 'Telefone',
+            value: widget.professional.telefone,
+            color: const Color(0xFF059669),
+            onTap: () => _copyToClipboard(
+                widget.professional.telefone, 'Telefone copiado!'),
           ),
-          // Toggle switch
-          GestureDetector(
-            onTap: _isTogglingStatus ? null : _toggleStatus,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 52, height: 28,
+      ],
+    );
+  }
+
+  Widget _contactRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
-                color: _isActive ? _emerald : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(14),
+                color: color.withOpacity(0.09),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Stack(
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    left: _isActive ? 26 : 2,
-                    top: 2,
-                    child: _isTogglingStatus
-                        ? SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: _isActive ? Colors.white : _emerald,
-                            ),
-                          )
-                        : Container(
-                            width: 24, height: 24,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 1))
-                              ],
-                            ),
-                          ),
-                  ),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: _muted,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3)),
+                  const SizedBox(height: 2),
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF111827),
+                          fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
-          ),
-        ],
+            Icon(Icons.copy_rounded, size: 16, color: _muted),
+          ],
+        ),
       ),
     );
+  }
+
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   Widget _sectionLabel(String text) => Text(
@@ -678,7 +717,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
       children: [
         for (int i = 0; i < items.length; i++)
           Padding(
-            padding: EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
+            padding:
+                EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
             child: _detailTile(items[i]),
           ),
       ],
@@ -709,7 +749,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
               color: c.withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(item['icon'] as IconData, color: c, size: 18),
+            child:
+                Icon(item['icon'] as IconData, color: c, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -742,8 +783,8 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
       runSpacing: 8,
       children: widget.professional.skills.map((skill) {
         return Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(30),
@@ -865,7 +906,6 @@ class _MyProfessionalProfilePageState extends State<MyProfessionalProfilePage>
       child: SafeArea(
         child: Row(
           children: [
-            // Botão editar
             Expanded(
               flex: 2,
               child: SizedBox(

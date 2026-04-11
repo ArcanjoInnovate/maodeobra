@@ -5,6 +5,8 @@ class ProfessionalModel {
   final String avatar;
   final String city;
   final String company;
+  final String telefone;   // ✅ NOVO
+  final String email;  
   final String createdAt;
   final String legalType;
   final String localId;
@@ -16,6 +18,7 @@ class ProfessionalModel {
   final String summary;
   final String type;
   final String updatedAt;
+  final String expiresAt; // ✅ NOVO!
 
   ProfessionalModel({
     required this.id,
@@ -30,12 +33,15 @@ class ProfessionalModel {
     required this.skills,
     required this.state,
     required this.status,
+    required this.telefone,   // ✅ NOVO
+    required this.email, 
     required this.summary,
     required this.type,
     required this.updatedAt,
+    required this.expiresAt, // ✅ NOVO!
   });
 
-  // ✅ MÉTODO fromJson (mantido)
+  // ✅ MÉTODO fromJson (mantido + expiresAt)
   factory ProfessionalModel.fromJson(String id, Map<dynamic, dynamic> json) {
     return ProfessionalModel(
       id: id,
@@ -45,6 +51,8 @@ class ProfessionalModel {
       createdAt: json['created_at'] ?? '',
       legalType: json['legal_type'] ?? '',
       localId: json['local_id'] ?? '',
+      telefone: json['telefone']?.toString() ?? '',   // ✅ NOVO
+      email: json['email']?.toString() ?? '',  
       name: json['name'] ?? '',
       profession: json['profession'] ?? '',
       skills: json['skills'] != null 
@@ -55,10 +63,11 @@ class ProfessionalModel {
       summary: json['summary'] ?? '',
       type: json['type'] ?? '',
       updatedAt: json['updated_at'] ?? '',
+      expiresAt: json['expires_at']?.toString() ?? '', // ✅ NOVO!
     );
   }
 
-  // ✅ NOVO: Método fromMap (para compatibilidade com Map<String, dynamic>)
+  // ✅ fromMap (mantido + expiresAt)
   factory ProfessionalModel.fromMap(Map<String, dynamic> map) {
     return ProfessionalModel(
       id: map['id'] ?? '',
@@ -69,8 +78,11 @@ class ProfessionalModel {
       legalType: map['legal_type'] ?? map['legalType'] ?? '',
       localId: map['local_id'] ?? map['localId'] ?? '',
       name: map['name'] ?? '',
+      telefone: map['telefone']?.toString() ?? '',   // ✅ NOVO
+      email: map['email']?.toString() ?? '', 
       profession: map['profession'] ?? '',
       skills: map['skills'] != null 
+      
           ? (map['skills'] is List 
               ? List<String>.from(map['skills']) 
               : <String>[])
@@ -80,6 +92,7 @@ class ProfessionalModel {
       summary: map['summary'] ?? '',
       type: map['type'] ?? '',
       updatedAt: map['updated_at'] ?? map['updatedAt'] ?? '',
+      expiresAt: map['expires_at']?.toString() ?? '', // ✅ NOVO!
     );
   }
 
@@ -88,6 +101,8 @@ class ProfessionalModel {
       'id': id,
       'avatar': avatar,
       'city': city,
+      'telefone': telefone,   // ✅ NOVO
+      'email': email,  
       'company': company,
       'created_at': createdAt,
       'legal_type': legalType,
@@ -100,6 +115,7 @@ class ProfessionalModel {
       'summary': summary,
       'type': type,
       'updated_at': updatedAt,
+      'expires_at': expiresAt, // ✅ NOVO!
     };
   }
 
@@ -133,6 +149,7 @@ class ProfessionalModel {
     String? summary,
     String? type,
     String? updatedAt,
+    String? expiresAt, // ✅ NOVO!
   }) {
     return ProfessionalModel(
       id: id ?? this.id,
@@ -142,6 +159,8 @@ class ProfessionalModel {
       createdAt: createdAt ?? this.createdAt,
       legalType: legalType ?? this.legalType,
       localId: localId ?? this.localId,
+      telefone: telefone ?? this.telefone,   // ✅ NOVO
+      email: email ?? this.email, 
       name: name ?? this.name,
       profession: profession ?? this.profession,
       skills: skills ?? this.skills,
@@ -150,6 +169,7 @@ class ProfessionalModel {
       summary: summary ?? this.summary,
       type: type ?? this.type,
       updatedAt: updatedAt ?? this.updatedAt,
+      expiresAt: expiresAt ?? this.expiresAt, // ✅ NOVO!
     );
   }
 

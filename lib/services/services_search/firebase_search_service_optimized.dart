@@ -6,15 +6,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/search_model/vacancy_model.dart';
 
 
+import 'package:dartobra_new/services/expiration_service.dart'; // ← ADICIONAR
+
 class FirebaseSearchServiceServerPaginated {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  final ExpirationService _expirationService = ExpirationService(); // ← NOVO
 
   Future<PaginatedResult<VacancyModel>> fetchVacanciesPaginated({
     int limit = 20,
     String? endAtKey,
     dynamic endAtValue,
-    Set<String>? chatUserIds, // ✅ NOVO: IDs para excluir
+    Set<String>? chatUserIds,
   }) async {
     try {
       final startTime = DateTime.now();
@@ -42,16 +45,10 @@ class FirebaseSearchServiceServerPaginated {
       if (!snapshot.exists) {
         print('📭 Nenhuma vaga encontrada');
         _printReadStats(startTime, readsEstimated);
-        return PaginatedResult(
-          items: [],
-          hasMore: false,
-          lastKey: null,
-          lastValue: null,
-        );
+        return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
       }
 
       final data = snapshot.value as Map<dynamic, dynamic>;
-      
       final sortedEntries = data.entries.toList()
         ..sort((a, b) {
           final aCreated = a.value['created_at'] ?? '';
@@ -63,9 +60,8 @@ class FirebaseSearchServiceServerPaginated {
       String? newLastKey;
       dynamic newLastValue;
       
-      // ✅ PROCESSA COM FILTROS
       for (var entry in sortedEntries) {
-        if (vacancies.length >= limit) break; // Para quando atingir limite
+        if (vacancies.length >= limit) break;
 
         final key = entry.key.toString();
         final value = entry.value;
@@ -75,13 +71,20 @@ class FirebaseSearchServiceServerPaginated {
         try {
           final vacancy = VacancyModel.fromJson(key, value);
           
-          // ✅ FILTRO 2: Apenas vagas "abertas"
+          // ✅ FILTRO 1: Status deve ser "aberta"
           final status = vacancy.status.toLowerCase();
           if (status != 'aberta' && status != 'open') {
             continue;
           }
           
-          // ✅ FILTRO 3 (CRÍTICO): TEM CHAT COM O DONO? EXCLUI!
+          // ✅ FILTRO 2 CRÍTICO: NÃO EXPIRADA (usa testDate se ativo!)
+          final expiresAt = vacancy.expiresAt;
+          if (expiresAt.isNotEmpty && _expirationService.isExpired(expiresAt)) {
+            print('  🚫 Vaga $key EXCLUÍDA NO SERVIDOR - expirada: $expiresAt');
+            continue;
+          }
+          
+          // ✅ FILTRO 3: TEM CHAT COM O DONO? EXCLUI!
           if (chatUserIds != null && chatUserIds.contains(vacancy.localId)) {
             print('  🚫 Excluindo vaga ${vacancy.id} - chat com ${vacancy.localId}');
             continue;
@@ -97,10 +100,10 @@ class FirebaseSearchServiceServerPaginated {
         }
       }
 
-      // Verifica se tem mais itens
       final hasMore = sortedEntries.length >= fetchLimit && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
+      print('✅ ${vacancies.length} vagas válidas retornadas (de $readsEstimated lidas)');
 
       return PaginatedResult(
         items: vacancies,
@@ -112,12 +115,7 @@ class FirebaseSearchServiceServerPaginated {
     } catch (e, stack) {
       print('❌ Erro ao buscar vagas: $e');
       print('Stack: $stack');
-      return PaginatedResult(
-        items: [],
-        hasMore: false,
-        lastKey: null,
-        lastValue: null,
-      );
+      return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
     }
   }
 
@@ -125,11 +123,11 @@ class FirebaseSearchServiceServerPaginated {
   // 🔥 BUSCAR PROFISSIONAIS COM PAGINAÇÃO
   // ===============================
   Future<PaginatedResult<ProfessionalModel>> fetchProfessionalsPaginated({
-    int limit = 20,
-    String? endAtKey,
-    dynamic endAtValue,
-    Set<String>? chatUserIds, // ✅ NOVO: IDs para excluir
-  }) async {
+  int limit = 20,
+  String? endAtKey,
+  dynamic endAtValue,
+  Set<String>? chatUserIds,
+}) async {
     try {
       
       final startTime = DateTime.now();

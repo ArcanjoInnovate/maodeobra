@@ -783,18 +783,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(
-                                            _legalType == 'PF'
-                                                ? Icons.person
-                                                : Icons.business,
-                                            size: 18,
-                                          ),
-                                          SizedBox(width: 4),
-                                          Text(_legalType,
-                                              style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.black87)),
+                                      
+                                          Text(
+                                            (_legalType == 'NÃO DEFINIDO' || _legalType == '') 
+                                                ? 'Não definido' 
+                                                : _legalType,
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                            maxLines: 2,
+                                          )
                                         ],
                                       ),
                                     ],
@@ -1072,31 +1072,34 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==================== BUILD PRINCIPAL ====================
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFFFFF5F0),
-      appBar: _selectedIndex == 0
-          ? null
-          : AppBar(
-              backgroundColor: Colors.white,
-              elevation: 1,
-              automaticallyImplyLeading: false, // ✅ FIX: Remove o botão arrow_back automático
-              title: Text(
-                _selectedIndex == 4
-                    ? 'Meu Perfil'
-                    : _selectedIndex == 3
-                        ? 'Minhas Vagas'
-                        : _selectedIndex == 2
-                            ? 'Chats'
-                            : _selectedIndex == 1
-                                ? 'Oportunidades'
-                                : 'Buscar Vagas',
-                style: TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20),
-              ),
-              actions: [
+  @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: Color(0xFFFFF5F0),
+    appBar: _selectedIndex == 0
+        ? null
+        : AppBar(
+            backgroundColor: Colors.white,
+            elevation: 1,
+            automaticallyImplyLeading: false,
+            title: Text(
+              _selectedIndex == 4
+                  ? 'Meu Perfil'
+                  : _selectedIndex == 3
+                      ? 'Minhas Vagas'
+                      : _selectedIndex == 2
+                          ? 'Chats'
+                          : _selectedIndex == 1
+                              ? 'Oportunidades'
+                              : 'Buscar Vagas',
+              style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20),
+            ),
+            actions: [
+              // ✅ CORREÇÃO: Mostrar menu apenas na tela de perfil (índice 4)
+              if (_selectedIndex == 4) ...[
                 PopupMenuButton<String>(
                   icon: Icon(Icons.more_vert, color: Colors.black87),
                   shape: RoundedRectangleBorder(
@@ -1135,80 +1138,60 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    PopupMenuDivider(),
-                    PopupMenuItem<String>(
-                      value: 'settings',
-                      child: Row(
-                        children: [
-                          Icon(Icons.settings_outlined,
-                              color: Colors.grey[700], size: 20),
-                          SizedBox(width: 12),
-                          Text('Configurações',
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w500)),
-                        ],
-                      ),
-                    ),
+                    
                   ],
                 ),
-                if (_selectedIndex == 4)
-                  Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: ElevatedButton.icon(
-                      onPressed: editProfile,
-                      icon: Icon(Icons.edit, size: 18),
-                      label: Text('Editar'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
+                Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: editProfile,
+                    icon: Icon(Icons.edit, size: 18),
+                    label: Text('Editar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
+                ),
               ],
-            ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-
-      // ==================== BOTTOM NAV COM BADGES ====================
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'home',
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'buscar',
-          ),
-
-          BottomNavigationBarItem(
-            icon: _buildBadgeIcon(Icons.near_me_outlined, _unreadChats),
-            label: 'chats',
-          ),
-
-          // ✅ Vagas/Requests badge — vem de /badges/{userId}.unread_requests
-          // (Cloud Function já distingue worker x contractor internamente)
-          BottomNavigationBarItem(
-            icon: _buildBadgeIcon(Icons.male, _unreadRequests),
-            label: 'vagas',
-          ),
-
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
-      ),
-    );
+    body: IndexedStack(
+      index: _selectedIndex,
+      children: _screens,
+    ),
+    bottomNavigationBar: BottomNavigationBar(
+      currentIndex: _selectedIndex,
+      onTap: _onItemTapped,
+      type: BottomNavigationBarType.fixed,
+      selectedItemColor: Colors.blue,
+      unselectedItemColor: Colors.grey,
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.home),
+          label: 'home',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.search),
+          label: 'buscar',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildBadgeIcon(Icons.near_me_outlined, _unreadChats),
+          label: 'chats',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildBadgeIcon(Icons.male, _unreadRequests),
+          label: 'vagas',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person),
+          label: 'Perfil',
+        ),
+      ],
+    ),
+  );
   }
 }

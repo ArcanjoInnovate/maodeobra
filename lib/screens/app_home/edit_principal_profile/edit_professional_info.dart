@@ -53,6 +53,8 @@ class _EditProfessionalInfoScreenState
   final TextEditingController _companyController = TextEditingController();
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
+  static const int maxSkills = 4; // ✅ Limite de habilidades
+
   String? selectedLegalType;
   String? selectedProfession;
   String? professionalSummary;
@@ -60,28 +62,38 @@ class _EditProfessionalInfoScreenState
   List<String> selectedSkills = [];
   bool _isSaving = false;
 
+  bool _summaryIsDefined(String s) {
+    final v = s.trim().toLowerCase();
+    return v.isNotEmpty && v != 'não definido' && v != 'nao definido';
+  }
+
+  bool _skillIsValid(String s) {
+    final v = s.trim().toLowerCase();
+    return v.isNotEmpty &&
+        v != 'nenhuma habilidade definida' &&
+        v != 'nenhuma habilidade' &&
+        v != 'não definido' &&
+        v != 'nao definido';
+  }
+
   @override
   void initState() {
     super.initState();
 
-    // Inicializar tipo jurídico
     selectedLegalType = widget.legalType.isNotEmpty ? widget.legalType : 'PF';
+    selectedProfession = widget.profession.isNotEmpty ? widget.profession : null;
 
-    // Inicializar profissão
-    selectedProfession = widget.profession.isNotEmpty
-        ? widget.profession
-        : null;
+    // ✅ Só preenche o resumo se for um valor real
+    if (_summaryIsDefined(widget.summary)) {
+      professionalSummary = widget.summary;
+      _summaryController.text = widget.summary;
+    }
 
-    // Inicializar resumo profissional
-    professionalSummary = widget.summary;
-    _summaryController.text = widget.summary;
-
-    // Inicializar nome da empresa
     companyName = widget.company;
     _companyController.text = widget.company;
 
-    // Inicializar habilidades
-    selectedSkills = List.from(widget.skills);
+    // ✅ Filtra skills inválidas ao inicializar e limita a 4
+    selectedSkills = widget.skills.where(_skillIsValid).take(maxSkills).toList();
   }
 
   @override
@@ -92,39 +104,30 @@ class _EditProfessionalInfoScreenState
   }
 
   Future<void> _saveChanges() async {
-    // Validar nome da empresa se for PJ
     if (selectedLegalType == 'PJ' && (companyName == null || companyName!.trim().isEmpty)) {
       _showSnackBar('Nome da empresa é obrigatório para Pessoa Jurídica', isError: true);
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
-      final dataPath = widget.activeMode == 'worker'
-          ? 'data_worker'
-          : 'data_contractor';
+      final dataPath = widget.activeMode == 'worker' ? 'data_worker' : 'data_contractor';
 
-      // Preparar dados baseado no modo ativo
       Map<String, dynamic> dataToSave = {
         'profession': selectedProfession ?? '',
         'summary': professionalSummary ?? '',
       };
 
-      // Adicionar skills apenas se for worker
       if (widget.activeMode == 'worker') {
         dataToSave['skills'] = selectedSkills;
       }
 
-      // ✅ IMPORTANTE: Atualizar legalType, company e finished_professional
       Map<String, dynamic> userUpdate = {
         'legalType': selectedLegalType,
         'finished_professional': true,
       };
 
-      // Adicionar company apenas se for PJ, ou limpar se for PF
       if (selectedLegalType == 'PJ') {
         dataToSave['company'] = companyName!.trim();
       } else {
@@ -132,8 +135,6 @@ class _EditProfessionalInfoScreenState
       }
 
       await _database.child('Users').child(widget.local_id).update(userUpdate);
-
-      // Atualizar dados específicos do modo
       await _database
           .child('Users')
           .child(widget.local_id)
@@ -143,22 +144,15 @@ class _EditProfessionalInfoScreenState
       _showSnackBar('Informações atualizadas!', isError: false);
       await Future.delayed(const Duration(seconds: 1));
 
-      // Criar cópias atualizadas
-      Map<String, dynamic> updatedWorker = Map<String, dynamic>.from(
-        widget.dataWorker,
-      );
-      Map<String, dynamic> updatedContractor = Map<String, dynamic>.from(
-        widget.dataContractor,
-      );
+      Map<String, dynamic> updatedWorker = Map<String, dynamic>.from(widget.dataWorker);
+      Map<String, dynamic> updatedContractor = Map<String, dynamic>.from(widget.dataContractor);
 
-      // Atualizar o map correspondente ao modo ativo
       if (widget.activeMode == 'worker') {
         updatedWorker = {...updatedWorker, ...dataToSave};
       } else {
         updatedContractor = {...updatedContractor, ...dataToSave};
       }
 
-      // ✅ CORREÇÃO: Retornar legalType e company corretamente
       final returnData = {
         'legalType': selectedLegalType,
         'company': selectedLegalType == 'PJ' ? companyName!.trim() : '',
@@ -166,18 +160,13 @@ class _EditProfessionalInfoScreenState
         'dataWorker': updatedWorker,
         'dataContractor': updatedContractor,
       };
-      
-      print("✅ Retornando legalType: ${returnData['legalType']}");
-      print("✅ Retornando company: ${returnData['company']}");
+
       Navigator.pop(context, returnData);
-      
     } catch (e) {
       debugPrint('Erro ao salvar: $e');
       _showSnackBar('Erro ao salvar alterações', isError: true);
     } finally {
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isSaving = false);
     }
   }
 
@@ -186,10 +175,7 @@ class _EditProfessionalInfoScreenState
       SnackBar(
         content: Row(
           children: [
-            Icon(
-              isError ? Icons.error : Icons.check_circle,
-              color: Colors.white,
-            ),
+            Icon(isError ? Icons.error : Icons.check_circle, color: Colors.white),
             const SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],
@@ -204,9 +190,7 @@ class _EditProfessionalInfoScreenState
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        FocusScope.of(context).unfocus();
-      },
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
@@ -218,10 +202,7 @@ class _EditProfessionalInfoScreenState
           ),
           title: const Text(
             'Informações Profissionais',
-            style: TextStyle(
-              color: Colors.black87,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
           ),
         ),
         body: SingleChildScrollView(
@@ -231,48 +212,30 @@ class _EditProfessionalInfoScreenState
             children: [
               const Text(
                 'Tipo Jurídico',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Color(0xFF374151),
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF374151)),
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(child: _buildLegalTypeOption('PF', 'Pessoa Física')),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildLegalTypeOption('PJ', 'Pessoa Jurídica'),
-                  ),
+                  Expanded(child: _buildLegalTypeOption('PJ', 'Pessoa Jurídica')),
                 ],
               ),
 
-              // Campo de Nome da Empresa (apenas para PJ)
               if (selectedLegalType == 'PJ') ...[
                 const SizedBox(height: 20),
                 const Text(
                   'Nome da Empresa',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Color(0xFF374151),
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF374151)),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _companyController,
-                  onChanged: (value) {
-                    companyName = value;
-                  },
+                  onChanged: (value) => companyName = value,
                   decoration: InputDecoration(
                     hintText: 'Digite o nome da empresa',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Color(0xFFD1D5DB),
-                      ),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     filled: true,
                     fillColor: const Color(0xFFF9FAFB),
                     prefixIcon: const Icon(Icons.business, color: Color(0xFF6B7280)),
@@ -284,40 +247,26 @@ class _EditProfessionalInfoScreenState
 
               ProfessionDropdown(
                 initialValue: selectedProfession,
-                onChanged: (value) {
-                  setState(() {
-                    selectedProfession = value;
-                  });
-                },
+                onChanged: (value) => setState(() => selectedProfession = value),
               ),
 
               const SizedBox(height: 20),
 
               const Text(
                 'Resumo Profissional',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  color: Color(0xFF374151),
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF374151)),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: _summaryController,
                 maxLines: 5,
                 maxLength: 500,
-                onChanged: (value) {
-                  professionalSummary = value;
-                },
+                onChanged: (value) => professionalSummary = value,
                 decoration: InputDecoration(
-                  hintText:
-                      'Conte um pouco sobre você e sua experiência profissional...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  hintText: 'Conte um pouco sobre você e sua experiência profissional...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
-                  counterText: '${_summaryController.text.length}/500',
                 ),
               ),
 
@@ -326,9 +275,14 @@ class _EditProfessionalInfoScreenState
                 SkillsField(
                   initialSkills: selectedSkills,
                   onSkillsChanged: (skills) {
-                    setState(() {
-                      selectedSkills = skills;
-                    });
+                    // ✅ Filtra skills inválidas e limita a 4
+                    final validSkills = skills.where(_skillIsValid).toList();
+                    if (validSkills.length > maxSkills) {
+                      _showSnackBar('Você pode adicionar no máximo $maxSkills habilidades', isError: true);
+                      setState(() => selectedSkills = validSkills.take(maxSkills).toList());
+                    } else {
+                      setState(() => selectedSkills = validSkills);
+                    }
                   },
                 ),
               ],
@@ -342,26 +296,16 @@ class _EditProfessionalInfoScreenState
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF3B82F6),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: _isSaving
                       ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
+                          height: 20, width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                         )
                       : const Text(
                           'Salvar Alterações',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                 ),
               ),
@@ -379,7 +323,6 @@ class _EditProfessionalInfoScreenState
       onTap: () {
         setState(() {
           selectedLegalType = value;
-          // Limpar nome da empresa se mudar para PF
           if (value == 'PF') {
             companyName = '';
             _companyController.clear();
@@ -395,9 +338,7 @@ class _EditProfessionalInfoScreenState
               : const Color(0xFFF9FAFB),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected
-                ? const Color(0xFF3B82F6)
-                : const Color(0xFFD1D5DB),
+            color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFFD1D5DB),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -412,9 +353,7 @@ class _EditProfessionalInfoScreenState
               label,
               style: TextStyle(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected
-                    ? const Color(0xFF3B82F6)
-                    : const Color(0xFF6B7280),
+                color: isSelected ? const Color(0xFF3B82F6) : const Color(0xFF6B7280),
               ),
             ),
           ],

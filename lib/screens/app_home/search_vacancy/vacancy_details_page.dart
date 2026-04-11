@@ -3,6 +3,9 @@
 
 // ignore_for_file: unused_field
 
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:dartobra_new/models/search_model/vacancy_model.dart';
 import 'package:dartobra_new/screens/app_home/complaints/complaint_vacancy.dart';
 import 'package:dartobra_new/services/services_vacancy/profile_validation_service.dart';
@@ -10,7 +13,9 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
+
+// Importação necessária para o BadgeHelper
+// import 'package:dartobra_new/utils/badge_helper.dart'; 
 
 class VacancyDetailPage extends StatefulWidget {
   final VacancyModel vacancy;
@@ -45,10 +50,19 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
   static const Color _ink = Color(0xFF111827);
   static const Color _muted = Color(0xFF6B7280);
   static const Color _border = Color(0xFFE5E7EB);
+  
+  bool _isRequesting = false;           // ✅ Loading
+  bool _hasAlreadyRequested = false;    // ✅ Já solicitou?
+  StreamSubscription<int>? _requestBadgeSubscription;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
+    _checkIfAlreadyRequested(); // Verifica se já se candidatou ao iniciar
+  }
+
+  void _initializeAnimations() {
     _heroCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
     _contentCtrl = AnimationController(
@@ -65,14 +79,37 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
         .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 200),
-        () { if (mounted) _contentCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _contentCtrl.forward();
+    });
+  }
+
+  Future<void> _checkIfAlreadyRequested() async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) return;
+
+    final vacancyId = widget.vacancyId;
+    final db = FirebaseDatabase.instance.ref();
+    final requestsRef = db.child('vacancy/$vacancyId/requests');
+    final snapshot = await requestsRef.get();
+
+    List<dynamic> requestsList = [];
+    if (snapshot.exists && snapshot.value is List) {
+      requestsList = List.from(snapshot.value as List);
+    }
+
+    if (mounted) {
+      setState(() {
+        _hasAlreadyRequested = requestsList.contains(currentUserId);
+      });
+    }
   }
 
   @override
   void dispose() {
     _heroCtrl.dispose();
     _contentCtrl.dispose();
+    _requestBadgeSubscription?.cancel();
     super.dispose();
   }
 
@@ -271,68 +308,23 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
                                 color: Colors.white.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(30),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.25),
+                                  color: Colors.white.withOpacity(0.2),
                                   width: 1,
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF93C5FD),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text('Vaga Disponível',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 0.3,
-                                      )),
-                                ],
+                              child: Text(
+                                widget.vacancy.title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
-                          child: Text(
-                            widget.vacancy.title,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              height: 1.3,
-                              letterSpacing: -0.5,
                             ),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            _surface.withOpacity(0.9),
-                          ],
-                        ),
-                      ),
                     ),
                   ),
                 ],
@@ -344,155 +336,130 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
     );
   }
 
-  // ── Conteúdo principal
+  // ── Conteúdo
   Widget _buildContent() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 28),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-              decoration: BoxDecoration(
-                color: _blueSurface,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: Text(
-                widget.vacancy.profession,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _blue,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-          ),
-
-          _sectionLabel('DETALHES'),
+          _sectionLabel('DETALHES DA VAGA'),
           const SizedBox(height: 12),
-          _buildDetailsGrid(),
-          const SizedBox(height: 28),
-
+          _buildInfoList(),
+          const SizedBox(height: 24),
           if (_hasContactInfo()) ...[
             _sectionLabel('CONTATO'),
             const SizedBox(height: 12),
             _buildContactSection(),
-            const SizedBox(height: 28),
+            const SizedBox(height: 24),
           ],
-
-          _sectionLabel('DESCRIÇÃO DA VAGA'),
+          _sectionLabel('DESCRIÇÃO'),
           const SizedBox(height: 12),
           _buildDescriptionCard(),
-          const SizedBox(height: 28),
-
           if (widget.vacancy.images.isNotEmpty) ...[
-            _sectionLabel('GALERIA'),
+            const SizedBox(height: 24),
+            _sectionLabel('GALERIA DE FOTOS'),
             const SizedBox(height: 12),
             _buildImageGallery(),
-            const SizedBox(height: 28),
           ],
+          const SizedBox(height: 100), // Espaço para o bottom bar
         ],
       ),
     );
   }
 
-  Widget _sectionLabel(String text) => Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: _muted,
-          letterSpacing: 1.2,
-        ),
-      );
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: _muted,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
 
-  // ── Coluna única de detalhes ──
-  Widget _buildDetailsGrid() {
-    final items = <Map<String, dynamic>>[
-      if (_hasValidCompany())
-        {
-          'icon': Icons.business_rounded,
-          'label': 'Empresa',
-          'value': widget.vacancy.company,
-          'color': _blue,
-        },
+  // ── Lista de informações (COLUNA)
+  Widget _buildInfoList() {
+    final items = [
+      {
+        'icon': Icons.business_rounded,
+        'label': 'Empresa',
+        'value': _hasValidCompany() ? widget.vacancy.company : 'Não informado',
+        'color': _blue,
+      },
       {
         'icon': Icons.location_on_rounded,
         'label': 'Localização',
         'value': '${widget.vacancy.city}, ${widget.vacancy.state}',
         'color': const Color(0xFFEF4444),
       },
-      if (widget.vacancy.salary.isNotEmpty)
-        {
-          'icon': Icons.payments_rounded,
-          'label': 'Salário',
-          'value': '${widget.vacancy.salary} · ${widget.vacancy.salaryType}',
-          'color': const Color(0xFF8B5CF6),
-        },
       {
-        'icon': Icons.radio_button_checked_rounded,
-        'label': 'Status',
-        'value': widget.vacancy.status,
-        'color': const Color(0xFFF59E0B),
+        'icon': Icons.payments_rounded,
+        'label': 'Remuneração',
+        'value': widget.vacancy.salary.isNotEmpty ? widget.vacancy.salary : 'Não informado',
+        'color': const Color(0xFF10B981),
       },
+      if (widget.vacancy.type.isNotEmpty)
+        {
+          'icon': Icons.category_rounded,
+          'label': 'Categoria',
+          'value': widget.vacancy.type,
+          'color': const Color(0xFFF59E0B),
+        },
     ];
 
     return Column(
-      children: [
-        for (int i = 0; i < items.length; i++)
-          Padding(
-            padding: EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
-            child: _detailTile(items[i]),
-          ),
-      ],
+      children: items
+          .map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _infoCard(item),
+              ))
+          .toList(),
     );
   }
 
-  Widget _detailTile(Map<String, dynamic> item) {
-    final Color c = item['color'] as Color;
+  Widget _infoCard(Map<String, dynamic> item) {
+    final Color iconColor = item['color'] as Color;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _border, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: c.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
+              color: iconColor.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(item['icon'] as IconData, color: c, size: 18),
+            child: Icon(item['icon'] as IconData, color: iconColor, size: 20),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(item['label'] as String,
-                    style: TextStyle(
-                        fontSize: 10,
+                    style: const TextStyle(
+                        fontSize: 11,
                         color: _muted,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2)),
-                const SizedBox(height: 4),
+                        letterSpacing: 0.3)),
+                const SizedBox(height: 3),
                 Text(item['value'] as String,
                     style: const TextStyle(
                         fontSize: 14,
@@ -506,7 +473,11 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
     );
   }
 
-  // ── Contatos clicáveis com copy
+  // ── CONTATO clicável com copy
+  bool _hasContactInfo() =>
+      widget.vacancy.emailContact.isNotEmpty ||
+      widget.vacancy.phoneContact.isNotEmpty;
+
   Widget _buildContactSection() {
     return Column(
       children: [
@@ -596,6 +567,17 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
     );
   }
 
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   // ── Descrição
   Widget _buildDescriptionCard() {
     final hasDesc = widget.vacancy.description.isNotEmpty;
@@ -635,8 +617,7 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
         itemCount: widget.vacancy.images.length,
         itemBuilder: (context, index) {
           return GestureDetector(
-            onTap: () =>
-                _openFullscreen(widget.vacancy.images, index),
+            onTap: () => _openFullscreen(widget.vacancy.images, index),
             child: Container(
               width: 260,
               margin: EdgeInsets.only(
@@ -737,30 +718,73 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
         child: SizedBox(
           width: double.infinity,
           height: 52,
-          child: ElevatedButton.icon(
-            onPressed: () => _requestChat(),
-            icon: const Icon(Icons.send_rounded, size: 18),
-            label: const Text(
-              'Candidatar-se à Vaga',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _blue,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ),
+          child: _hasAlreadyRequested
+              ? _buildAlreadyRequestedBar()
+              : ElevatedButton.icon(
+                  onPressed: _isRequesting ? null : _requestChat,
+                  icon: _isRequesting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: Text(
+                    _isRequesting ? 'Enviando...' : 'Solicitar chat',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _blue,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: _blue.withOpacity(0.6),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
         ),
       ),
     );
   }
 
-  // ══════════════════════════════
-  // LÓGICA ORIGINAL
-  // ══════════════════════════════
+  // 🔥 NOVA: Barra "Já solicitado"
+  Widget _buildAlreadyRequestedBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F9FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: const Color(0xFF0EA5E9).withOpacity(0.3), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            margin: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0EA5E9).withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.check_circle_rounded,
+                color: Color(0xFF0EA5E9), size: 20),
+          ),
+          const Expanded(
+            child: Text(
+              'Candidatura enviada!',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0369A1),
+              ),
+            ),
+          ),
+          Icon(Icons.arrow_forward_ios_rounded,
+              size: 14, color: const Color(0xFF0EA5E9)),
+        ],
+      ),
+    );
+  }
 
   void _showReportDialog() {
     showDialog(
@@ -791,9 +815,8 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar',
-                style: TextStyle(
-                    color: _muted, fontWeight: FontWeight.w600)),
+            child: const Text('Cancelar',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -818,12 +841,7 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
   void _openReportScreen() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Você precisa estar logado para denunciar'),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      _showError('Você precisa estar logado para denunciar');
       return;
     }
     final reportId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -846,21 +864,6 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
         widget.vacancy.company != '-';
   }
 
-  bool _hasContactInfo() =>
-      widget.vacancy.emailContact.isNotEmpty ||
-      widget.vacancy.phoneContact.isNotEmpty;
-
-  void _copyToClipboard(String text, String message) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 2),
-      backgroundColor: const Color(0xFF059669),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
-  }
-
   void _openFullscreen(List<String> images, int index) {
     Navigator.push(
       context,
@@ -870,99 +873,93 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
       ),
     );
   }
+Future<void> _requestChat() async {
+  if (_isRequesting || _hasAlreadyRequested) return;
+  setState(() => _isRequesting = true);
 
-  Future<void> _requestChat() async {
+  try {
     final validation = await ProfileValidationService.validateWorkerProfile();
     if (!validation.isValid) {
+      setState(() => _isRequesting = false);
       validation.showErrorDialog(context);
       return;
     }
 
     final db = FirebaseDatabase.instance.ref();
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    
+    // ✅ DADOS TRABALHADOR
+    final userSnapshot = await db.child('Users/$currentUserId').get();
+    String workerName = 'Trabalhador';
+    String workerAvatar = '';
+    if (userSnapshot.exists) {
+      final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+      workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
+      workerAvatar = userData['avatar'] ?? '';
+    }
 
-    if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Você precisa estar logado'),
-        backgroundColor: Colors.red.shade700,
-      ));
+    // 🔥 LÊ REQUESTS (ROBUSTO)
+    final requestsSnapshot = await db.child('vacancy/${widget.vacancyId}/requests').get();
+    List<String> requestsList = [];
+    
+    if (requestsSnapshot.exists && requestsSnapshot.value != null) {
+      final data = requestsSnapshot.value;
+      if (data is List) {
+        requestsList = data.cast<String>();
+      } else if (data is Map) {
+        requestsList = data.values.map((v) => v.toString()).toList();
+      }
+    }
+
+    // Evita duplicatas
+    if (requestsList.contains(currentUserId)) {
+      setState(() {
+        _isRequesting = false;
+        _hasAlreadyRequested = true;
+      });
+      _showError('Você já se candidatou');
       return;
     }
 
-    final vacancyId = widget.vacancy.id;
+    // ✅ ADICIONA
+    requestsList.add(currentUserId);
 
-    try {
-      final userSnapshot = await db.child('Users/$currentUserId').get();
-      String workerName = 'Trabalhador';
-      String workerAvatar = '';
-      if (userSnapshot.exists) {
-        final userData =
-            Map<String, dynamic>.from(userSnapshot.value as Map);
-        workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
-        workerAvatar = userData['avatar'] ?? '';
-      }
+    // 🔥 SALVA COMO LIST (SEMPRE)
+    await db.child('vacancy/${widget.vacancyId}/requests').set(requestsList);
 
-      final requestsRef =
-          db.child('vacancy').child(vacancyId).child('requests');
-      final snapshot = await requestsRef.get();
-      List<dynamic> requestsList = [];
-      if (snapshot.exists && snapshot.value is List) {
-        requestsList = List.from(snapshot.value as List);
-      }
+    // Views
+    await db.child('vacancy/${widget.vacancyId}/views/request_views/$currentUserId').set({
+      'viewed_by_owner': false,
+      'applied_at': DateTime.now().millisecondsSinceEpoch,
+      'worker_name': workerName,
+      'worker_avatar': workerAvatar,
+    });
 
-      if (requestsList.contains(currentUserId)) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Você já se candidatou a esta vaga'),
-          backgroundColor: Colors.orange.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ));
-        return;
-      }
+    _showSuccess('Candidatura enviada!');
+    
+  } catch (e) {
+    print('❌ $e');
+    _showError('Erro: $e');
+  } finally {
+    setState(() => _isRequesting = false);
+  }
+}
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red.shade700,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
 
-      requestsList.add(currentUserId);
-
-      final updates = <String, dynamic>{};
-      updates['vacancy/$vacancyId/requests'] = requestsList;
-      updates['vacancy/$vacancyId/views/request_views/$currentUserId'] = {
-        'viewed_by_owner': false,
-        'applied_at': DateTime.now().millisecondsSinceEpoch,
-        'worker_name': workerName,
-        'worker_avatar': workerAvatar,
-      };
-
-      final statsSnapshot =
-          await db.child('vacancy/$vacancyId/stats').get();
-      int totalApplications = 0;
-      if (statsSnapshot.exists) {
-        final stats =
-            Map<String, dynamic>.from(statsSnapshot.value as Map);
-        totalApplications = stats['total_applications'] ?? 0;
-      }
-      updates['vacancy/$vacancyId/stats/total_applications'] =
-          totalApplications + 1;
-      updates['vacancy/$vacancyId/stats/last_application_at'] =
-          DateTime.now().millisecondsSinceEpoch;
-
-      await db.update(updates);
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Candidatura enviada com sucesso!'),
-        backgroundColor: const Color(0xFF059669),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
-
-      Navigator.pop(context);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao enviar candidatura: $e'),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
-    }
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 }
 

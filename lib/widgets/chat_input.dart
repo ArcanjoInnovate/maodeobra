@@ -126,12 +126,7 @@ class _ChatInputState extends State<ChatInput> with SingleTickerProviderStateMix
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
-              // Botão de anexo (opcional)
-              IconButton(
-                icon: Icon(Icons.add_circle_outline),
-                color: Theme.of(context).primaryColor,
-                onPressed: widget.isEnabled ? _handleAttachment : null,
-              ),
+              
 
               // Campo de texto
               Expanded(

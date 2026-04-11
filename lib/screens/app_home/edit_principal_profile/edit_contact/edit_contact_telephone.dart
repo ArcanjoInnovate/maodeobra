@@ -24,12 +24,15 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
   final TextEditingController _phoneController = TextEditingController();
   bool _isSaving = false;
 
+  bool get _phoneIsDefined {
+    final p = widget.userPhone.trim().toLowerCase();
+    return p.isNotEmpty && p != 'não definido' && p != 'nao definido';
+  }
+
   @override
   void initState() {
     super.initState();
-    
-    // Preenche o campo com o telefone atual se existir
-    if (widget.userPhone.isNotEmpty) {
+    if (_phoneIsDefined) {
       _phoneController.text = widget.userPhone;
     }
   }
@@ -52,8 +55,6 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
     return '(${numbers.substring(0, 2)}) ${numbers.substring(2, 7)}-${numbers.substring(7, 11)}';
   }
 
-  /// ✅ OTIMIZADO: Usa o cache service para verificar telefone
-  /// Reduz para 0 leituras em verificações subsequentes (dentro de 5 min)
   Future<bool> _checkPhoneExists(String phone) async {
     try {
       return await ValidationCache.checkPhoneExists(
@@ -71,19 +72,16 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
     try {
       String cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
       
-      // Prepara os dados para atualização
       Map<String, dynamic> updateData = {
         'telefone': cleanPhone,
       };
 
-      // ✅ Se o email_contact não estiver vazio e não for "Não definido", marca finished_contact como true
       if (widget.email_contact.isNotEmpty && 
           widget.email_contact.toLowerCase() != 'não definido' &&
           widget.email_contact != 'Não definido') {
         updateData['finished_contact'] = true;
       }
 
-      // Atualiza os dados no Firebase
       await FirebaseDatabase.instance
           .ref()
           .child('Users')
@@ -91,9 +89,6 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
           .update(updateData);
       
       print('✅ Telefone salvo no Firebase: $cleanPhone');
-      if (updateData.containsKey('finished_contact')) {
-        print('✅ finished_contact marcado como true');
-      }
     } catch (e) {
       print('❌ Erro ao salvar telefone no Firebase: $e');
       throw Exception('Erro ao salvar telefone');
@@ -108,51 +103,35 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
       return;
     }
 
-    setState(() {
-      _isSaving = true;
-    });
+    setState(() => _isSaving = true);
 
     try {
-      // ✅ Verificar se o telefone já está em uso (com cache)
       bool phoneExists = await _checkPhoneExists(phone);
       
       if (phoneExists) {
-        setState(() {
-          _isSaving = false;
-        });
+        setState(() => _isSaving = false);
         _showSnackBar('Este telefone já está sendo usado por outro usuário', isError: true);
         return;
       }
 
-      // ✅ Salvar no Firebase
       await _savePhoneToFirebase(phone);
-
-      // ✅ Invalida o cache do telefone antigo
       ValidationCache.invalidatePhone(widget.userPhone);
 
-      setState(() {
-        _isSaving = false;
-      });
-
+      setState(() => _isSaving = false);
       _showSnackBar('Telefone atualizado com sucesso!', isError: false);
 
-      // ✅ Aguardar um pouco antes de voltar
-      await Future.delayed(Duration(milliseconds: 800));
+      await Future.delayed(const Duration(milliseconds: 800));
       
-      // ✅ Retornar o novo telefone formatado para a tela anterior
       if (mounted) {
         Navigator.pop(context, _formatPhone(phone));
       }
     } catch (e) {
-      setState(() {
-        _isSaving = false;
-      });
+      setState(() => _isSaving = false);
       
       String errorMessage = 'Erro ao salvar telefone. Tente novamente.';
       if (e.toString().contains('connection')) {
         errorMessage = 'Erro de conexão. Verifique sua internet.';
       }
-      
       _showSnackBar(errorMessage, isError: true);
     }
   }
@@ -162,18 +141,15 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
       SnackBar(
         content: Row(
           children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle,
-              color: Colors.white,
-            ),
-            SizedBox(width: 12),
+            Icon(isError ? Icons.error_outline : Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],
         ),
         backgroundColor: isError ? Colors.red : Colors.green,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: EdgeInsets.all(16),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -197,11 +173,7 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
           ),
           title: const Text(
             'Editar Telefone',
-            style: TextStyle(
-              color: Color(0xFF2D3142),
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Color(0xFF2D3142), fontSize: 20, fontWeight: FontWeight.w600),
           ),
           centerTitle: true,
         ),
@@ -212,24 +184,15 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
               children: [
                 SizedBox(height: screenHeight * 0.04),
 
-                // Icon
                 Container(
                   width: screenWidth * 0.25,
                   height: screenWidth * 0.25,
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.phone_android,
-                    size: screenWidth * 0.13,
-                    color: Colors.blue[700],
-                  ),
+                  decoration: BoxDecoration(color: Colors.blue[50], shape: BoxShape.circle),
+                  child: Icon(Icons.phone_android, size: screenWidth * 0.13, color: Colors.blue[700]),
                 ),
 
                 SizedBox(height: screenHeight * 0.03),
 
-                // Title
                 Text(
                   'Atualizar Telefone',
                   style: TextStyle(
@@ -241,19 +204,14 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
 
                 SizedBox(height: screenHeight * 0.012),
 
-                // Subtitle
                 Text(
                   'Digite seu novo número de telefone',
-                  style: TextStyle(
-                    fontSize: screenHeight * 0.018,
-                    color: Colors.grey[600],
-                  ),
+                  style: TextStyle(fontSize: screenHeight * 0.018, color: Colors.grey[600]),
                   textAlign: TextAlign.center,
                 ),
 
                 SizedBox(height: screenHeight * 0.04),
 
-                // Phone Input
                 TextField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
@@ -265,9 +223,7 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
                     final formatted = _formatPhone(value);
                     _phoneController.value = TextEditingValue(
                       text: formatted,
-                      selection: TextSelection.collapsed(
-                        offset: formatted.length,
-                      ),
+                      selection: TextSelection.collapsed(offset: formatted.length),
                     );
                   },
                   decoration: InputDecoration(
@@ -275,10 +231,7 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
                     hintStyle: TextStyle(color: Colors.grey[400]),
                     filled: true,
                     fillColor: Colors.grey[50],
-                    prefixIcon: Icon(
-                      Icons.phone,
-                      color: Colors.blue[600],
-                    ),
+                    prefixIcon: Icon(Icons.phone, color: Colors.blue[600]),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(color: Colors.grey[300]!),
@@ -289,45 +242,33 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.blue,
-                        width: 2,
-                      ),
+                      borderSide: const BorderSide(color: Colors.blue, width: 2),
                     ),
                   ),
                 ),
 
                 SizedBox(height: screenHeight * 0.03),
 
-                // Save Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _isSaving ? null : _savePhone,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
-                      padding: EdgeInsets.symmetric(
-                        vertical: screenHeight * 0.02,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      padding: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
                     child: _isSaving
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
+                        ? const SizedBox(
+                            height: 20, width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                           )
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.save, color: Colors.white),
-                              SizedBox(width: 8),
+                              const Icon(Icons.save, color: Colors.white),
+                              const SizedBox(width: 8),
                               Text(
                                 'Salvar Telefone',
                                 style: TextStyle(
@@ -343,34 +284,26 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
 
                 SizedBox(height: screenHeight * 0.02),
 
-                // Info Text
                 Container(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.blue[50],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.blue[700],
-                        size: 20,
-                      ),
-                      SizedBox(width: 12),
+                      Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'O telefone não pode estar em uso por outro usuário',
-                          style: TextStyle(
-                            fontSize: screenHeight * 0.015,
-                            color: Colors.blue[900],
-                          ),
+                          style: TextStyle(fontSize: screenHeight * 0.015, color: Colors.blue[900]),
                         ),
                       ),
                     ],
                   ),
                 ),
-                
+
                 SizedBox(height: screenHeight * 0.02),
               ],
             ),

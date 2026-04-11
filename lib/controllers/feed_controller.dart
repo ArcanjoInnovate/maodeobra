@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dartobra_new/models/search_model/professional_model.dart';
 import 'package:dartobra_new/models/search_model/vacancy_model.dart';
@@ -9,6 +10,7 @@ enum FeedMode { worker, contractor, unified }
 
 class FeedController with ChangeNotifier {
   final FirebaseFeedService _feedService = FirebaseFeedService();
+  String? _currentUserId;
   final IBGEService _ibgeService = IBGEService();
 
   // ===============================
@@ -63,23 +65,33 @@ class FeedController with ChangeNotifier {
   List<Estado> get availableStates => _availableStates;
   List<Cidade> get availableCities => _availableCities;
 
-  List<VacancyModel> get filteredVacancies => _allVacancies;
-  List<ProfessionalModel> get filteredProfessionals => _allProfessionals;
+  List<VacancyModel> get filteredVacancies => _allVacancies.where((v) {
+    // Própria vaga sempre visível
+    if (_currentUserId != null && v.localId == _currentUserId) return true;
+    // Usuário com chat ou bloqueado: jamais aparece
+    return !_chatUserIds.contains(v.localId);
+  }).toList();
+
+  List<ProfessionalModel> get filteredProfessionals => _allProfessionals.where((p) {
+    // Próprio perfil sempre visível
+    if (_currentUserId != null && p.localId == _currentUserId) return true;
+    // Usuário com chat ou bloqueado: jamais aparece
+    return !_chatUserIds.contains(p.localId);
+  }).toList();
 
   // ✅ FEED UNIFICADO: intercala vagas e profissionais
   List<dynamic> get unifiedFeed {
-    final List<dynamic> combined = [];
-    final vacancies = List<VacancyModel>.from(_allVacancies);
-    final professionals = List<ProfessionalModel>.from(_allProfessionals);
+  final List<dynamic> combined = [];
+  final vacancies = filteredVacancies;        // ← era _allVacancies
+  final professionals = filteredProfessionals; // ← era _allProfessionals
 
-    // Intercala: 1 vaga, 1 profissional, alternando
-    int vi = 0, pi = 0;
-    while (vi < vacancies.length || pi < professionals.length) {
-      if (vi < vacancies.length) combined.add(vacancies[vi++]);
-      if (pi < professionals.length) combined.add(professionals[pi++]);
-    }
-    return combined;
+  int vi = 0, pi = 0;
+  while (vi < vacancies.length || pi < professionals.length) {
+    if (vi < vacancies.length) combined.add(vacancies[vi++]);
+    if (pi < professionals.length) combined.add(professionals[pi++]);
   }
+  return combined;
+}
 
   String get feedStats {
     final total = _allVacancies.length + _allProfessionals.length;
@@ -88,9 +100,9 @@ class FeedController with ChangeNotifier {
 
   // ✅ VERIFICA SE HÁ FILTROS ATIVOS
   bool get hasActiveFilters {
-    return _filterState != null || 
-           _filterCity != null || 
-           _preferredProfession != null;
+    return _filterState != null ||
+        _filterCity != null ||
+        _preferredProfession != null;
   }
 
   // ===============================
@@ -114,7 +126,7 @@ class FeedController with ChangeNotifier {
     print('\n🚀 ========================================');
     print('   INICIALIZANDO FEED CONTROLLER UNIFICADO');
     print('========================================');
-
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _feedMode = FeedMode.unified;
     _filterState = initialState;
     _filterCity = initialCity;
@@ -152,7 +164,10 @@ class FeedController with ChangeNotifier {
   }
 
   Future<void> _loadCities(String uf) async {
-    if (uf.isEmpty) { _availableCities = []; return; }
+    if (uf.isEmpty) {
+      _availableCities = [];
+      return;
+    }
     _loadingCities = true;
     notifyListeners();
     try {
@@ -185,7 +200,8 @@ class FeedController with ChangeNotifier {
     if (_requestsLoaded) return;
     try {
       _requestedVacancyIds = await _feedService.fetchRequestedVacancyIds();
-      _requestedProfessionalIds = await _feedService.fetchRequestedProfessionalIds();
+      _requestedProfessionalIds =
+          await _feedService.fetchRequestedProfessionalIds();
       _requestsLoaded = true;
       notifyListeners();
     } catch (e) {
@@ -236,7 +252,7 @@ class FeedController with ChangeNotifier {
           chatUserIds: _chatUserIds,
           requestedVacancyIds: _requestedVacancyIds,
           limit: 15,
-          lastCreatedAt: _lastCreatedAt,
+          lastCreatedAt: _lastUpdatedAt,
           lastKey: _lastVacancyKey,
         );
         _allVacancies.addAll(resultV.items);
@@ -265,7 +281,8 @@ class FeedController with ChangeNotifier {
         print('   ✅ ${resultP.items.length} profissionais carregados');
       }
 
-      print('   📊 Total no feed: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
+      print(
+          '   📊 Total no feed: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
       notifyListeners();
     } catch (e) {
       print('❌ Erro ao carregar mais itens: $e');
@@ -305,7 +322,7 @@ class FeedController with ChangeNotifier {
     await _loadInitialFeed();
     _isLoading = false;
     notifyListeners();
-    
+
     print('✅ Filtros aplicados com sucesso!');
     print('========================================\n');
   }

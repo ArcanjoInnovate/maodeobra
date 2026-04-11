@@ -295,10 +295,253 @@ class BadgeHelper {
     }
   }
 
+
+  static Future<int> getUnreadMessagesCountByRole(String userId, String role) async {
+  try {
+    final field = role == 'employee' ? 'employee' : 'contractor';
+    
+    // 1. Busca todos os chats do usuário neste role
+    final chatsSnapshot = await _database
+        .child('Chats')
+        .orderByChild(field)
+        .equalTo(userId)
+        .get();
+
+    if (!chatsSnapshot.exists) {
+      return 0;
+    }
+
+    final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
+    int totalUnreadMessages = 0;
+
+    // 2. Para cada chat, conta mensagens não lidas
+    for (var chatEntry in chats.entries) {
+      final chatId = chatEntry.key.toString();
+      final chatData = chatEntry.value as Map<dynamic, dynamic>;
+      
+      // Pega unreadCount deste chat
+      final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
+      if (unreadCountData != null) {
+        final myUnread = (unreadCountData[role] as int?) ?? 0;
+        
+        // Se tem mensagens não lidas, conta TODAS as mensagens não lidas deste chat
+        if (myUnread > 0) {
+          final messagesCount = await _countUnreadMessagesInChat(chatId, userId, role);
+          totalUnreadMessages += messagesCount;
+          debugPrint('  Chat $chatId: $messagesCount mensagens não lidas');
+        }
+      }
+    }
+
+    debugPrint('✅ Total de mensagens não lidas ($role): $totalUnreadMessages');
+    return totalUnreadMessages;
+  } catch (e) {
+    debugPrint('❌ Erro ao contar mensagens: $e');
+    return 0;
+  }
+}
+
+/// Conta mensagens não lidas em um chat específico
+static Future<int> _countUnreadMessagesInChat(
+  String chatId,
+  String userId,
+  String role,
+) async {
+  try {
+    final readField = role == 'employee' 
+        ? 'read_by_employee' 
+        : 'read_by_contractor';
+
+    final messagesSnapshot = await _database
+        .child('ChatMessages/$chatId')
+        .get();
+
+    if (!messagesSnapshot.exists) {
+      return 0;
+    }
+
+    final messages = messagesSnapshot.value as Map<dynamic, dynamic>;
+    int unreadCount = 0;
+
+    for (var messageEntry in messages.entries) {
+      if (messageEntry.key == '_placeholder') continue;
+      
+      final message = messageEntry.value as Map<dynamic, dynamic>;
+      
+      // Verifica se é mensagem do outro usuário (não minha)
+      final senderId = message['sender_id']?.toString() ?? '';
+      if (senderId == userId) continue; // Ignora minhas próprias mensagens
+      
+      // Verifica se não foi lida
+      final isRead = message[readField] == true;
+      if (!isRead) {
+        unreadCount++;
+      }
+    }
+
+    return unreadCount;
+  } catch (e) {
+    debugPrint('❌ Erro ao contar mensagens do chat $chatId: $e');
+    return 0;
+  }
+}
+
+// ========================================
+// STREAM DE MENSAGENS NÃO LIDAS POR ROLE
+// ========================================
+
+/// Stream do total de mensagens não lidas
+static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role) {
+  final field = role == 'employee' ? 'employee' : 'contractor';
+  
+  return _database
+      .child('Chats')
+      .orderByChild(field)
+      .equalTo(userId)
+      .onValue
+      .asyncMap((event) async {
+    if (!event.snapshot.exists) {
+      return 0;
+    }
+
+    final chats = event.snapshot.value as Map<dynamic, dynamic>;
+    int totalUnreadMessages = 0;
+
+    for (var chatEntry in chats.entries) {
+      final chatId = chatEntry.key.toString();
+      final chatData = chatEntry.value as Map<dynamic, dynamic>;
+      
+      final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
+      if (unreadCountData != null) {
+        final myUnread = (unreadCountData[role] as int?) ?? 0;
+        
+        if (myUnread > 0) {
+          final messagesCount = await _countUnreadMessagesInChat(chatId, userId, role);
+          totalUnreadMessages += messagesCount;
+        }
+      }
+    }
+
+    return totalUnreadMessages;
+  });
+}
+
   // ========================================
   // CONTAR CHATS NÃO LIDOS POR ROLE
   // ========================================
+  static Future<void> recalculateMessageBadge(String userId) async {
+    try {
+      debugPrint('🔥 RECALCULANDO BADGE POR MENSAGENS: $userId');
+      
+      int totalUnreadMessages = 0;
+
+      // Chats como EMPLOYEE
+      await _countAllUnreadMessages(userId, 'employee', totalUnreadMessages);
+      
+      // Chats como CONTRACTOR  
+      await _countAllUnreadMessages(userId, 'contractor', totalUnreadMessages);
+
+      // Salvar em badges/$userId/unread_messages
+      final badgeRef = _database.child('badges/$userId');
+      await badgeRef.runTransaction((current) {
+        final data = current == null 
+            ? {'unread_messages': totalUnreadMessages}
+            : Map<String, dynamic>.from(current as Map);
+        
+        data['unread_messages'] = totalUnreadMessages.clamp(0, 99);
+        data['updated_at'] = ServerValue.timestamp;
+        
+        return Transaction.success(data);
+      });
+
+      debugPrint('✅ TOTAL MENSAGENS NÃO LIDAS: ${totalUnreadMessages.clamp(0, 99)}');
+      
+    } catch (e) {
+      debugPrint('❌ Erro recalculateMessageBadge: $e');
+    }
+  }
+
+  /// Conta mensagens não lidas de TODOS os chats de um role
+  static Future<void> _countAllUnreadMessages(
+    String userId, 
+    String userRole, 
+    int totalUnreadMessages // Referência para somar
+  ) async {
+    final field = userRole == 'employee' ? 'employee' : 'contractor';
+    final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+    
+    final chatsSnapshot = await _database
+        .child('Chats')
+        .orderByChild(field)
+        .equalTo(userId)
+        .get();
+
+    if (!chatsSnapshot.exists) return;
+
+    final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
+    for (var chatEntry in chats.entries) {
+      final chatId = chatEntry.key.toString();
+      
+      // Conta mensagens não lidas DESTE chat
+      final msgSnapshot = await _database
+          .child('ChatMessages/$chatId')
+          .orderByChild(readField)
+          .equalTo(false)
+          .get();
+
+      if (msgSnapshot.exists) {
+        final count = (msgSnapshot.value as Map).length;
+        totalUnreadMessages += count;
+        debugPrint('  💬 $chatId ($userRole): +$count msgs');
+      }
+    }
+  }
+
+  // ========================================
+  // 3️⃣ Contar mensagens de UM chat específico
+  // ========================================
   
+  static Future<int> getUnreadMessageCountInChat(String chatId, String userRole) async {
+    try {
+      final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+      
+      final snapshot = await _database
+          .child('ChatMessages/$chatId')
+          .orderByChild(readField)
+          .equalTo(false)
+          .get();
+
+      return snapshot.exists ? (snapshot.value as Map).length : 0;
+    } catch (e) {
+      debugPrint('❌ Erro contar msgs $chatId: $e');
+      return 0;
+    }
+  }
+
+  // ========================================
+  // 4️⃣ STREAMS para UI
+  // ========================================
+  
+  /// Stream TOTAL mensagens não lidas
+  static Stream<int> getMessageBadgeStream(String userId) {
+    return _database
+        .child('badges/$userId/unread_messages')
+        .onValue
+        .map((event) => (event.snapshot.value as int?)?.clamp(0, 99) ?? 0);
+  }
+
+  /// Stream mensagens não lidas de UM chat
+  static Stream<int> getUnreadMessageCountStream(String chatId, String userRole) {
+    final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+    
+    return _database
+        .child('ChatMessages/$chatId')
+        .orderByChild(readField)
+        .equalTo(false)
+        .onValue
+        .map((event) => event.snapshot.exists ? (event.snapshot.value as Map).length : 0);
+  }
+
   static Future<int> getUnreadCountByRole(String userId, String role) async {
     try {
       final field = role == 'employee' ? 'employee' : 'contractor';

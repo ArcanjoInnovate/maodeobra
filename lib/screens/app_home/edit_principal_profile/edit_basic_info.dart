@@ -70,10 +70,18 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
   bool _isCheckingImage = false;
   double _uploadProgress = 0.0;
 
+  bool _nameIsDefined(String name) {
+    final n = name.trim().toLowerCase();
+    return n.isNotEmpty && n != 'não definido' && n != 'nao definido';
+  }
+
   @override
   void initState() {
     super.initState();
-    _nameController.text = widget.userName;
+    // ✅ Só preenche o nome se ele for um valor real
+    if (_nameIsDefined(widget.userName)) {
+      _nameController.text = widget.userName;
+    }
     _ageController.text = widget.userAge > 0 ? widget.userAge.toString() : '';
     selectedState = widget.userState.isNotEmpty ? widget.userState : null;
     selectedCity = widget.userCity.isNotEmpty ? widget.userCity : null;
@@ -166,10 +174,8 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
         ? 'para tirar sua foto de perfil'
         : 'para escolher sua foto de perfil';
 
-    // 1️⃣ Checa/solicita permissão
     var result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
 
-    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
     if (result == PermissionResult.denied) {
       final wantsToRetry = await PermissionUtil.showPermissionDialog(
         context: context,
@@ -177,14 +183,10 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
         permissionLabel: label,
         usageReason: reason,
       );
-
       if (!wantsToRetry) return;
-
       result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
     }
 
-    // 3️⃣ Ainda sem permissão → mostra diálogo correto
-    // (permanentlyDenied abre configurações, denied avisa e encerra)
     if (result != PermissionResult.granted) {
       await PermissionUtil.showPermissionDialog(
         context: context,
@@ -195,7 +197,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       return;
     }
 
-    // 4️⃣ Permissão concedida → abre picker
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -207,7 +208,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       if (image != null) {
         final file = File(image.path);
 
-        // ── Moderação via Vision API ────────────────────────────────────────
         setState(() => _isCheckingImage = true);
         final approved = await checkAndShowModerationDialog(
           context,
@@ -224,7 +224,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
             _currentAvatarUrl = null;
           });
         }
-        // Se reprovada, mantém a foto anterior sem alteração
       }
     } catch (e) {
       debugPrint('Erro ao selecionar imagem: $e');
@@ -282,12 +281,10 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
             'Erro no Upload',
             'Não foi possível fazer upload da imagem. Deseja salvar sem atualizar a foto?',
           );
-
           if (!shouldContinue) {
             setState(() => _isSaving = false);
             return;
           }
-
           avatarUrl = _currentAvatarUrl;
         } else {
           if (_oldAvatarUrl != null && _oldAvatarUrl!.isNotEmpty) {
@@ -439,15 +436,9 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                                 width: 2,
                               ),
                               image: _profileImage != null
-                                  ? DecorationImage(
-                                      image: FileImage(_profileImage!),
-                                      fit: BoxFit.cover,
-                                    )
+                                  ? DecorationImage(image: FileImage(_profileImage!), fit: BoxFit.cover)
                                   : _currentAvatarUrl != null
-                                      ? DecorationImage(
-                                          image: NetworkImage(_currentAvatarUrl!),
-                                          fit: BoxFit.cover,
-                                        )
+                                      ? DecorationImage(image: NetworkImage(_currentAvatarUrl!), fit: BoxFit.cover)
                                       : null,
                             ),
                             child: (_profileImage == null && _currentAvatarUrl == null)
@@ -484,14 +475,9 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Nome
                   const Text(
                     'Nome Completo',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF374151),
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF374151)),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -508,21 +494,15 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Idade
                   const Text(
                     'Idade',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Color(0xFF374151),
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF374151)),
                   ),
                   const SizedBox(height: 8),
                   AgeTextField(controller: _ageController),
 
                   const SizedBox(height: 20),
 
-                  // Estado
                   Listener(
                     onPointerDown: (_) => _removeFocusCompletely(),
                     child: StateDropdown(
@@ -540,7 +520,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Cidade
                   Listener(
                     onPointerDown: (_) => _removeFocusCompletely(),
                     child: CityDropdown(
@@ -556,7 +535,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
 
                   const SizedBox(height: 32),
 
-                  // Botão Salvar
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -570,17 +548,12 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                       ),
                       child: _isSaving
                           ? const SizedBox(
-                              height: 20,
-                              width: 20,
+                              height: 20, width: 20,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
                           : const Text(
                               'Salvar Alterações',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                             ),
                     ),
                   ),
@@ -588,7 +561,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
               ),
             ),
 
-            // Overlay de upload com progress
             if (_isSaving && _uploadProgress > 0)
               Container(
                 color: Colors.black54,
@@ -606,10 +578,8 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                             strokeWidth: 3,
                           ),
                           const SizedBox(height: 16),
-                          Text(
-                            'Enviando: ${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                            style: const TextStyle(fontSize: 16),
-                          ),
+                          Text('Enviando: ${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(fontSize: 16)),
                         ],
                       ),
                     ),
@@ -617,37 +587,29 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                 ),
               ),
 
-            // Overlay de verificação de imagem
             if (_isCheckingImage)
               Container(
                 color: Colors.black54,
                 child: Center(
                   child: Card(
                     margin: const EdgeInsets.all(20),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 20),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                Color(0xFF3B82F6)),
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
                             strokeWidth: 3,
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            'Verificando imagem...',
-                            style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600),
-                          ),
+                          const Text('Verificando imagem...',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 6),
                           Text(
                             'Garantindo que o conteúdo é seguro\npara nossa comunidade',
-                            style:
-                                TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             textAlign: TextAlign.center,
                           ),
                         ],

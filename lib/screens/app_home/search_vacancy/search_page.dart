@@ -1,8 +1,12 @@
 // lib/pages/search_page.dart
 
 import 'package:dartobra_new/controllers/search_controller.dart' as search;
+import 'package:dartobra_new/models/search_model/vacancy_model.dart';
+import 'package:dartobra_new/screens/app_home/search_vacancy/my_vacancy_details_page.dart'; // ✅ NOVO
+import 'package:dartobra_new/screens/feed_screen/vacancy_detail.dart';
 import 'package:dartobra_new/widgets/professional_card.dart';
 import 'package:dartobra_new/widgets/vacancy_card.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
@@ -19,19 +23,18 @@ class _SearchPageState extends State<SearchPage> {
   final ScrollController _scrollController = ScrollController();
   Timer? _debounce;
 
+  String get _currentUserId =>
+      FirebaseAuth.instance.currentUser?.uid ?? '';
+
   @override
   void initState() {
     super.initState();
-    
-    // ✅ Carrega dados apenas na primeira vez
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final controller = context.read<search.SearchController>();
       if (!controller.isLoading) {
         controller.initialize();
       }
     });
-
-    // ✅ Setup scroll listener para load more
     _scrollController.addListener(_onScroll);
   }
 
@@ -43,19 +46,15 @@ class _SearchPageState extends State<SearchPage> {
     super.dispose();
   }
 
-  // ✅ SCROLL INFINITO
   void _onScroll() {
-    if (_scrollController.position.pixels >= 
+    if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent * 0.8) {
-      // Carrega mais quando chegar a 80% do scroll
       context.read<search.SearchController>().loadMoreItems();
     }
   }
 
-  // ✅ PULL TO REFRESH - FORÇA REFRESH COMPLETO
   Future<void> _refreshData() async {
-    final controller = context.read<search.SearchController>();
-    await controller.forceRefresh();
+    await context.read<search.SearchController>().forceRefresh();
   }
 
   void _onSearchChanged(String query) {
@@ -64,6 +63,54 @@ class _SearchPageState extends State<SearchPage> {
       context.read<search.SearchController>().updateSearchQuery(query);
     });
   }
+
+  // ── Navegação ──────────────────────────────────────────────────────────────
+
+  void _openVacancyDetail(VacancyModel vacancy) {
+    final isOwn = vacancy.localId == _currentUserId;
+
+    if (isOwn) {
+      // ✅ Abre tela de visualização da própria vaga
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MyVacancyDetailPage(
+            vacancy: vacancy,
+            onEditVacancy: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text(
+                      'Vá para a aba "Vagas" para editar sua vaga'),
+                  backgroundColor: Colors.orange.shade700,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 3),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            },
+            localId: _currentUserId,
+          ),
+        ),
+      );
+    } else {
+      // ✅ Abre tela de detalhes normal
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VacancyDetailsScreen(
+            vacancy: vacancy.toMap(),
+            currentUserId: _currentUserId,
+            vacancyId: vacancy.id,
+            reportedId: vacancy.localId,
+          ),
+        ),
+      );
+    }
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -78,10 +125,8 @@ class _SearchPageState extends State<SearchPage> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text(
-                    'Carregando dados...',
-                    style: TextStyle(color: Colors.grey),
-                  ),
+                  Text('Carregando dados...',
+                      style: TextStyle(color: Colors.grey)),
                 ],
               ),
             );
@@ -94,29 +139,19 @@ class _SearchPageState extends State<SearchPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 80,
-                      color: Colors.red.shade300,
-                    ),
+                    Icon(Icons.error_outline,
+                        size: 80, color: Colors.red.shade300),
                     const SizedBox(height: 24),
-                    Text(
-                      'Ops! Algo deu errado',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade800,
-                      ),
-                    ),
+                    Text('Ops! Algo deu errado',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade800)),
                     const SizedBox(height: 12),
-                    Text(
-                      controller.errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    Text(controller.errorMessage!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 15, color: Colors.grey.shade600)),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
                       onPressed: () => controller.initialize(),
@@ -126,9 +161,7 @@ class _SearchPageState extends State<SearchPage> {
                         backgroundColor: Colors.blue.shade700,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
+                            horizontal: 24, vertical: 12),
                       ),
                     ),
                   ],
@@ -141,7 +174,6 @@ class _SearchPageState extends State<SearchPage> {
             onRefresh: _refreshData,
             child: Column(
               children: [
-                // Barra de busca e filtros
                 Container(
                   color: Colors.white,
                   child: Column(
@@ -156,20 +188,20 @@ class _SearchPageState extends State<SearchPage> {
                               onChanged: _onSearchChanged,
                               decoration: InputDecoration(
                                 hintText: 'Buscar...',
-                                hintStyle: TextStyle(color: Colors.grey.shade500),
-                                prefixIcon: Icon(
-                                  Icons.search,
-                                  color: Colors.grey.shade600,
-                                ),
-                                suffixIcon: _searchController.text.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear),
-                                        onPressed: () {
-                                          _searchController.clear();
-                                          controller.updateSearchQuery('');
-                                        },
-                                      )
-                                    : null,
+                                hintStyle:
+                                    TextStyle(color: Colors.grey.shade500),
+                                prefixIcon: Icon(Icons.search,
+                                    color: Colors.grey.shade600),
+                                suffixIcon:
+                                    _searchController.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              controller.updateSearchQuery('');
+                                            },
+                                          )
+                                        : null,
                                 filled: true,
                                 fillColor: Colors.grey.shade100,
                                 border: OutlineInputBorder(
@@ -177,14 +209,12 @@ class _SearchPageState extends State<SearchPage> {
                                   borderSide: BorderSide.none,
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 14,
-                                ),
+                                    horizontal: 16, vertical: 14),
                               ),
                             ),
                             const SizedBox(height: 16),
 
-                            // Toggle de tipo - CORRIGIDO
+                            // Toggle profissionais / vagas
                             Container(
                               decoration: BoxDecoration(
                                 color: Colors.grey.shade100,
@@ -206,30 +236,26 @@ class _SearchPageState extends State<SearchPage> {
                                 selected: {controller.searchType},
                                 onSelectionChanged:
                                     (Set<search.SearchType> newSelection) {
-                                      // ✅ CORRIGIDO: changeSearchType ao invés de toggleSearchType
-                                      controller.changeSearchType(
-                                        newSelection.first,
-                                      );
-                                    },
+                                  controller
+                                      .changeSearchType(newSelection.first);
+                                },
                                 style: ButtonStyle(
                                   backgroundColor:
-                                      WidgetStateProperty.resolveWith((states) {
-                                        if (states.contains(
-                                          WidgetState.selected,
-                                        )) {
-                                          return Colors.blue.shade700;
-                                        }
-                                        return Colors.transparent;
-                                      }),
+                                      WidgetStateProperty.resolveWith(
+                                          (states) {
+                                    if (states.contains(WidgetState.selected)) {
+                                      return Colors.blue.shade700;
+                                    }
+                                    return Colors.transparent;
+                                  }),
                                   foregroundColor:
-                                      WidgetStateProperty.resolveWith((states) {
-                                        if (states.contains(
-                                          WidgetState.selected,
-                                        )) {
-                                          return Colors.white;
-                                        }
-                                        return Colors.grey.shade700;
-                                      }),
+                                      WidgetStateProperty.resolveWith(
+                                          (states) {
+                                    if (states.contains(WidgetState.selected)) {
+                                      return Colors.white;
+                                    }
+                                    return Colors.grey.shade700;
+                                  }),
                                 ),
                               ),
                             ),
@@ -243,16 +269,14 @@ class _SearchPageState extends State<SearchPage> {
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                         child: Row(
                           children: [
-                            // Filtro de Estado
                             _buildFilterChip(
                               label: controller.selectedState ?? 'Estado',
                               icon: Icons.map_outlined,
                               selected: controller.selectedState != null,
-                              onTap: () => _showStatePicker(context, controller),
+                              onTap: () =>
+                                  _showStatePicker(context, controller),
                             ),
                             const SizedBox(width: 8),
-
-                            // Filtro de Cidade
                             _buildFilterChip(
                               label: controller.selectedCity ?? 'Cidade',
                               icon: Icons.location_city_outlined,
@@ -262,8 +286,7 @@ class _SearchPageState extends State<SearchPage> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        'Selecione um estado primeiro',
-                                      ),
+                                          'Selecione um estado primeiro'),
                                       duration: Duration(seconds: 2),
                                     ),
                                   );
@@ -274,18 +297,16 @@ class _SearchPageState extends State<SearchPage> {
                               enabled: controller.selectedState != null,
                             ),
                             const SizedBox(width: 8),
-
-                            // Filtro de Profissão
                             _buildFilterChip(
-                              label: controller.selectedProfession ?? 'Profissão',
+                              label:
+                                  controller.selectedProfession ?? 'Profissão',
                               icon: Icons.work_outline,
-                              selected: controller.selectedProfession != null,
+                              selected:
+                                  controller.selectedProfession != null,
                               onTap: () =>
                                   _showProfessionPicker(context, controller),
                             ),
                             const SizedBox(width: 8),
-
-                            // Limpar filtros
                             if (controller.selectedCity != null ||
                                 controller.selectedState != null ||
                                 controller.selectedProfession != null ||
@@ -300,7 +321,6 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                 ),
 
-                // Lista de resultados
                 Expanded(child: _buildResultsList(controller)),
               ],
             ),
@@ -309,6 +329,8 @@ class _SearchPageState extends State<SearchPage> {
       ),
     );
   }
+
+  // ── Filter chips ───────────────────────────────────────────────────────────
 
   Widget _buildFilterChip({
     required String label,
@@ -321,36 +343,40 @@ class _SearchPageState extends State<SearchPage> {
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? Colors.blue.shade700 : Colors.grey.shade100,
+          color: selected
+              ? Colors.blue.shade700
+              : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? Colors.blue.shade700 : Colors.grey.shade300,
+            color: selected
+                ? Colors.blue.shade700
+                : Colors.grey.shade300,
             width: 1,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: selected
-                  ? Colors.white
-                  : (enabled ? Colors.grey.shade700 : Colors.grey.shade400),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            Icon(icon,
+                size: 18,
                 color: selected
                     ? Colors.white
-                    : (enabled ? Colors.grey.shade700 : Colors.grey.shade400),
-              ),
-            ),
+                    : (enabled
+                        ? Colors.grey.shade700
+                        : Colors.grey.shade400)),
+            const SizedBox(width: 6),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: selected
+                        ? Colors.white
+                        : (enabled
+                            ? Colors.grey.shade700
+                            : Colors.grey.shade400))),
           ],
         ),
       ),
@@ -365,7 +391,8 @@ class _SearchPageState extends State<SearchPage> {
       },
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.red.shade50,
           borderRadius: BorderRadius.circular(20),
@@ -376,25 +403,21 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             Icon(Icons.close, size: 18, color: Colors.red.shade700),
             const SizedBox(width: 6),
-            Text(
-              'Limpar',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.red.shade700,
-              ),
-            ),
+            Text('Limpar',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.red.shade700)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildResultsList(search.SearchController controller) {
-    final isProfessionals =
-        controller.searchType == search.SearchType.professionals;
+  // ── Listas de resultados ───────────────────────────────────────────────────
 
-    if (isProfessionals) {
+  Widget _buildResultsList(search.SearchController controller) {
+    if (controller.searchType == search.SearchType.professionals) {
       return _buildProfessionalsList(controller);
     } else {
       return _buildVacanciesList(controller);
@@ -402,158 +425,141 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildProfessionalsList(search.SearchController controller) {
-    final professionals = controller.filteredProfessionals;
-
-    if (professionals.isEmpty && !controller.isLoadingMore) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height - 300,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.person_off_outlined,
-                  size: 80,
-                  color: Colors.grey.shade300,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Nenhum profissional encontrado',
+  final professionals = controller.filteredProfessionals;
+ 
+  if (professionals.isEmpty && !controller.isLoadingMore) {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height - 300,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person_off_outlined,
+                  size: 72, color: Colors.grey.shade200),
+              const SizedBox(height: 16),
+              Text('Nenhum profissional encontrado',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tente ajustar os filtros',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                ),
-              ],
-            ),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600)),
+              const SizedBox(height: 6),
+              Text('Tente ajustar os filtros',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+            ],
           ),
         ),
-      );
-    }
-  final showLoader = controller.isLoadingMore && professionals.isNotEmpty;
-    return ListView.builder(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 12, bottom: 16),
-
-
-      itemCount: professionals.length + (showLoader ? 1 : 0),
-
-      itemBuilder: (context, index) {
-        // ✅ Loading indicator no final
-        if (showLoader && index == professionals.length) {
-
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: CircularProgressIndicator(
-                color: Colors.blue.shade700,
-              ),
-            ),
-          );
-        }
-
-        return ProfessionalCard(
-          professional: professionals[index],
-        );
-      },
+      ),
     );
   }
+ 
+  final showLoader = controller.isLoadingMore && professionals.isNotEmpty;
+ 
+  return ListView.builder(
+    controller: _scrollController,
+    physics: const AlwaysScrollableScrollPhysics(),
+    // ✅ padding horizontal para a sombra do card não ser cortada
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+    itemCount: professionals.length + (showLoader ? 1 : 0),
+    itemBuilder: (context, index) {
+      if (showLoader && index == professionals.length) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: CircularProgressIndicator(color: Colors.blue.shade700),
+          ),
+        );
+      }
+      return ProfessionalCard(professional: professionals[index]);
+    },
+  );
+}
 
   Widget _buildVacanciesList(search.SearchController controller) {
-    final vacancies = controller.filteredVacancies;
-
-    if (vacancies.isEmpty && !controller.isLoadingMore) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height - 300,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.work_off_outlined,
-                  size: 80,
-                  color: Colors.grey.shade300,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Nenhuma vaga encontrada',
+  final vacancies = controller.filteredVacancies;
+ 
+  if (vacancies.isEmpty && !controller.isLoadingMore) {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height - 300,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.work_off_outlined,
+                  size: 72, color: Colors.grey.shade200),
+              const SizedBox(height: 16),
+              Text('Nenhuma vaga encontrada',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tente ajustar os filtros',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                ),
-              ],
-            ),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600)),
+              const SizedBox(height: 6),
+              Text('Tente ajustar os filtros',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+            ],
           ),
         ),
-      );
-    }
-
-    return ListView.builder(
-      controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 12, bottom: 16),
-      itemCount: vacancies.length + (controller.isLoadingMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        // ✅ Loading indicator no final
-        if (index == vacancies.length) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: CircularProgressIndicator(
-                color: Colors.blue.shade700,
-              ),
-            ),
-          );
-        }
-
-        return VacancyCard(vacancy: vacancies[index]);
-      },
+      ),
     );
   }
+ 
+  final showLoader = controller.isLoadingMore && vacancies.isNotEmpty;
+ 
+  return ListView.builder(
+    controller: _scrollController,
+    physics: const AlwaysScrollableScrollPhysics(),
+    // ✅ padding horizontal para a sombra do card não ser cortada
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+    itemCount: vacancies.length + (showLoader ? 1 : 0),
+    itemBuilder: (context, index) {
+      if (showLoader && index == vacancies.length) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: CircularProgressIndicator(color: Colors.blue.shade700),
+          ),
+        );
+      }
+ 
+      final vacancy = vacancies[index];
+      final isOwn = vacancy.localId == _currentUserId;
+ 
+      return VacancyCardWithExpiration(
+        vacancy: vacancy.toMap(),
+        isOwn: isOwn,
+        onTap: () => _openVacancyDetail(vacancy),
+      );
+    },
+  );
+}
+
+  // ── Pickers ────────────────────────────────────────────────────────────────
 
   void _showStatePicker(
-    BuildContext context,
-    search.SearchController controller,
-  ) {
+      BuildContext context, search.SearchController controller) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const Text(
-                  'Selecione o Estado',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('Selecione o Estado',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close)),
               ],
             ),
           ),
@@ -574,19 +580,18 @@ class _SearchPageState extends State<SearchPage> {
                   (estado) => ListTile(
                     leading: CircleAvatar(
                       backgroundColor: Colors.blue.shade50,
-                      child: Text(
-                        estado.sigla,
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
+                      child: Text(estado.sigla,
+                          style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12)),
                     ),
                     title: Text(estado.nome),
-                    trailing: controller.selectedState == estado.sigla
-                        ? Icon(Icons.check, color: Colors.blue.shade700)
-                        : null,
+                    trailing:
+                        controller.selectedState == estado.sigla
+                            ? Icon(Icons.check,
+                                color: Colors.blue.shade700)
+                            : null,
                     onTap: () {
                       controller.selectState(estado.sigla);
                       Navigator.pop(context);
@@ -602,14 +607,13 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _showCityPicker(
-    BuildContext context,
-    search.SearchController controller,
-  ) {
+      BuildContext context, search.SearchController controller) {
     if (controller.loadingCidades) {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (context) =>
+            const Center(child: CircularProgressIndicator()),
       );
       return;
     }
@@ -618,23 +622,22 @@ class _SearchPageState extends State<SearchPage> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const Text(
-                  'Selecione a Cidade',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('Selecione a Cidade',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close)),
               ],
             ),
           ),
@@ -655,9 +658,11 @@ class _SearchPageState extends State<SearchPage> {
                   (cidade) => ListTile(
                     leading: const Icon(Icons.location_city),
                     title: Text(cidade.nome),
-                    trailing: controller.selectedCity == cidade.nome
-                        ? Icon(Icons.check, color: Colors.blue.shade700)
-                        : null,
+                    trailing:
+                        controller.selectedCity == cidade.nome
+                            ? Icon(Icons.check,
+                                color: Colors.blue.shade700)
+                            : null,
                     onTap: () {
                       controller.selectCity(cidade.nome);
                       Navigator.pop(context);
@@ -673,39 +678,37 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _showProfessionPicker(
-    BuildContext context,
-    search.SearchController controller,
-  ) {
+      BuildContext context, search.SearchController controller) {
     final professions = controller.getAvailableProfessions();
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const Text(
-                  'Selecione a Profissão',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('Selecione a Profissão',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close)),
               ],
             ),
           ),
           const Divider(height: 1),
           Expanded(
             child: professions.isEmpty
-                ? const Center(child: Text('Nenhuma profissão disponível'))
+                ? const Center(
+                    child: Text('Nenhuma profissão disponível'))
                 : ListView(
                     children: [
                       ListTile(
@@ -721,9 +724,11 @@ class _SearchPageState extends State<SearchPage> {
                         (profession) => ListTile(
                           leading: const Icon(Icons.work),
                           title: Text(profession),
-                          trailing: controller.selectedProfession == profession
-                              ? Icon(Icons.check, color: Colors.blue.shade700)
-                              : null,
+                          trailing:
+                              controller.selectedProfession == profession
+                                  ? Icon(Icons.check,
+                                      color: Colors.blue.shade700)
+                                  : null,
                           onTap: () {
                             controller.selectProfession(profession);
                             Navigator.pop(context);

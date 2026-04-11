@@ -1,8 +1,9 @@
-// lib/controllers/search_controller_fixed.dart
+// lib/controllers/search_controller.dart
 
 // ignore_for_file: unused_field
 
 import 'package:dartobra_new/models/search_model/professional_model.dart';
+import 'package:dartobra_new/services/expiration_service.dart';
 import 'package:dartobra_new/services/services_cache/cache_service.dart';
 import 'package:dartobra_new/services/services_search/firebase_search_service_optimized.dart';
 import 'package:dartobra_new/services/services_search/professionals_service.dart';
@@ -16,6 +17,7 @@ enum SearchType { professionals, vacancies }
 class SearchController extends ChangeNotifier {
   final FirebaseSearchServiceServerPaginated _firebaseService = 
       FirebaseSearchServiceServerPaginated();
+  final ExpirationService _expirationService = ExpirationService();
   final IBGEService _ibgeService = IBGEService();
   final CacheService _cacheService = CacheService();
 
@@ -91,6 +93,8 @@ class SearchController extends ChangeNotifier {
   bool get hasMore => _searchType == SearchType.professionals 
       ? _hasMoreProfessionals 
       : _hasMoreVacancies;
+      
+        
 
   bool hasRequestedVacancy(String vacancyId) =>
       _requestedVacancyIds.contains(vacancyId);
@@ -449,6 +453,7 @@ class SearchController extends ChangeNotifier {
   /// - Mostra próprio card (usuário pode ver suas próprias vagas/perfil)
   /// - NÃO mostra se já solicitou
   /// - NÃO mostra se já tem chat (CRÍTICO)
+  /// - NÃO mostra se expirado (NOVO)
   
   bool _matchesProfessional(ProfessionalModel prof, String query) {
     if (query.isEmpty) return true;
@@ -479,58 +484,75 @@ class SearchController extends ChangeNotifier {
 
   void _applyFilters() {
     print('🔍 Aplicando filtros...');
-
+ 
     // ✅ PROFISSIONAIS
     _filteredProfessionals = _allProfessionals.where((prof) {
-      // ✅ MOSTRA próprio perfil (permite ver seu próprio card)
-      // Mas se já solicitou ou tem chat, não mostra botão de ação
-      
-      // ✅ NÃO MOSTRA: quem já solicitou (se requests carregados)
+      // NÃO MOSTRA: perfis expirados (por status ou por expires_at)
+      if (prof.status.toLowerCase() == 'expired') return false;
+ 
+      // NÃO MOSTRA: quem já solicitou
       if (_requestsLoaded && _requestedProfessionalIds.contains(prof.localId)) {
         return false;
       }
-      
-      // ✅ NÃO MOSTRA: quem já tem chat (se chats carregados)
+ 
+      // NÃO MOSTRA: quem já tem chat
       if (_chatsLoaded && _chatUserIds.contains(prof.localId)) {
-        print('  🚫 Excluindo profissional ${prof.id} do filtro - chat existente');
         return false;
       }
-      
+ 
       // Filtros de busca
       if (!_matchesProfessional(prof, _searchQuery)) return false;
-      if (_selectedState != null && prof.state.toLowerCase() != _selectedState!.toLowerCase()) return false;
-      if (_selectedCity != null && prof.city.toLowerCase() != _selectedCity!.toLowerCase()) return false;
-      if (_selectedProfession != null && prof.profession.toLowerCase() != _selectedProfession!.toLowerCase()) return false;
-      
+      if (_selectedState != null &&
+          prof.state.toLowerCase() != _selectedState!.toLowerCase()) return false;
+      if (_selectedCity != null &&
+          prof.city.toLowerCase() != _selectedCity!.toLowerCase()) return false;
+      if (_selectedProfession != null &&
+          prof.profession.toLowerCase() != _selectedProfession!.toLowerCase()) return false;
+ 
       return true;
     }).toList();
+    // 🧪 DEBUG - Execute UMA VEZ para ver os status reais
+print('🔍 DEBUG VAGAS (${_allVacancies.length}):');
+    for (var vac in _allVacancies.take(5)) {  // Primeiras 5
+      print('  ID: ${vac.id} | Status: "${vac.status}" | expiresAt: "${vac.expiresAt}"');
+    }
 
-    // ✅ VAGAS
     _filteredVacancies = _allVacancies.where((vac) {
-      // ✅ NÃO MOSTRA: vagas que já solicitou
-      if (_requestsLoaded && _requestedVacancyIds.contains(vac.id)) {
+      // 🚫 NÃO MOSTRA: status expirada OU pausada
+      final statusLower = vac.status.toLowerCase();
+      if (statusLower == 'expirada' || statusLower == 'pausada') {
+        print('  🚫 Vaga ${vac.id} removida — status: ${vac.status}');
         return false;
       }
-      
-      // ✅ NÃO MOSTRA: vagas de pessoas com quem já tem chat
-      if (_chatsLoaded && _chatUserIds.contains(vac.localId)) {
-        print('  🚫 Excluindo vaga ${vac.id} do filtro - chat existente');
+
+      // 🚫 NÃO MOSTRA: expires_at expirado (48h)
+      if (vac.expiresAt.isNotEmpty && _expirationService.isExpired(vac.expiresAt)) {
+        print('  🚫 Vaga ${vac.id} removida — expires_at expirado');
         return false;
-      }
-      
+  }
+ 
+      // NÃO MOSTRA: vagas que já solicitou
+      if (_requestsLoaded && _requestedVacancyIds.contains(vac.id)) return false;
+ 
+      // NÃO MOSTRA: vagas de pessoas com quem já tem chat
+      if (_chatsLoaded && _chatUserIds.contains(vac.localId)) return false;
+ 
       // Filtros de busca
       if (!_matchesVacancy(vac, _searchQuery)) return false;
-      if (_selectedState != null && vac.state.toLowerCase() != _selectedState!.toLowerCase()) return false;
-      if (_selectedCity != null && vac.city.toLowerCase() != _selectedCity!.toLowerCase()) return false;
-      if (_selectedProfession != null && vac.profession.toLowerCase() != _selectedProfession!.toLowerCase()) return false;
-      
+      if (_selectedState != null &&
+          vac.state.toLowerCase() != _selectedState!.toLowerCase()) return false;
+      if (_selectedCity != null &&
+          vac.city.toLowerCase() != _selectedCity!.toLowerCase()) return false;
+      if (_selectedProfession != null &&
+          vac.profession.toLowerCase() != _selectedProfession!.toLowerCase()) return false;
+ 
       return true;
     }).toList();
-
+ 
     print('✅ Filtros aplicados:');
     print('   - Profissionais: ${_filteredProfessionals.length}/${_allProfessionals.length}');
     print('   - Vagas: ${_filteredVacancies.length}/${_allVacancies.length}');
-
+ 
     notifyListeners();
   }
 

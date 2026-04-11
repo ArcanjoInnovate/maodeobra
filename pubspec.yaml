@@ -2,7 +2,7 @@ name: dartobra_new
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+7
+version: 1.0.0+13
 
 environment:
   sdk: ^3.5.0
@@ -17,6 +17,7 @@ dependencies:
   # Firebase (VERSÕES COMPATÍVEIS COM firebase_core ^2.27.0)
   firebase_core: ^2.27.0
   firebase_database: ^10.5.7
+  rxdart: ^0.28.0
   firebase_auth: ^4.20.0
   device_info_plus: ^9.0.0
   firebase_storage: ^11.7.7

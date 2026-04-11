@@ -1,17 +1,24 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
-    "esModuleInterop": true,
-    "moduleResolution": "nodenext",
+    "module": "commonjs",
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "outDir": "lib",
     "sourceMap": true,
     "strict": true,
-    "target": "es2017"
+    "target": "es2017",
+    "rootDir": "./src",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
   "compileOnSave": true,
   "include": [
     "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.spec.ts"
   ]
 }

@@ -39,22 +39,27 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen>
     with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
+
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
 
-  // Controla scroll automático
-  int _previousMessageCount = 0;
-  bool _initialScrollDone = false;
+  int  _previousMessageCount = 0;
+  bool _initialScrollDone    = false;
 
   int _recipientUnreadCount = 0;
 
   String get _recipientRole =>
       widget.userRole == 'contractor' ? 'employee' : 'contractor';
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  LIFECYCLE
+  // ══════════════════════════════════════════════════════════════════════════
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeChat();
       _setupScrollListener();
@@ -70,59 +75,62 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     }
   }
 
-  void _setupRecipientUnreadStream() {
-    ChatServiceFinal()
-        .getUnreadCountStream(widget.chatId, _recipientRole)
-        .listen((count) {
-      if (mounted) {
-        setState(() => _recipientUnreadCount = count);
-      }
-    });
+  /// Detecta abertura/fechamento do teclado pelo tamanho do viewport.
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted) return;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardHeight > 0) {
+      _scrollAfterKeyboard();
+    }
   }
 
-  Future<void> _initializeChat() async {
-    if (!mounted) return;
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
+    try {
+      context.read<ChatControllerFinal>().leaveChat();
+    } catch (e) {
+      debugPrint('❌ Erro ao sair do chat: $e');
+    }
+    super.dispose();
+  }
 
-    final controller = context.read<ChatControllerFinal>();
-    await controller.initializeChat(
-      chatId: widget.chatId,
-      contractorId: widget.contractorId,
-      employeeId: widget.employeeId,
-      userRole: widget.userRole,
-    );
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SCROLL HELPERS
+  // ══════════════════════════════════════════════════════════════════════════
 
-    await _markBadgeAsRead();
-
-    // Scroll inicial após carregar mensagens
-    if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom(animated: false);
-        _initialScrollDone = true;
+  /// Dispara múltiplos scrolls escalonados para garantir que a lista chegue ao
+  /// fim após o teclado terminar de animar (layout muda em etapas).
+  void _scrollAfterKeyboard() {
+    for (final ms in [100, 300, 600]) {
+      Future.delayed(Duration(milliseconds: ms), () {
+        if (mounted && _scrollController.hasClients) _scrollToBottom();
       });
     }
   }
 
-  Future<void> _markBadgeAsRead() async {
-    try {
-      await BadgeHelper.markChatAsRead(
-        widget.chatId,
-        widget.userId,
-        widget.userRole,
+  void _scrollToBottom({bool animated = true}) {
+    if (!_scrollController.hasClients) return;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    if (animated) {
+      _scrollController.animateTo(
+        maxExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
       );
-    } catch (e) {
-      debugPrint('❌ Erro ao atualizar badge: $e');
+    } else {
+      _scrollController.jumpTo(maxExtent);
     }
   }
 
-  Future<void> _markAsRead() async {
-    if (!mounted) return;
-    try {
-      final controller = context.read<ChatControllerFinal>();
-      await controller.markAsRead();
-      await _markBadgeAsRead();
-    } catch (e) {
-      debugPrint('❌ Erro ao marcar como lido: $e');
-    }
+  bool get _isNearBottom {
+    if (!_scrollController.hasClients) return true;
+    return (_scrollController.position.maxScrollExtent -
+            _scrollController.position.pixels) <=
+        150;
   }
 
   void _setupScrollListener() {
@@ -151,45 +159,70 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     });
   }
 
-  /// Rola para o fim da lista
-  void _scrollToBottom({bool animated = true}) {
-    if (!_scrollController.hasClients) return;
+  // ══════════════════════════════════════════════════════════════════════════
+  //  CHAT INIT / READ
+  // ══════════════════════════════════════════════════════════════════════════
 
-    if (animated) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    } else {
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+  Future<void> _initializeChat() async {
+    if (!mounted) return;
+
+    final controller = context.read<ChatControllerFinal>();
+    await controller.initializeChat(
+      chatId: widget.chatId,
+      contractorId: widget.contractorId,
+      employeeId: widget.employeeId,
+      userRole: widget.userRole,
+    );
+
+    await _markBadgeAsRead();
+
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom(animated: false);
+        _initialScrollDone = true;
+      });
     }
   }
 
-  /// Verifica se o usuário está perto do fim da lista
-  bool get _isNearBottom {
-    if (!_scrollController.hasClients) return true;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final current = _scrollController.position.pixels;
-    // Considera "perto do fim" se estiver a menos de 150px do final
-    return (maxScroll - current) <= 150;
+  void _setupRecipientUnreadStream() {
+    ChatServiceFinal()
+        .getUnreadCountStream(widget.chatId, _recipientRole)
+        .listen((count) {
+      if (mounted) setState(() => _recipientUnreadCount = count);
+    });
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _scrollController.dispose();
+  Future<void> _markBadgeAsRead() async {
     try {
-      context.read<ChatControllerFinal>().leaveChat();
+      await BadgeHelper.markChatAsRead(
+        widget.chatId,
+        widget.userId,
+        widget.userRole,
+      );
     } catch (e) {
-      debugPrint('❌ Erro ao sair do chat: $e');
+      debugPrint('❌ Erro ao atualizar badge: $e');
     }
-    super.dispose();
   }
+
+  Future<void> _markAsRead() async {
+    if (!mounted) return;
+    try {
+      final controller = context.read<ChatControllerFinal>();
+      await controller.markAsRead();
+      await _markBadgeAsRead();
+    } catch (e) {
+      debugPrint('❌ Erro ao marcar como lido: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BUILD
+  // ══════════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: _buildAppBar(),
       body: Consumer<ChatControllerFinal>(
         builder: (context, controller, child) {
@@ -201,18 +234,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
             return _buildErrorWidget(controller.error!);
           }
 
-          // ✅ Detecta nova mensagem e rola automaticamente
+          // Detecta nova mensagem e rola automaticamente
           final currentCount = controller.messages.length;
-          if (_initialScrollDone &&
-              currentCount > _previousMessageCount) {
+          if (_initialScrollDone && currentCount > _previousMessageCount) {
             _previousMessageCount = currentCount;
-
-            // Só rola automático se o usuário estiver perto do fim
-            // (não interrompe quem está lendo mensagens antigas)
             if (_isNearBottom) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _scrollToBottom();
-              });
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => _scrollToBottom());
             }
           } else {
             _previousMessageCount = currentCount;
@@ -231,10 +259,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
               ChatInput(
                 onSendMessage: (text) async {
                   await controller.sendMessage(text);
-                  // Sempre rola ao enviar mensagem própria
+                  // Scroll imediato + fallbacks escalonados após envio
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) _scrollToBottom();
                   });
+                  for (final ms in [100, 300]) {
+                    Future.delayed(Duration(milliseconds: ms), () {
+                      if (mounted && _scrollController.hasClients) {
+                        _scrollToBottom();
+                      }
+                    });
+                  }
                 },
                 isEnabled: !controller.isSending,
               ),
@@ -244,6 +279,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       ),
     );
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WIDGETS
+  // ══════════════════════════════════════════════════════════════════════════
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
@@ -293,14 +332,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           onSelected: _handleMenuAction,
           itemBuilder: (context) => [
             const PopupMenuItem(
-              value: 'clear',
-              child: Row(children: [
-                Icon(Icons.delete_sweep, size: 20),
-                SizedBox(width: 8),
-                Text('Limpar conversa'),
-              ]),
-            ),
-            const PopupMenuItem(
               value: 'denunciar',
               child: Row(children: [
                 Icon(Icons.warning, size: 20),
@@ -320,8 +351,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 16),
-      itemCount: controller.messages.length +
-          (controller.isLoadingMore ? 1 : 0),
+      itemCount:
+          controller.messages.length + (controller.isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (controller.isLoadingMore && index == 0) {
           return const Center(
@@ -332,8 +363,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           );
         }
 
-        final messageIndex =
-            controller.isLoadingMore ? index - 1 : index;
+        final messageIndex = controller.isLoadingMore ? index - 1 : index;
         final message = controller.messages[messageIndex];
         final isSentByMe = controller.isSentByMe(message);
 
@@ -353,10 +383,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
               message: message,
               isSentByMe: isSentByMe,
               myRole: widget.userRole,
-              
               avatarUrl: isSentByMe ? null : widget.otherUserAvatar,
-              onLongPress: () =>
-                  _showMessageOptions(message, isSentByMe),
+              onLongPress: () => _showMessageOptions(message, isSentByMe),
             ),
           ],
         );
@@ -377,8 +405,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       margin: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.grey[200],
             borderRadius: BorderRadius.circular(12),
@@ -401,8 +428,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline,
-              size: 80, color: Colors.grey[300]),
+          Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text('Nenhuma mensagem ainda',
               style: TextStyle(fontSize: 18, color: Colors.grey[600])),
@@ -449,6 +475,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  ACTIONS
+  // ══════════════════════════════════════════════════════════════════════════
+
   void _showMessageOptions(Message message, bool isSentByMe) {
     showModalBottomSheet(
       context: context,
@@ -482,8 +512,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Deletar mensagem'),
-        content:
-            const Text('Tem certeza que deseja deletar esta mensagem?'),
+        content: const Text('Tem certeza que deseja deletar esta mensagem?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
@@ -500,7 +529,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   void _handleMenuAction(String action) {
     switch (action) {
       case 'clear':
-        _confirmClearChat();
         break;
       case 'denunciar':
         final reportedId = widget.userRole == 'employee'
@@ -518,25 +546,5 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         );
         break;
     }
-  }
-
-  void _confirmClearChat() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Limpar conversa'),
-        content:
-            const Text('Todas as mensagens serão apagadas. Continuar?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar')),
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Limpar',
-                  style: TextStyle(color: Colors.red))),
-        ],
-      ),
-    );
   }
 }

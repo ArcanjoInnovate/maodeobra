@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
+import 'package:dartobra_new/services/expiration_service.dart';
 import 'edit_info_vacancy.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
@@ -58,9 +59,11 @@ class _InfoVacancyState extends State<InfoVacancy>
   late TabController _tabController;
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final VacancyService _vacancyService = VacancyService();
+  final ExpirationService _expirationService = ExpirationService();
+
   List<Map<String, dynamic>> _candidates = [];
   bool _isLoadingCandidates = false;
-  
+
   late String _currentStatus;
   late String _currentTitle;
   late String _currentProfession;
@@ -70,7 +73,14 @@ class _InfoVacancyState extends State<InfoVacancy>
   late String _currentSalary;
   late String _currentSalaryType;
   late Map<dynamic, dynamic>? _currentMedia;
-  
+
+  // ── Expiração ──────────────────────────────────────────────────────────────
+  String? _expiresAt;
+  bool _isExpired = false;
+  bool _isNearExpiration = false;
+  int _daysLeft = 0;
+  bool _isRenewing = false;
+
   List<String> _images = [];
   List<String> _videos = [];
   bool _hasMedia = false;
@@ -79,7 +89,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     _currentStatus = widget.status;
     _currentTitle = widget.title;
     _currentProfession = widget.profession;
@@ -89,9 +99,10 @@ class _InfoVacancyState extends State<InfoVacancy>
     _currentSalary = widget.salary;
     _currentSalaryType = widget.salaryType;
     _currentMedia = widget.media;
-    
+
     _loadMedia();
     _loadCandidates();
+    _loadExpirationInfo();
   }
 
   @override
@@ -100,276 +111,229 @@ class _InfoVacancyState extends State<InfoVacancy>
     super.dispose();
   }
 
-  Future<void> _reloadVacancyData() async {
-    try {
-      final snapshot = await _database.child('vacancy/${widget.vacancyId}').get();
-      
-      if (snapshot.exists) {
-        final data = Map<String, dynamic>.from(snapshot.value as Map);
-        
-        setState(() {
-          _currentTitle = data['title'] ?? widget.title;
-          _currentProfession = data['profession'] ?? widget.profession;
-          _currentDescription = data['description'] ?? widget.description;
-          _currentState = data['state'] ?? widget.state;
-          _currentCity = data['city'] ?? widget.city;
-          _currentSalary = data['salary'] ?? widget.salary;
-          _currentSalaryType = data['salary_type'] ?? widget.salaryType;
-          _currentStatus = data['status'] ?? widget.status;
-          _currentMedia = data['midia'];
-          
-          _images.clear();
-          _videos.clear();
-          _loadMedia();
-        });
-        
-        print('✅ Dados da vaga recarregados');
-      }
-    } catch (e) {
-      print('❌ Erro ao recarregar: $e');
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔧 FUNÇÃO AUXILIAR: NORMALIZA REQUESTS (MAP → LIST)
+  // ══════════════════════════════════════════════════════════════════════════
+  
+  /// Converte requests de qualquer formato (Map/List/null) para List<String>
+  List<String> _normalizeRequests(dynamic requestsData) {
+    if (requestsData == null) return [];
+    
+    if (requestsData is List) {
+      // Já é lista, apenas filtra valores nulos e converte para String
+      return requestsData
+          .where((item) => item != null && item.toString().isNotEmpty)
+          .map((item) => item.toString())
+          .toList();
     }
+    
+    if (requestsData is Map) {
+      // É Map (ex: {0: "uid1", 1: "uid2"}) → converte para List
+      print('⚠️ requests está como Map, convertendo para List');
+      return requestsData.values
+          .where((item) => item != null && item.toString().isNotEmpty)
+          .map((item) => item.toString())
+          .toList();
+    }
+    
+    // Tipo inesperado
+    print('⚠️ requests tem tipo inesperado: ${requestsData.runtimeType}');
+    return [];
   }
 
-  void _loadMedia() {
-    if (_currentMedia != null) {
-      if (_currentMedia!['images'] != null) {
-        final imagesList = _currentMedia!['images'] as List;
-        _images = imagesList.map((e) => e.toString()).toList();
-      }
-      
-      if (_currentMedia!['videos'] != null) {
-        final videosList = _currentMedia!['videos'] as List;
-        _videos = videosList.map((e) => e.toString()).toList();
-      }
-      
-      _hasMedia = _images.isNotEmpty || _videos.isNotEmpty;
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // 📥 CARREGA CANDIDATOS (VERSÃO CORRIGIDA)
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _loadCandidates() async {
-    if (widget.requests == null || widget.requests!.isEmpty) return;
-
-    setState(() {
-      _isLoadingCandidates = true;
-    });
+    setState(() => _isLoadingCandidates = true);
 
     try {
-      final candidates = await _vacancyService.getCandidates(
-        widget.vacancyId,
-        widget.requests!,
-      );
+      print('🔍 Carregando candidatos para vaga: ${widget.vacancyId}');
       
-      setState(() {
-        _candidates = candidates;
-        _isLoadingCandidates = false;
-      });
+      // ✅ LÊ DIRETO DO FIREBASE
+      final requestsSnapshot = await _database
+          .child('vacancy/${widget.vacancyId}/requests')
+          .get();
       
-    } catch (e) {
-      print('Erro ao carregar candidatos: $e');
-      setState(() {
-        _isLoadingCandidates = false;
-      });
-    }
-  }
-
-  Future<void> _toggleVacancyStatus() async {
-    try {
-      String newStatus = _currentStatus == 'Pausada' ? 'Aberta' : 'Pausada';
+      print('🔍 Requests raw no Firebase: ${requestsSnapshot.value}');
+      print('🔍 Tipo: ${requestsSnapshot.value.runtimeType}');
       
-      await _vacancyService.updateVacancy(widget.vacancyId, {
-        'status': newStatus,
-      });
-      
-      setState(() {
-        _currentStatus = newStatus;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            newStatus == 'Pausada' 
-                ? 'Vaga pausada com sucesso' 
-                : 'Vaga reativada com sucesso'
-          ),
-          backgroundColor: newStatus == 'Pausada' ? Colors.orange : Colors.green,
-        ),
-      );
-    } catch (e) {
-      print('Erro ao atualizar status: $e');
-    }
-  }
-
-  Future<void> _deleteVacancy() async {
-    try {
-      if (_currentMedia != null) {
-        if (_currentMedia!['images'] != null) {
-          List<dynamic> images = _currentMedia!['images'];
-          for (var imageUrl in images) {
-            await _deleteFromCloudinary(imageUrl, 'image');
-          }
-        }
-        
-        if (_currentMedia!['videos'] != null) {
-          List<dynamic> videos = _currentMedia!['videos'];
-          for (var videoUrl in videos) {
-            await _deleteFromCloudinary(videoUrl, 'video');
-          }
-        }
+      // ✅ NORMALIZA requests (Map ou List → sempre List<String>)
+      List<String> requestIds = [];
+      if (requestsSnapshot.exists && requestsSnapshot.value != null) {
+        requestIds = _normalizeRequests(requestsSnapshot.value);
       }
-
-      // 🔢 Conta quantos candidatos ainda não foram visualizados (badge pendente)
-      int unreadCandidates = 0;
-      try {
-        final requestViewsSnap = await _database
-            .child('vacancy/${widget.vacancyId}/views/request_views')
-            .get();
-
-        if (requestViewsSnap.exists) {
-          final views = Map<String, dynamic>.from(requestViewsSnap.value as Map);
-          for (final entry in views.values) {
-            final viewData = Map<String, dynamic>.from(entry as Map);
-            if (viewData['viewed_by_owner'] == false) {
-              unreadCandidates++;
-            }
-          }
-        }
-      } catch (e) {
-        print('⚠️ Erro ao contar candidatos não lidos: $e');
-      }
-
-      // 🗑️ Remove a vaga do banco
-      await _database.child('vacancy/${widget.vacancyId}').remove();
-
-      // 📉 Decrementa o badge pelo número de candidatos não lidos
-      for (int i = 0; i < unreadCandidates; i++) {
-        await BadgeHelper.decrementRequestBadge(widget.localId);
-      }
-
-      print('✅ Vaga excluída. $unreadCandidates badge(s) decrementado(s).');
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Vaga excluída com sucesso'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      print('🔍 Request IDs normalizados: $requestIds');
       
-      Navigator.pop(context);
-    } catch (e) {
-      print('Erro ao excluir vaga: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao excluir vaga'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _deleteFromCloudinary(String mediaUrl, String resourceType) async {
-    try {
-      Uri uri = Uri.parse(mediaUrl);
-      List<String> pathSegments = uri.pathSegments;
-      
-      int uploadIndex = pathSegments.indexOf('upload');
-      if (uploadIndex == -1 || uploadIndex + 2 >= pathSegments.length) {
-        print('URL inválida: $mediaUrl');
+      if (requestIds.isEmpty) {
+        setState(() {
+          _candidates = [];
+          _isLoadingCandidates = false;
+        });
         return;
       }
-      
-      String publicIdWithExtension = pathSegments.sublist(uploadIndex + 2).join('/');
-      String publicId = publicIdWithExtension.substring(0, publicIdWithExtension.lastIndexOf('.'));
-      
-      const String cloudName = 'dsmgwupky';
-      const String apiKey = '256987432736353';
-      const String apiSecret = 'K8oSFMvqA6N2eU4zLTnLTVuArMU';
-      
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).round();
-        
-      String toSign = 'public_id=$publicId&timestamp=$timestamp$apiSecret';
-      String signature = sha1.convert(utf8.encode(toSign)).toString();
-      
-      final response = await http.post(
-        Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy'),
-        body: {
-          'public_id': publicId,
-          'api_key': apiKey,
-          'timestamp': timestamp.toString(),
-          'signature': signature,
-        },
+
+      // Carrega dados dos candidatos
+      final candidates = await _vacancyService.getCandidates(
+        widget.vacancyId,
+        requestIds,
       );
-      
-      if (response.statusCode == 200) {
-        print('Mídia deletada: $publicId');
-      } else {
-        print('Erro ao deletar: ${response.body}');
+
+      print('✅ ${candidates.length} candidatos carregados');
+
+      if (mounted) {
+        setState(() {
+          _candidates = candidates;
+          _isLoadingCandidates = false;
+        });
       }
-    } catch (e) {
-      print('Erro ao deletar do Cloudinary: $e');
+    } catch (e, stack) {
+      print('❌ Erro ao carregar candidatos: $e');
+      print('Stack trace: $stack');
+      if (mounted) {
+        setState(() {
+          _candidates = [];
+          _isLoadingCandidates = false;
+        });
+      }
     }
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔧 REMOVE REQUEST (VERSÃO CORRIGIDA - SEMPRE SALVA COMO LIST)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<void> remove_request(String uid) async {
+    try {
+      print('🗑️ Removendo request: $uid');
+      
+      // Lê estado atual
+      final snapshot = await _database
+          .child('vacancy/${widget.vacancyId}/requests')
+          .get();
+      
+      List<String> currentRequests = [];
+      if (snapshot.exists && snapshot.value != null) {
+        currentRequests = _normalizeRequests(snapshot.value);
+      }
+      
+      print('📋 Requests antes da remoção: $currentRequests');
+      
+      // Remove o UID
+      currentRequests.remove(uid);
+      
+      print('📋 Requests após remoção: $currentRequests');
+      
+      // ✅ SALVA COMO LIST VERDADEIRA (não Map!)
+      if (currentRequests.isEmpty) {
+        await _database
+            .child('vacancy/${widget.vacancyId}/requests')
+            .remove();
+        print('✅ Lista vazia - nó removido');
+      } else {
+        // Força salvar como array JSON
+        await _database
+            .child('vacancy/${widget.vacancyId}/requests')
+            .set(currentRequests);
+        print('✅ Requests salvos como lista: $currentRequests');
+      }
+
+      setState(() {
+        _candidates.removeWhere((c) => c['uid'] == uid);
+      });
+    } catch (e, stack) {
+      print('❌ Erro ao remover request: $e');
+      print('Stack trace: $stack');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ❌ RECUSAR CANDIDATO (VERSÃO CORRIGIDA)
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _rejectCandidate(String uid) async {
     try {
-      print('🔍 Rejeitando candidato: $uid');
+      print('❌ Recusando candidato: $uid');
+      
+      // Remove das requests (usando função corrigida)
+      await remove_request(uid);
 
-      List<dynamic> updatedRequests = List.from(widget.requests ?? []);
-      updatedRequests.remove(uid);
-
-      await _database
-          .child('vacancy/${widget.vacancyId}/requests')
-          .set(updatedRequests.isEmpty ? null : updatedRequests);
-
+      // Remove views
       await _database
           .child('vacancy/${widget.vacancyId}/views/request_views/$uid')
           .remove();
 
-      print('📉 Decrementando badge...');
+      // Decrementa badge
       await BadgeHelper.decrementRequestBadge(widget.localId);
-      print('✅ Badge decrementado');
 
-      setState(() {
-        _candidates.removeWhere((candidate) => candidate['uid'] == uid);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Candidato recusado'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Candidato recusado'),
+        backgroundColor: Colors.red,
+      ));
     } catch (e) {
       print('❌ Erro ao recusar: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao recusar candidato'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
-  Future<void> remove_request(String uid) async {
-    try {
-      List<dynamic> updatedRequests = List.from(widget.requests ?? []);
-      updatedRequests.remove(uid);
-
-      await _database
-          .child('vacancy/${widget.vacancyId}/requests')
-          .set(updatedRequests.isEmpty ? null : updatedRequests);
-
-      setState(() {
-        _candidates.removeWhere((candidate) => candidate['uid'] == uid);
-      });
-    } catch (e) {
-      print('Erro ao remover request: $e');
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // ✅ APROVAR CANDIDATO (MANTIDO IGUAL)
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _approveCandidate(String employeeUid) async {
     try {
-      print('🔍 Aprovando candidato: $employeeUid');
-
+      // ✅ VERIFICA SE JÁ EXISTE CHAT ENTRE CONTRATANTE E FUNCIONÁRIO
+      final chatsSnapshot = await _database.child('Chats').get();
+      
+      if (chatsSnapshot.exists && chatsSnapshot.value != null) {
+        final chatsData = chatsSnapshot.value as Map<dynamic, dynamic>;
+        
+        // Procura por chat existente com esses participantes
+        bool chatExists = false;
+        for (var chatEntry in chatsData.entries) {
+          final chatData = chatEntry.value as Map<dynamic, dynamic>;
+          final contractor = chatData['contractor']?.toString();
+          final employee = chatData['employee']?.toString();
+          
+          if (contractor == widget.localId && employee == employeeUid) {
+            chatExists = true;
+            break;
+          }
+        }
+        
+        // ❌ SE JÁ EXISTE CHAT, RECUSA AUTOMATICAMENTE
+        if (chatExists) {
+          await _rejectCandidate(employeeUid);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Row(
+                children: const [
+                  Icon(Icons.info_outline, color: Colors.white, size: 18),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Candidato recusado: já existe chat com este usuário',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange.shade700,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
+              duration: const Duration(seconds: 4),
+            ));
+          }
+          return;
+        }
+      }
+      
+      // ✅ SE NÃO EXISTE CHAT, CRIA NORMALMENTE
       final DatabaseReference chatRef = _database.child('Chats').push();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
@@ -395,32 +359,332 @@ class _InfoVacancyState extends State<InfoVacancy>
         }
       });
 
-      print('✅ Chat criado: ${chatRef.key}');
-
       await _database
           .child('vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
           .remove();
 
       await remove_request(employeeUid);
-
-      print('📉 Decrementando badge...');
       await BadgeHelper.decrementRequestBadge(widget.localId);
-      print('✅ Badge decrementado');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Chat iniciado com sucesso!'),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 10),
+              Text('Chat iniciado com sucesso!'),
+            ],
+          ),
           backgroundColor: Colors.green,
-        ),
-      );
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
     } catch (e) {
       print('❌ Erro ao aprovar: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao criar chat'),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.error_outline, color: Colors.white, size: 18),
+              SizedBox(width: 10),
+              Text('Erro ao processar candidato'),
+            ],
+          ),
           backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // RESTANTE DO CÓDIGO (MANTIDO IGUAL)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<void> _loadExpirationInfo() async {
+    try {
+      final snapshot = await _database.child('vacancy/${widget.vacancyId}').get();
+      if (!snapshot.exists || snapshot.value == null) return;
+
+      final data = Map<String, dynamic>.from(snapshot.value as Map);
+      final expiresAt = data['expires_at']?.toString();
+
+      if (mounted) {
+        setState(() {
+          _expiresAt = expiresAt;
+          _isExpired = _expirationService.isExpired(expiresAt);
+          _isNearExpiration = _expirationService.isNearExpiration(expiresAt);
+          _daysLeft = _expirationService.daysUntilExpiration(expiresAt);
+          if (data['status']?.toString().toLowerCase() == 'expirada') {
+            _currentStatus = 'Expirada';
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ _loadExpirationInfo erro: $e');
+    }
+  }
+
+  Future<void> _renewVacancy() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFF16A34A).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.refresh_rounded, color: Color(0xFF16A34A), size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Text('Renovar Vaga', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ]),
+        content: const Text(
+          'Deseja renovar esta vaga por mais 7 dias?\nEla continuará visível para candidatos.',
+          style: TextStyle(fontSize: 14, height: 1.5),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancelar', style: TextStyle(color: Colors.grey.shade600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Renovar', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isRenewing = true);
+
+    final success = await _vacancyService.renewVacancy(widget.vacancyId);
+
+    if (mounted) {
+      setState(() => _isRenewing = false);
+
+      if (success) {
+        await _loadExpirationInfo();
+        if (_currentStatus.toLowerCase() == 'expirada') {
+          setState(() => _currentStatus = 'Aberta');
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Text('Vaga renovada! Válida por mais $_daysLeft dias.'),
+          ]),
+          backgroundColor: const Color(0xFF16A34A),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 18),
+            SizedBox(width: 10),
+            Text('Erro ao renovar vaga. Tente novamente.'),
+          ]),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    }
+  }
+
+  Future<void> _reloadVacancyData() async {
+    try {
+      final snapshot = await _database.child('vacancy/${widget.vacancyId}').get();
+
+      if (snapshot.exists) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+
+        setState(() {
+          _currentTitle = data['title'] ?? widget.title;
+          _currentProfession = data['profession'] ?? widget.profession;
+          _currentDescription = data['description'] ?? widget.description;
+          _currentState = data['state'] ?? widget.state;
+          _currentCity = data['city'] ?? widget.city;
+          _currentSalary = data['salary'] ?? widget.salary;
+          _currentSalaryType = data['salary_type'] ?? widget.salaryType;
+          _currentStatus = data['status'] ?? widget.status;
+          _currentMedia = data['midia'];
+
+          _expiresAt = data['expires_at']?.toString();
+          _isExpired = _expirationService.isExpired(_expiresAt);
+          _isNearExpiration = _expirationService.isNearExpiration(_expiresAt);
+          _daysLeft = _expirationService.daysUntilExpiration(_expiresAt);
+
+          _images.clear();
+          _videos.clear();
+          _loadMedia();
+        });
+
+        print('✅ Dados da vaga recarregados');
+      }
+    } catch (e) {
+      print('❌ Erro ao recarregar: $e');
+    }
+  }
+
+  void _loadMedia() {
+    if (_currentMedia != null) {
+      if (_currentMedia!['images'] != null) {
+        final imagesList = _currentMedia!['images'] as List;
+        _images = imagesList.map((e) => e.toString()).toList();
+      }
+
+      if (_currentMedia!['videos'] != null) {
+        final videosList = _currentMedia!['videos'] as List;
+        _videos = videosList.map((e) => e.toString()).toList();
+      }
+
+      _hasMedia = _images.isNotEmpty || _videos.isNotEmpty;
+    }
+  }
+
+  Future<void> _toggleVacancyStatus() async {
+    if (_isExpired || _currentStatus.toLowerCase() == 'expirada') {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Esta vaga está expirada. Renove-a antes de alterar o status.'),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    try {
+      String newStatus = _currentStatus == 'Pausada' ? 'Aberta' : 'Pausada';
+
+      await _vacancyService.updateVacancy(widget.vacancyId, {
+        'status': newStatus,
+      });
+
+      setState(() => _currentStatus = newStatus);
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(newStatus == 'Pausada' ? 'Vaga pausada com sucesso' : 'Vaga reativada com sucesso'),
+        backgroundColor: newStatus == 'Pausada' ? Colors.orange : Colors.green,
+      ));
+    } catch (e) {
+      print('Erro ao atualizar status: $e');
+    }
+  }
+
+  Future<void> _deleteVacancy() async {
+    try {
+      if (_currentMedia != null) {
+        if (_currentMedia!['images'] != null) {
+          List<dynamic> images = _currentMedia!['images'];
+          for (var imageUrl in images) {
+            await _deleteFromCloudinary(imageUrl, 'image');
+          }
+        }
+
+        if (_currentMedia!['videos'] != null) {
+          List<dynamic> videos = _currentMedia!['videos'];
+          for (var videoUrl in videos) {
+            await _deleteFromCloudinary(videoUrl, 'video');
+          }
+        }
+      }
+
+      int unreadCandidates = 0;
+      try {
+        final requestViewsSnap = await _database
+            .child('vacancy/${widget.vacancyId}/views/request_views')
+            .get();
+
+        if (requestViewsSnap.exists) {
+          final views = Map<String, dynamic>.from(requestViewsSnap.value as Map);
+          for (final entry in views.values) {
+            final viewData = Map<String, dynamic>.from(entry as Map);
+            if (viewData['viewed_by_owner'] == false) {
+              unreadCandidates++;
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Erro ao contar candidatos não lidos: $e');
+      }
+
+      await _database.child('vacancy/${widget.vacancyId}').remove();
+
+      for (int i = 0; i < unreadCandidates; i++) {
+        await BadgeHelper.decrementRequestBadge(widget.localId);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vaga excluída com sucesso'),
+        backgroundColor: Colors.green,
+      ));
+
+      Navigator.pop(context);
+    } catch (e) {
+      print('Erro ao excluir vaga: $e');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Erro ao excluir vaga'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
+  Future<void> _deleteFromCloudinary(String mediaUrl, String resourceType) async {
+    try {
+      Uri uri = Uri.parse(mediaUrl);
+      List<String> pathSegments = uri.pathSegments;
+
+      int uploadIndex = pathSegments.indexOf('upload');
+      if (uploadIndex == -1 || uploadIndex + 2 >= pathSegments.length) return;
+
+      String publicIdWithExtension = pathSegments.sublist(uploadIndex + 2).join('/');
+      String publicId = publicIdWithExtension.substring(0, publicIdWithExtension.lastIndexOf('.'));
+
+      const String cloudName = 'dsmgwupky';
+      const String apiKey = '256987432736353';
+      const String apiSecret = 'K8oSFMvqA6N2eU4zLTnLTVuArMU';
+
+      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).round();
+
+      String toSign = 'public_id=$publicId&timestamp=$timestamp$apiSecret';
+      String signature = sha1.convert(utf8.encode(toSign)).toString();
+
+      await http.post(
+        Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy'),
+        body: {
+          'public_id': publicId,
+          'api_key': apiKey,
+          'timestamp': timestamp.toString(),
+          'signature': signature,
+        },
       );
+    } catch (e) {
+      print('Erro ao deletar do Cloudinary: $e');
     }
   }
 
@@ -430,13 +694,8 @@ class _InfoVacancyState extends State<InfoVacancy>
       MaterialPageRoute(
         builder: (context) => Scaffold(
           backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-          ),
-          body: Center(
-            child: InteractiveViewer(child: Image.network(imageUrl)),
-          ),
+          appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+          body: Center(child: InteractiveViewer(child: Image.network(imageUrl))),
         ),
       ),
     );
@@ -445,73 +704,256 @@ class _InfoVacancyState extends State<InfoVacancy>
   void _showVideoFullScreen(String videoUrl) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => VideoPlayerScreen(videoUrl: videoUrl),
-      ),
+      MaterialPageRoute(builder: (context) => VideoPlayerScreen(videoUrl: videoUrl)),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(
-          'Detalhes da Vaga',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48),
-          child: Container(
-            color: Colors.white,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: Colors.blue,
-              unselectedLabelColor: Colors.grey[600],
-              indicatorColor: Colors.blue,
-              indicatorWeight: 3,
-              tabs: [
-                Tab(
-                  icon: Icon(Icons.info_outline, size: 20),
-                  text: 'Informações',
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: Colors.grey[50],
+    appBar: AppBar(
+      title: const Text('Detalhes da Vaga', style: TextStyle(fontWeight: FontWeight.bold)),
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
+      elevation: 0,
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(48),
+        child: Container(
+          color: Colors.white,
+          child: TabBar(
+            controller: _tabController,
+            labelColor: Colors.blue,
+            unselectedLabelColor: Colors.grey[600],
+            indicatorColor: Colors.blue,
+            indicatorWeight: 3,
+            tabs: [
+              const Tab(
+                icon: Icon(Icons.info_outline, size: 20),
+                text: 'Informações',
+              ),
+              Tab(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Conteúdo principal do tab
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.people_outline, size: 20),
+                        SizedBox(height: 4),
+                        Text('Candidatos', style: TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                    // Badge flutuante
+                    if (_candidates.isNotEmpty)
+                      Positioned(
+                        top: -2,
+                        right: -12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFEF4444).withOpacity(0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 1.5,
+                            ),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            minHeight: 20,
+                          ),
+                          child: Text(
+                            _candidates.length > 99 ? '99+' : '${_candidates.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                              height: 1,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                Tab(
-                  icon: Icon(Icons.people_outline, size: 20),
-                  text: 'Candidatos',
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+    body: TabBarView(
+      controller: _tabController,
+      children: [_buildInfoTab(), _buildCandidatesTab()],
+    ),
+  );
+}
+
+  Widget _buildExpirationBanner() {
+    if (_expiresAt == null || _expiresAt!.isEmpty) return const SizedBox.shrink();
+    if (!_isExpired && !_isNearExpiration) return const SizedBox.shrink();
+ 
+    final bool expired = _isExpired || _currentStatus.toLowerCase() == 'expirada';
+ 
+    final Color accent = expired ? const Color(0xFFDC2626) : const Color(0xFFEA580C);
+    final Color bgColor = expired ? const Color(0xFFFEF2F2) : const Color(0xFFFFF7ED);
+    final Color borderColor = accent.withOpacity(0.30);
+ 
+    final String headline = expired
+        ? 'Esta vaga expirou'
+        : _daysLeft == 1
+            ? 'Expira amanhã!'
+            : 'Expira em $_daysLeft dias';
+ 
+    final String sub = expired
+        ? 'Ela não aparece mais para candidatos. Renove para reativar.'
+        : 'Renove agora para não perder visibilidade e candidatos.';
+ 
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    expired ? Icons.timer_off_rounded : Icons.hourglass_bottom_rounded,
+                    color: accent,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        headline,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        sub,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: accent.withOpacity(0.75),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildInfoTab(), _buildCandidatesTab()],
+          Divider(height: 1, color: borderColor),
+          InkWell(
+            onTap: _isRenewing ? null : _renewVacancy,
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: _isRenewing
+                    ? [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Renovando…',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: accent,
+                          ),
+                        ),
+                      ]
+                    : [
+                        Icon(Icons.refresh_rounded, size: 17, color: accent),
+                        const SizedBox(width: 8),
+                        Text(
+                          expired
+                              ? 'Renovar e reativar vaga por 7 dias'
+                              : 'Renovar agora (+7 dias)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: accent,
+                          ),
+                        ),
+                      ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildInfoTab() {
+    final bool isExpiredOrNear =
+        _isExpired || _isNearExpiration || _currentStatus.toLowerCase() == 'expirada';
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: double.infinity,
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.blue, Colors.lightBlue],
+                colors: isExpiredOrNear
+                    ? [Colors.orange.shade700, Colors.orange.shade400]
+                    : [Colors.blue, Colors.lightBlue],
               ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(16),
@@ -522,15 +964,15 @@ class _InfoVacancyState extends State<InfoVacancy>
                       Container(
                         width: 8,
                         height: 8,
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text(
                         'Vaga $_currentStatus',
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
@@ -539,42 +981,67 @@ class _InfoVacancyState extends State<InfoVacancy>
                     ],
                   ),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Text(
                   _currentProfession,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.location_on, size: 18, color: Colors.white),
-                    SizedBox(width: 6),
+                    const Icon(Icons.location_on, size: 18, color: Colors.white),
+                    const SizedBox(width: 6),
                     Text(
                       '$_currentCity, $_currentState',
-                      style: TextStyle(color: Colors.white, fontSize: 15),
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
                     ),
                   ],
                 ),
+                if (_expiresAt != null && _expiresAt!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        _isExpired ? Icons.timer_off_rounded : Icons.timer_rounded,
+                        size: 14,
+                        color: Colors.white.withOpacity(0.85),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isExpired
+                            ? 'Expirada'
+                            : _isNearExpiration
+                                ? 'Expira em $_daysLeft ${_daysLeft == 1 ? 'dia' : 'dias'}'
+                                : 'Válida por mais $_daysLeft dias',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
-
+          _buildExpirationBanner(),
           if (_hasMedia)
-            Container(
+            SizedBox(
               height: 220,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 itemCount: _images.length + _videos.length,
                 itemBuilder: (context, index) {
                   if (index < _images.length) {
                     final imageUrl = _images[index];
                     return Padding(
-                      padding: EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.only(right: 12),
                       child: GestureDetector(
                         onTap: () => _showImageFullScreen(imageUrl),
                         child: ClipRRect(
@@ -584,18 +1051,12 @@ class _InfoVacancyState extends State<InfoVacancy>
                             width: 160,
                             height: 188,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                width: 160,
-                                height: 188,
-                                color: Colors.grey[300],
-                                child: Icon(
-                                  Icons.broken_image,
-                                  size: 48,
-                                  color: Colors.grey[600],
-                                ),
-                              );
-                            },
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              width: 160,
+                              height: 188,
+                              color: Colors.grey[300],
+                              child: Icon(Icons.broken_image, size: 48, color: Colors.grey[600]),
+                            ),
                           ),
                         ),
                       ),
@@ -604,7 +1065,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                     final videoIndex = index - _images.length;
                     final videoUrl = _videos[videoIndex];
                     return Padding(
-                      padding: EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.only(right: 12),
                       child: GestureDetector(
                         onTap: () => _showVideoFullScreen(videoUrl),
                         child: ClipRRect(
@@ -616,11 +1077,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                             child: Stack(
                               alignment: Alignment.center,
                               children: [
-                                Icon(
-                                  Icons.videocam,
-                                  size: 48,
-                                  color: Colors.white.withOpacity(0.7),
-                                ),
+                                Icon(Icons.videocam, size: 48, color: Colors.white.withOpacity(0.7)),
                                 Container(
                                   width: 56,
                                   height: 56,
@@ -628,11 +1085,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                                     color: Colors.blue.withOpacity(0.9),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(
-                                    Icons.play_arrow,
-                                    size: 32,
-                                    color: Colors.white,
-                                  ),
+                                  child: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
                                 ),
                               ],
                             ),
@@ -644,9 +1097,8 @@ class _InfoVacancyState extends State<InfoVacancy>
                 },
               ),
             ),
-
           Padding(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -655,121 +1107,130 @@ class _InfoVacancyState extends State<InfoVacancy>
                   icon: Icons.description,
                   content: Text(
                     _currentDescription,
-                    style: TextStyle(
-                      color: Colors.grey[700],
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
+                    style: TextStyle(color: Colors.grey[700], fontSize: 14, height: 1.5),
                   ),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 _buildSectionCard(
                   title: 'Salário',
                   icon: Icons.attach_money,
-                  content: Column(
-                    children: [
-                      _buildInfoRow('Valor', _currentSalary),
-                      SizedBox(height: 12),
-                      _buildInfoRow('Frequência', _currentSalaryType),
-                    ],
-                  ),
+                  content: Column(children: [
+                    _buildInfoRow('Valor', _currentSalary),
+                    const SizedBox(height: 12),
+                    _buildInfoRow('Frequência', _currentSalaryType),
+                  ]),
                 ),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 _buildSectionCard(
                   title: 'Informações do Contratante',
                   icon: Icons.business,
-                  content: Column(
-                    children: [
-                      if (widget.companyName.isNotEmpty) ...[
-                        _buildInfoRow('Empresa', widget.companyName),
-                        SizedBox(height: 12),
-                      ],
-                      _buildInfoRow(
-                        'Tipo',
-                        widget.legalType == 'pj'
-                            ? 'Pessoa Jurídica (PJ)'
-                            : 'Pessoa Física (PF)',
-                      ),
-                      SizedBox(height: 12),
-                      _buildInfoRow('Email', widget.userEmail),
-                      SizedBox(height: 12),
-                      _buildInfoRow('Telefone', widget.userPhone),
+                  content: Column(children: [
+                    if (widget.companyName.isNotEmpty) ...[
+                      _buildInfoRow('Empresa', widget.companyName),
+                      const SizedBox(height: 12),
                     ],
+                    _buildInfoRow(
+                      'Tipo',
+                      widget.legalType == 'pj' ? 'Pessoa Jurídica (PJ)' : 'Pessoa Física (PF)',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoRow('Email', widget.userEmail),
+                    const SizedBox(height: 12),
+                    _buildInfoRow('Telefone', widget.userPhone),
+                  ]),
+                ),
+                const SizedBox(height: 24),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isExpired
+                          ? null
+                          : () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => EditInfoVacancy(
+                                    isEditing: true,
+                                    localId: widget.localId,
+                                    emailContact: widget.userEmail,
+                                    phoneContact: widget.userPhone,
+                                    vacancyId: widget.vacancyId,
+                                    existingTitle: _currentTitle,
+                                    existingProfession: _currentProfession,
+                                    existingDescription: _currentDescription,
+                                    existingState: _currentState,
+                                    existingCity: _currentCity,
+                                    existingSalary: _currentSalary,
+                                    existingSalaryType: _currentSalaryType,
+                                    existingMedia: _currentMedia,
+                                  ),
+                                ),
+                              );
+                              if (result == true) await _reloadVacancyData();
+                            },
+                      icon: const Icon(Icons.edit, size: 18),
+                      label: const Text('Editar'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        side: const BorderSide(color: Colors.blue),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ),
-                ),
-                SizedBox(height: 24),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => EditInfoVacancy(
-                                isEditing: true,
-                                localId: widget.localId,
-                                emailContact: widget.userEmail,
-                                phoneContact: widget.userPhone,
-                                vacancyId: widget.vacancyId,
-                                existingTitle: _currentTitle,
-                                existingProfession: _currentProfession,
-                                existingDescription: _currentDescription,
-                                existingState: _currentState,
-                                existingCity: _currentCity,
-                                existingSalary: _currentSalary,
-                                existingSalaryType: _currentSalaryType,
-                                existingMedia: _currentMedia,
-                              ),
-                            ),
-                          );
-                          
-                          if (result == true) {
-                            await _reloadVacancyData();
-                          }
-                        },
-                        icon: Icon(Icons.edit, size: 18),
-                        label: Text('Editar'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.blue,
-                          side: BorderSide(color: Colors.blue),
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _toggleVacancyStatus,
+                      icon: Icon(
+                        _currentStatus == 'Pausada' ? Icons.play_circle : Icons.pause_circle,
+                        size: 18,
+                      ),
+                      label: Text(_currentStatus == 'Pausada' ? 'Reativar' : 'Pausar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isExpired
+                            ? Colors.grey.shade400
+                            : (_currentStatus == 'Pausada' ? Colors.green : Colors.orange),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _toggleVacancyStatus,
-                        icon: Icon(
-                          _currentStatus == 'Pausada' 
-                              ? Icons.play_circle 
-                              : Icons.pause_circle,
-                          size: 18,
-                        ),
-                        label: Text(
-                          _currentStatus == 'Pausada' ? 'Reativar' : 'Pausar',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _currentStatus == 'Pausada'
-                              ? Colors.green
-                              : Colors.orange,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(vertical: 14),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                if (_isExpired || _isNearExpiration || _currentStatus.toLowerCase() == 'expirada') ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isRenewing ? null : _renewVacancy,
+                      icon: _isRenewing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                            )
+                          : const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(
+                        _isRenewing
+                            ? 'Renovando...'
+                            : _isExpired
+                                ? 'Renovar Vaga (Reativar por 7 dias)'
+                                : 'Renovar Vaga (+7 dias)',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                       ),
                     ),
-                  ],
-                ),
-                SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -777,38 +1238,32 @@ class _InfoVacancyState extends State<InfoVacancy>
                       showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: Text('Excluir vaga'),
-                          content: Text(
-                            'Tem certeza que deseja excluir esta vaga? Esta ação não pode ser desfeita.',
-                          ),
+                          title: const Text('Excluir vaga'),
+                          content: const Text(
+                              'Tem certeza que deseja excluir esta vaga? Esta ação não pode ser desfeita.'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context),
-                              child: Text('Cancelar'),
+                              child: const Text('Cancelar'),
                             ),
                             TextButton(
                               onPressed: () {
                                 Navigator.pop(context);
                                 _deleteVacancy();
                               },
-                              child: Text(
-                                'Excluir',
-                                style: TextStyle(color: Colors.red),
-                              ),
+                              child: const Text('Excluir', style: TextStyle(color: Colors.red)),
                             ),
                           ],
                         ),
                       );
                     },
-                    icon: Icon(Icons.delete_outline, size: 18),
-                    label: Text('Excluir Vaga'),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Excluir Vaga'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: BorderSide(color: Colors.red[300]!),
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
@@ -824,19 +1279,19 @@ class _InfoVacancyState extends State<InfoVacancy>
     return Column(
       children: [
         Container(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           color: Colors.white,
           child: Row(
             children: [
-              Icon(Icons.people, color: Colors.blue),
-              SizedBox(width: 8),
+              const Icon(Icons.people, color: Colors.blue),
+              const SizedBox(width: 8),
               Text(
                 '${_candidates.length} ${_candidates.length == 1 ? 'candidato' : 'candidatos'}',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              Spacer(),
+              const Spacer(),
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(16),
@@ -844,57 +1299,37 @@ class _InfoVacancyState extends State<InfoVacancy>
                 child: Text(
                   '${_candidates.length} pendentes',
                   style: TextStyle(
-                    color: Colors.blue[700],
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Colors.blue[700], fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
           ),
         ),
-        Divider(height: 1),
-
+        const Divider(height: 1),
         Expanded(
           child: _isLoadingCandidates
-              ? Center(
-                  child: CircularProgressIndicator(color: Colors.blue),
-                )
+              ? const Center(child: CircularProgressIndicator(color: Colors.blue))
               : _candidates.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.person_search,
-                        size: 64,
-                        color: Colors.grey[400],
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.person_search, size: 64, color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          Text('Nenhum candidato ainda',
+                              style: TextStyle(
+                                  fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          Text('Os candidatos aparecerão aqui',
+                              style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                        ],
                       ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Nenhum candidato ainda',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Os candidatos aparecerão aqui',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.builder(
-                  padding: EdgeInsets.all(16),
-                  itemCount: _candidates.length,
-                  itemBuilder: (context, index) {
-                    final candidate = _candidates[index];
-                    return _buildCandidateCard(candidate);
-                  },
-                ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _candidates.length,
+                      itemBuilder: (context, index) => _buildCandidateCard(_candidates[index]),
+                    ),
         ),
       ],
     );
@@ -902,20 +1337,16 @@ class _InfoVacancyState extends State<InfoVacancy>
 
   Widget _buildCandidateCard(Map<String, dynamic> candidate) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -923,71 +1354,50 @@ class _InfoVacancyState extends State<InfoVacancy>
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: Color(0xFFFF6B35).withOpacity(0.1),
-                  backgroundImage: candidate['avatar'] != null
-                      ? NetworkImage(candidate['avatar'])
-                      : null,
+                  backgroundColor: const Color(0xFFFF6B35).withOpacity(0.1),
+                  backgroundImage: candidate['avatar'] != null ? NetworkImage(candidate['avatar']) : null,
                   child: candidate['avatar'] == null
                       ? Text(
                           candidate['name'][0].toUpperCase(),
-                          style: TextStyle(
-                            color: Color(0xFFFF6B35),
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(color: Color(0xFFFF6B35), fontWeight: FontWeight.bold),
                         )
                       : null,
                 ),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        candidate['name'],
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        candidate['phone'],
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                      ),
+                      Text(candidate['name'],
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(candidate['phone'],
+                          style: TextStyle(fontSize: 13, color: Colors.grey[600])),
                     ],
                   ),
                 ),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    'Pendente',
-                    style: TextStyle(
-                      color: Colors.orange[700],
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration:
+                      BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(12)),
+                  child: Text('Pendente',
+                      style: TextStyle(
+                          color: Colors.orange[700], fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
-            SizedBox(height: 12),
-            Divider(height: 1),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
-                SizedBox(width: 6),
-                Text(
-                  '${candidate['city']}, ${candidate['state']}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-                ),
+                const SizedBox(width: 6),
+                Text('${candidate['city']}, ${candidate['state']}',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700])),
               ],
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -996,55 +1406,44 @@ class _InfoVacancyState extends State<InfoVacancy>
                       showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: Text('Recusar candidato'),
-                          content: Text(
-                            'Tem certeza que deseja recusar este candidato?',
-                          ),
+                          title: const Text('Recusar candidato'),
+                          content: const Text('Tem certeza que deseja recusar este candidato?'),
                           actions: [
                             TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: Text('Cancelar'),
-                            ),
+                                onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
                             TextButton(
                               onPressed: () {
                                 Navigator.pop(context);
                                 _rejectCandidate(candidate['uid']);
                               },
-                              child: Text(
-                                'Recusar',
-                                style: TextStyle(color: Colors.red),
-                              ),
+                              child: const Text('Recusar', style: TextStyle(color: Colors.red)),
                             ),
                           ],
                         ),
                       );
                     },
-                    icon: Icon(Icons.close, size: 16),
-                    label: Text('Recusar'),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Recusar'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
-                      side: BorderSide(color: Colors.red),
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () => _approveCandidate(candidate['uid']),
-                    icon: Icon(Icons.check, size: 16),
-                    label: Text('Aprovar'),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Aprovar'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                       elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                 ),
@@ -1066,32 +1465,23 @@ class _InfoVacancyState extends State<InfoVacancy>
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Icon(icon, color: Colors.blue, size: 20),
-              SizedBox(width: 8),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
+              const SizedBox(width: 8),
+              Text(title,
+                  style:
+                      const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
             ],
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           content,
         ],
       ),
@@ -1104,24 +1494,12 @@ class _InfoVacancyState extends State<InfoVacancy>
       children: [
         SizedBox(
           width: 90,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          child: Text(label,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13, fontWeight: FontWeight.w500)),
         ),
         Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              color: Colors.black87,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          child: Text(value,
+              style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600)),
         ),
       ],
     );
@@ -1130,7 +1508,6 @@ class _InfoVacancyState extends State<InfoVacancy>
 
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
-
   const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
 
   @override
@@ -1151,37 +1528,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-      );
-
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
       await _videoController.initialize();
-
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
         autoPlay: true,
         looping: false,
         aspectRatio: _videoController.value.aspectRatio,
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 48, color: Colors.white),
-                SizedBox(height: 16),
-                Text(
-                  'Erro ao carregar vídeo',
-                  style: TextStyle(color: Colors.white),
-                ),
-              ],
-            ),
-          );
-        },
       );
-
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -1202,28 +1557,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text('Vídeo'),
-      ),
+          backgroundColor: Colors.black, foregroundColor: Colors.white, title: const Text('Vídeo')),
       body: Center(
         child: _isLoading
-            ? CircularProgressIndicator(color: Color(0xFFFF6B35))
+            ? const CircularProgressIndicator(color: Color(0xFFFF6B35))
             : _hasError
                 ? Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.error_outline, size: 64, color: Colors.white),
-                      SizedBox(height: 16),
-                      Text(
-                        'Erro ao carregar vídeo',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
+                      const Icon(Icons.error_outline, size: 64, color: Colors.white),
+                      const SizedBox(height: 16),
+                      const Text('Erro ao carregar vídeo',
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                     ],
                   )
                 : _chewieController != null
                     ? Chewie(controller: _chewieController!)
-                    : SizedBox(),
+                    : const SizedBox(),
       ),
     );
   }

@@ -40,20 +40,20 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
   bool _isTogglingStatus = false;
   bool _isDeletingVacancy = false;
 
-  // Índice da imagem atual na galeria
   int _currentImageIndex = 0;
   late PageController _imagePageController;
 
-  static const Color _emerald        = Color(0xFF059669);
+  static const Color _emerald = Color(0xFF059669);
   static const Color _emeraldSurface = Color(0xFFD1FAE5);
-  static const Color _surface        = Color(0xFFFAFAFA);
-  static const Color _ink            = Color(0xFF111827);
-  static const Color _muted          = Color(0xFF6B7280);
-  static const Color _border         = Color(0xFFE5E7EB);
-  static const Color _amber          = Color(0xFFF59E0B);
-  static const Color _amberSurface   = Color(0xFFFEF3C7);
-  static const Color _red            = Color(0xFFDC2626);
-  static const Color _redSurface     = Color(0xFFFEE2E2);
+  static const Color _surface = Color(0xFFFAFAFA);
+  static const Color _ink = Color(0xFF111827);
+  static const Color _muted = Color(0xFF6B7280);
+  static const Color _border = Color(0xFFE5E7EB);
+  static const Color _amber = Color(0xFFF59E0B);
+  static const Color _amberSurface = Color(0xFFFEF3C7);
+  static const Color _red = Color(0xFFDC2626);
+  static const Color _redSurface = Color(0xFFFEE2E2);
+  static const Color _blue = Color(0xFF2563EB);
 
   bool get _isOpen => _currentStatus.toLowerCase() == 'aberta';
 
@@ -66,21 +66,25 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     _currentStatus = widget.vacancy.status;
     _imagePageController = PageController();
 
-    _heroCtrl    = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-    _contentCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _heroCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 700));
+    _contentCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
 
-    _heroScale = Tween<double>(begin: 1.08, end: 1.0)
-        .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic));
-    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0)
-        .animate(CurvedAnimation(parent: _heroCtrl, curve: const Interval(0.0, 0.6)));
-    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOutCubic));
+    _heroScale = Tween<double>(begin: 1.08, end: 1.0).animate(
+        CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic));
+    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: _heroCtrl, curve: const Interval(0.0, 0.6)));
+    _contentSlide =
+        Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero).animate(
+            CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOutCubic));
     _contentOpacity = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 200),
-        () { if (mounted) _contentCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _contentCtrl.forward();
+    });
   }
 
   @override
@@ -100,7 +104,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
         iconColor: _amber,
         bgColor: _amberSurface,
         title: 'Pausar vaga?',
-        body: 'A vaga ficará invisível nas buscas. Candidaturas existentes são preservadas.',
+        body:
+            'A vaga ficará invisível nas buscas. Candidaturas existentes são preservadas.',
         confirmLabel: 'Pausar',
         confirmColor: _amber,
       );
@@ -125,7 +130,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                 ? 'Vaga reaberta! Aparece nas buscas novamente.'
                 : 'Vaga pausada. Invisível nas buscas.')
             : 'Erro ao alterar status. Tente novamente.'),
-        backgroundColor: newStatus != null ? (opened ? _emerald : _amber) : _red,
+        backgroundColor:
+            newStatus != null ? (opened ? _emerald : _amber) : _red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 3),
@@ -141,7 +147,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       iconColor: _red,
       bgColor: _redSurface,
       title: 'Excluir vaga?',
-      body: 'Esta ação é permanente. A vaga será removida e as notificações de candidatura serão atualizadas.',
+      body:
+          'Esta ação é permanente. A vaga será removida e as notificações de candidatura serão atualizadas.',
       confirmLabel: 'Excluir',
       confirmColor: _red,
     );
@@ -149,8 +156,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
 
     setState(() => _isDeletingVacancy = true);
 
-    final success = await _vacancyService.deleteVacancy(
-        widget.vacancy.id, widget.localId);
+    final success =
+        await _vacancyService.deleteVacancy(widget.vacancy.id, widget.localId);
 
     if (mounted) {
       setState(() => _isDeletingVacancy = false);
@@ -162,14 +169,16 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           content: const Text('Vaga excluída com sucesso.'),
           backgroundColor: _emerald,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Erro ao excluir. Tente novamente.'),
           backgroundColor: _red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
         ));
       }
     }
@@ -187,13 +196,16 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
             title: Row(
               children: [
                 Container(
-                  width: 38, height: 38,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
-                      color: bgColor, borderRadius: BorderRadius.circular(12)),
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(12)),
                   child: Icon(icon, color: iconColor, size: 22),
                 ),
                 const SizedBox(width: 12),
@@ -290,11 +302,15 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
 
   Widget _buildFloatingAppBar(BuildContext context) {
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).padding.top + 8,
-          left: 8, right: 16, bottom: 8,
+          left: 8,
+          right: 16,
+          bottom: 8,
         ),
         color: Colors.transparent,
         child: Row(
@@ -389,7 +405,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                                 color: Colors.white.withOpacity(0.18),
                                 borderRadius: BorderRadius.circular(28),
                                 border: Border.all(
-                                    color: Colors.white.withOpacity(0.3),
+                                    color:
+                                        Colors.white.withOpacity(0.3),
                                     width: 1.5),
                               ),
                               child: const Icon(
@@ -409,11 +426,13 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(30),
+                                color:
+                                    Colors.white.withOpacity(0.15),
+                                borderRadius:
+                                    BorderRadius.circular(30),
                                 border: Border.all(
-                                    color:
-                                        Colors.white.withOpacity(0.25),
+                                    color: Colors.white
+                                        .withOpacity(0.25),
                                     width: 1),
                               ),
                               child: Row(
@@ -447,8 +466,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                         ),
                         const SizedBox(height: 16),
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 32),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 32),
                           child: Text(
                             widget.vacancy.title,
                             textAlign: TextAlign.center,
@@ -517,7 +536,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
             ),
           ),
 
-          // ── GALERIA DE IMAGENS (1–3 fotos, carrossel com indicador) ──
+          // Galeria de imagens
           if (_validImages.isNotEmpty) ...[
             _buildImageGallery(),
             const SizedBox(height: 28),
@@ -528,6 +547,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           _buildDetailsGrid(),
           const SizedBox(height: 28),
 
+          // ── CONTATO (padronizado igual professional_profile_page) ──
           if (_hasContactInfo()) ...[
             _sectionLabel('CONTATO'),
             const SizedBox(height: 12),
@@ -548,14 +568,11 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
             width: double.infinity,
             height: 48,
             child: OutlinedButton.icon(
-              onPressed:
-                  _isDeletingVacancy ? null : _deleteVacancy,
-              icon: const Icon(Icons.delete_outline_rounded,
-                  size: 18),
+              onPressed: _isDeletingVacancy ? null : _deleteVacancy,
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
               label: const Text('Excluir Vaga',
                   style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700)),
+                      fontSize: 14, fontWeight: FontWeight.w700)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _red,
                 side: const BorderSide(color: _red, width: 1.5),
@@ -569,7 +586,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     );
   }
 
-  // ── GALERIA NOVA: carrossel PageView com dots ─────────────────
+  // ── GALERIA (carrossel PageView com dots) ────────────────────
+
   Widget _buildImageGallery() {
     final images = _validImages;
     final count = images.length;
@@ -579,16 +597,12 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       children: [
         _sectionLabel('GALERIA'),
         const SizedBox(height: 12),
-
-        // Carrossel
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: SizedBox(
             height: 220,
             child: count == 1
-                // ── 1 imagem: ocupa tudo
                 ? _galleryImage(images[0], fit: BoxFit.cover)
-                // ── 2 ou 3 imagens: PageView deslizável
                 : Stack(
                     children: [
                       PageView.builder(
@@ -599,7 +613,6 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                         itemBuilder: (_, i) =>
                             _galleryImage(images[i], fit: BoxFit.cover),
                       ),
-                      // Setas de navegação (aparecem apenas se count > 1)
                       Positioned.fill(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -607,8 +620,10 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                             if (_currentImageIndex > 0)
                               _navArrow(
                                 icon: Icons.chevron_left_rounded,
-                                onTap: () => _imagePageController.previousPage(
-                                  duration: const Duration(milliseconds: 300),
+                                onTap: () =>
+                                    _imagePageController.previousPage(
+                                  duration:
+                                      const Duration(milliseconds: 300),
                                   curve: Curves.easeInOut,
                                 ),
                               )
@@ -617,8 +632,10 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                             if (_currentImageIndex < count - 1)
                               _navArrow(
                                 icon: Icons.chevron_right_rounded,
-                                onTap: () => _imagePageController.nextPage(
-                                  duration: const Duration(milliseconds: 300),
+                                onTap: () =>
+                                    _imagePageController.nextPage(
+                                  duration:
+                                      const Duration(milliseconds: 300),
                                   curve: Curves.easeInOut,
                                 ),
                               )
@@ -631,8 +648,6 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                   ),
           ),
         ),
-
-        // Dots indicadores (apenas se > 1 imagem)
         if (count > 1) ...[
           const SizedBox(height: 10),
           Row(
@@ -687,7 +702,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     );
   }
 
-  Widget _navArrow({required IconData icon, required VoidCallback onTap}) {
+  Widget _navArrow(
+      {required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -699,105 +715,6 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 22),
-      ),
-    );
-  }
-
-  Widget _buildStatusBanner() {
-    final color   = _isOpen ? _emerald : _amber;
-    final bgColor = _isOpen ? _emeraldSurface : _amberSurface;
-    final icon    = _isOpen
-        ? Icons.check_circle_rounded
-        : Icons.pause_circle_rounded;
-    final title   = _isOpen ? 'Vaga aberta' : 'Vaga pausada';
-    final subtitle = _isOpen
-        ? 'Trabalhadores podem encontrar e se candidatar.'
-        : 'Invisível nas buscas. Reabra para receber candidaturas.';
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeInOut,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: color.withOpacity(0.3), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
-                const SizedBox(height: 3),
-                Text(subtitle,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: color.withOpacity(0.8),
-                        height: 1.4)),
-              ],
-            ),
-          ),
-          // Toggle switch
-          GestureDetector(
-            onTap: _isTogglingStatus ? null : _toggleStatus,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 52, height: 28,
-              decoration: BoxDecoration(
-                color: _isOpen ? _emerald : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Stack(
-                children: [
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    left: _isOpen ? 26 : 2,
-                    top: 2,
-                    child: _isTogglingStatus
-                        ? SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: _isOpen
-                                    ? Colors.white
-                                    : _emerald),
-                          )
-                        : Container(
-                            width: 24, height: 24,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 1))
-                              ],
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -878,7 +795,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
               color: c.withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(item['icon'] as IconData, color: c, size: 18),
+            child:
+                Icon(item['icon'] as IconData, color: c, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -905,24 +823,36 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     );
   }
 
+  // ── CONTATO (padronizado igual professional_profile_page) ──
+
+  bool _hasContactInfo() =>
+      widget.vacancy.emailContact.isNotEmpty ||
+      widget.vacancy.phoneContact.isNotEmpty;
+
   Widget _buildContactSection() {
     return Column(
       children: [
         if (widget.vacancy.emailContact.isNotEmpty)
           _contactRow(
-              icon: Icons.mail_outline_rounded,
-              label: 'Email',
-              value: widget.vacancy.emailContact,
-              color: const Color(0xFF3B82F6)),
+            icon: Icons.mail_outline_rounded,
+            label: 'Email',
+            value: widget.vacancy.emailContact,
+            color: _blue,
+            onTap: () => _copyToClipboard(
+                widget.vacancy.emailContact, 'Email copiado!'),
+          ),
         if (widget.vacancy.emailContact.isNotEmpty &&
             widget.vacancy.phoneContact.isNotEmpty)
           const SizedBox(height: 10),
         if (widget.vacancy.phoneContact.isNotEmpty)
           _contactRow(
-              icon: Icons.phone_outlined,
-              label: 'Telefone',
-              value: widget.vacancy.phoneContact,
-              color: _emerald),
+            icon: Icons.phone_outlined,
+            label: 'Telefone',
+            value: widget.vacancy.phoneContact,
+            color: const Color(0xFF059669),
+            onTap: () => _copyToClipboard(
+                widget.vacancy.phoneContact, 'Telefone copiado!'),
+          ),
       ],
     );
   }
@@ -932,54 +862,72 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     required String label,
     required String value,
     required Color color,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border, width: 1),
-        boxShadow: [
-          BoxShadow(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border, width: 1),
+          boxShadow: [
+            BoxShadow(
               color: Colors.black.withOpacity(0.03),
               blurRadius: 8,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.09),
-              borderRadius: BorderRadius.circular(12),
+              offset: const Offset(0, 2),
             ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: _muted,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3)),
-                const SizedBox(height: 2),
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 15,
-                        color: Color(0xFF111827),
-                        fontWeight: FontWeight.w600)),
-              ],
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.09),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: _muted,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3)),
+                  const SizedBox(height: 2),
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF111827),
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            Icon(Icons.copy_rounded, size: 16, color: _muted),
+          ],
+        ),
       ),
     );
+  }
+
+  void _copyToClipboard(String text, String message) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   Widget _buildDescriptionCard() {
@@ -1098,8 +1046,4 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       widget.vacancy.company.toLowerCase() != 'não informado' &&
       widget.vacancy.company.toLowerCase() != 'n/a' &&
       widget.vacancy.company != '-';
-
-  bool _hasContactInfo() =>
-      widget.vacancy.emailContact.isNotEmpty ||
-      widget.vacancy.phoneContact.isNotEmpty;
 }

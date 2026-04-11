@@ -19,6 +19,7 @@ class VacancyModel {
   final String title;
   final String type;
   final String updatedAt;
+  final String expiresAt; // ✅ ADICIONADO
 
   VacancyModel({
     required this.id,
@@ -39,9 +40,9 @@ class VacancyModel {
     required this.title,
     required this.type,
     required this.updatedAt,
+    this.expiresAt = '', // ✅ ADICIONADO (opcional com default vazio)
   });
 
-  // ✅ MÉTODO fromJson (mantido)
   factory VacancyModel.fromJson(String id, Map<dynamic, dynamic> json) {
     return VacancyModel(
       id: id,
@@ -64,10 +65,10 @@ class VacancyModel {
       title: json['title'] ?? '',
       type: json['type'] ?? '',
       updatedAt: json['updated_at'] ?? '',
+      expiresAt: json['expires_at']?.toString() ?? '', // ✅ ADICIONADO
     );
   }
 
-  // ✅ NOVO: Método fromMap (para compatibilidade com Map<String, dynamic>)
   factory VacancyModel.fromMap(Map<String, dynamic> map) {
     return VacancyModel(
       id: map['id'] ?? '',
@@ -94,6 +95,7 @@ class VacancyModel {
       title: map['title'] ?? '',
       type: map['type'] ?? '',
       updatedAt: map['updated_at'] ?? map['updatedAt'] ?? '',
+      expiresAt: map['expires_at']?.toString() ?? map['expiresAt']?.toString() ?? '', // ✅ ADICIONADO
     );
   }
 
@@ -117,15 +119,14 @@ class VacancyModel {
       'title': title,
       'type': type,
       'updated_at': updatedAt,
+      'expires_at': expiresAt, // ✅ ADICIONADO
     };
   }
 
-  // ✅ NOVO: Método toMap (alias para toJson)
   Map<String, dynamic> toMap() => toJson();
 
   bool matchesSearch(String query) {
     if (query.isEmpty) return true;
-
     final q = query.toLowerCase();
     return title.toLowerCase().contains(q) ||
         description.toLowerCase().contains(q) ||
@@ -133,7 +134,6 @@ class VacancyModel {
         company.toLowerCase().contains(q);
   }
 
-  // ✅ NOVO: Método copyWith (útil para atualizações)
   VacancyModel copyWith({
     String? id,
     String? city,
@@ -153,6 +153,7 @@ class VacancyModel {
     String? title,
     String? type,
     String? updatedAt,
+    String? expiresAt, // ✅ ADICIONADO
   }) {
     return VacancyModel(
       id: id ?? this.id,
@@ -173,21 +174,19 @@ class VacancyModel {
       title: title ?? this.title,
       type: type ?? this.type,
       updatedAt: updatedAt ?? this.updatedAt,
+      expiresAt: expiresAt ?? this.expiresAt, // ✅ ADICIONADO
     );
   }
 
   @override
   String toString() {
-    return 'VacancyModel(id: $id, title: $title, profession: $profession)';
+    return 'VacancyModel(id: $id, title: $title, profession: $profession, expiresAt: $expiresAt)';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-
-    return other is VacancyModel &&
-        other.id == id &&
-        other.localId == localId;
+    return other is VacancyModel && other.id == id && other.localId == localId;
   }
 
   @override
