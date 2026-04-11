@@ -871,6 +871,8 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
         'contractor_name': userName,
         'contractor_avatar': userAvatar,
       };
+      // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
+      updates['user_requests/$currentUserId/professionals/$professionalId'] = true;
 
       await db.update(updates);
 

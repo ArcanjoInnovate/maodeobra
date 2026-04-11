@@ -927,6 +927,9 @@ Future<void> _requestChat() async {
     // 🔥 SALVA COMO LIST (SEMPRE)
     await db.child('vacancy/${widget.vacancyId}/requests').set(requestsList);
 
+    // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
+    await db.child('user_requests/$currentUserId/vacancies/${widget.vacancyId}').set(true);
+
     // Views
     await db.child('vacancy/${widget.vacancyId}/views/request_views/$currentUserId').set({
       'viewed_by_owner': false,

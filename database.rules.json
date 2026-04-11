@@ -1,0 +1,68 @@
+{
+  "rules": {
+    "Users": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth.uid === $uid"
+      }
+    },
+    "Chats": {
+      ".indexOn": ["employee", "contractor"],
+      "$chatId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "ChatMessages": {
+      "$chatId": {
+        ".indexOn": ["read_by_employee", "read_by_contractor"],
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "vacancy": {
+      ".indexOn": ["status", "updated_at", "created_at"],
+      "$vacancyId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "professionals": {
+      ".indexOn": ["status", "updated_at", "created_at"],
+      "$professionalId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "badges": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "user_requests": {
+      "$uid": {
+        ".read": "auth.uid === $uid",
+        ".write": "auth.uid === $uid",
+        "vacancies": {
+          "$vacancyId": {
+            ".read": "auth.uid === $uid",
+            ".write": "auth.uid === $uid"
+          }
+        },
+        "professionals": {
+          "$professionalId": {
+            ".read": "auth.uid === $uid",
+            ".write": "auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "Complaints": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
