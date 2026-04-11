@@ -1127,6 +1127,9 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
       updates['vacancy/${widget.vacancyId}/stats/total_applications'] = totalApps + 1;
       updates['vacancy/${widget.vacancyId}/stats/last_application_at'] = DateTime.now().millisecondsSinceEpoch;
 
+      // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
+      updates['user_requests/$currentUserId/vacancies/${widget.vacancyId}'] = true;
+
       await db.update(updates);
 
       setState(() => _isApplying = false);

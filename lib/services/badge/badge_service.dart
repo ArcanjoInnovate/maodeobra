@@ -493,7 +493,7 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
         
         if (unreadCountData != null) {
           final myUnread = (unreadCountData[role] as int?) ?? 0;
-          if (myUnread == 1) {
+          if (myUnread > 0) {
             unreadCount++;
           }
         }
@@ -532,7 +532,7 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
         
         if (unreadCountData != null) {
           final myUnread = (unreadCountData[role] as int?) ?? 0;
-          if (myUnread == 1) {
+          if (myUnread > 0) {
             unreadCount++;
           }
         }

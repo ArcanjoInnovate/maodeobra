@@ -174,7 +174,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       userRole: widget.userRole,
     );
 
-    await _markBadgeAsRead();
+    // markChatAsRead já é chamado dentro de initializeChat → markAsRead
+    // Não precisa chamar _markBadgeAsRead() novamente
 
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -208,8 +209,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     if (!mounted) return;
     try {
       final controller = context.read<ChatControllerFinal>();
+      // controller.markAsRead() já delega para BadgeHelper.markChatAsRead()
+      // que faz tudo: marca mensagens, zera unreadCount e recalcula badge
       await controller.markAsRead();
-      await _markBadgeAsRead();
     } catch (e) {
       debugPrint('❌ Erro ao marcar como lido: $e');
     }

@@ -953,6 +953,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
         'contractor_name': userName,
         'contractor_avatar': userAvatar,
       };
+      // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
+      updates['user_requests/$currentUserId/professionals/${widget.professionalId}'] = true;
 
       await db.update(updates);
       
