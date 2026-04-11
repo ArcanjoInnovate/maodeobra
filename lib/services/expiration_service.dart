@@ -150,45 +150,51 @@ class ExpirationService {
   // VAGAS - EXPIRAÇÃO
   // ════════════════════════════════════════════════
 
-  /// Verifica e expira vagas automaticamente
+  /// ✅ OTIMIZADO: Usa query server-side com filtro por status em vez de baixar tudo.
+  /// Antes: baixava TODAS as vagas (~full table scan)
+  /// Agora: busca apenas vagas com status 'Aberta'
   Future<List<String>> checkAndExpireVacancies() async {
     try {
       print('🕐 Verificando vagas expiradas...');
       
-      final snapshot = await _database.child('vacancy').get();
+      // ✅ OTIMIZAÇÃO: Filtra por status no servidor
+      final snapshot = await _database
+          .child('vacancy')
+          .orderByChild('status')
+          .equalTo('Aberta')
+          .get();
       
       if (!snapshot.exists || snapshot.value == null) {
-        print('ℹ️ Nenhuma vaga encontrada');
+        print('ℹ️ Nenhuma vaga aberta encontrada');
         return [];
       }
 
       final data = snapshot.value as Map<dynamic, dynamic>;
       final List<String> expiredVacancies = [];
+      final Map<String, dynamic> batchUpdates = {};
 
       for (final entry in data.entries) {
         final vacancyId = entry.key.toString();
         final vacancyData = Map<String, dynamic>.from(entry.value as Map);
         
         final expiresAt = vacancyData['expires_at'];
-        final status = vacancyData['status']?.toString().toLowerCase() ?? '';
         
-        // Só verifica vagas abertas
-        if (status == 'aberta' && expiresAt != null) {
-          if (isExpired(expiresAt)) {
-            // ✅ CORRIGIDO: usa _now.toIso8601String() em vez de DateTime.now()
-            await _database.child('vacancy/$vacancyId').update({
-              'status': 'Expirada',
-              'expired_at': _now.toIso8601String(),
-              'updated_at': _now.toIso8601String(),
-            });
-            
-            expiredVacancies.add(vacancyId);
-            print('⏰ Vaga $vacancyId expirada');
-          }
+        if (expiresAt != null && isExpired(expiresAt)) {
+          // ✅ OTIMIZAÇÃO: Acumula updates para batch
+          batchUpdates['vacancy/$vacancyId/status'] = 'Expirada';
+          batchUpdates['vacancy/$vacancyId/expired_at'] = _now.toIso8601String();
+          batchUpdates['vacancy/$vacancyId/updated_at'] = _now.toIso8601String();
+          
+          expiredVacancies.add(vacancyId);
         }
       }
 
-      print('✅ Verificação concluída: ${expiredVacancies.length} vagas expiradas');
+      // ✅ OTIMIZAÇÃO: Uma única escrita batch em vez de N escritas individuais
+      if (batchUpdates.isNotEmpty) {
+        await _database.update(batchUpdates);
+      }
+
+      print('✅ Verificação concluída: ${expiredVacancies.length} vagas expiradas de ${data.length} abertas');
       return expiredVacancies;
     } catch (e) {
       print('❌ Erro ao verificar vagas expiradas: $e');
@@ -222,51 +228,57 @@ class ExpirationService {
   // PERFIS PROFISSIONAIS - EXPIRAÇÃO
   // ════════════════════════════════════════════════
 
-  /// Verifica e expira perfis profissionais automaticamente
+  /// ✅ OTIMIZADO: Usa query server-side com filtro por status em vez de baixar tudo.
+  /// Antes: baixava TODOS os profissionais (~full table scan)
+  /// Agora: busca apenas profissionais com status 'active'
   Future<List<String>> checkAndExpireProfessionals() async {
     try {
       print('🕐 Verificando perfis profissionais expirados...');
       
-      final snapshot = await _database.child('professionals').get();
+      // ✅ OTIMIZAÇÃO: Filtra por status no servidor
+      final snapshot = await _database
+          .child('professionals')
+          .orderByChild('status')
+          .equalTo('active')
+          .get();
       
       if (!snapshot.exists || snapshot.value == null) {
-        print('ℹ️ Nenhum perfil profissional encontrado');
+        print('ℹ️ Nenhum perfil profissional ativo encontrado');
         return [];
       }
 
       final data = snapshot.value as Map<dynamic, dynamic>;
       final List<String> expiredProfessionals = [];
+      final Map<String, dynamic> batchUpdates = {};
 
       for (final entry in data.entries) {
         final professionalId = entry.key.toString();
         final professionalData = Map<String, dynamic>.from(entry.value as Map);
         
         final expiresAt = professionalData['expires_at'];
-        final status = professionalData['status']?.toString().toLowerCase() ?? '';
         
-        // Só verifica perfis ativos
-        if (status == 'active' && expiresAt != null) {
-          if (isExpired(expiresAt)) {
-            // ✅ CORRIGIDO: usa _now.toIso8601String()
-            await _database.child('professionals/$professionalId').update({
-              'status': 'expired',
-              'expired_at': _now.toIso8601String(),
-              'updated_at': _now.toIso8601String(),
-            });
-            
-            // Atualiza o status do usuário
-            final localId = professionalData['local_id'];
-            if (localId != null) {
-              await _database.child('Users/$localId/isActive').set(false);
-            }
-            
-            expiredProfessionals.add(professionalId);
-            print('⏰ Perfil profissional $professionalId expirado');
+        if (expiresAt != null && isExpired(expiresAt)) {
+          // ✅ OTIMIZAÇÃO: Acumula updates para batch
+          batchUpdates['professionals/$professionalId/status'] = 'expired';
+          batchUpdates['professionals/$professionalId/expired_at'] = _now.toIso8601String();
+          batchUpdates['professionals/$professionalId/updated_at'] = _now.toIso8601String();
+          
+          // Atualiza o status do usuário
+          final localId = professionalData['local_id'];
+          if (localId != null) {
+            batchUpdates['Users/$localId/isActive'] = false;
           }
+          
+          expiredProfessionals.add(professionalId);
         }
       }
 
-      print('✅ Verificação concluída: ${expiredProfessionals.length} perfis expirados');
+      // ✅ OTIMIZAÇÃO: Uma única escrita batch em vez de N escritas individuais
+      if (batchUpdates.isNotEmpty) {
+        await _database.update(batchUpdates);
+      }
+
+      print('✅ Verificação concluída: ${expiredProfessionals.length} perfis expirados de ${data.length} ativos');
       return expiredProfessionals;
     } catch (e) {
       print('❌ Erro ao verificar perfis expirados: $e');

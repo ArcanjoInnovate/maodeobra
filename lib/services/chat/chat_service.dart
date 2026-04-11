@@ -150,27 +150,19 @@ class ChatServiceFinal {
     }
   }
 
+/// ✅ OTIMIZADO: Removido logs excessivos. Transação atômica mantida.
 Future<void> _incrementUnreadCount(String chatId, String userRole) async {
   try {
     final countRef = _firebase.database.ref('Chats/$chatId/unreadCount/$userRole');
     
-    // Lê o valor ANTES da transação
-    final before = await countRef.get();
-    print('🔢 ANTES da transação: ${before.value} (tipo: ${before.value.runtimeType})');
-    
-    final result = await countRef.runTransaction((current) {
-      print('🔄 current dentro da transação: $current (tipo: ${current.runtimeType})');
+    await countRef.runTransaction((current) {
       if (current == null) return Transaction.success(1);
       final currentCount = (current as num).toInt();
-      print('✅ novo valor será: ${currentCount + 1}');
       return Transaction.success(currentCount + 1);
     });
     
-    print('💾 resultado commitado: ${result.committed} | valor: ${result.snapshot.value}');
-    
-  } catch (e, stack) {
+  } catch (e) {
     print('❌ Erro ao incrementar unreadCount: $e');
-    print('Stack: $stack');
   }
 }
 
@@ -350,82 +342,33 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
   // O onChildChanged acima re-emite a lista automaticamente.
   // ========================================
 
+  /// ✅ OTIMIZADO: Delega para BadgeHelper.markChatAsRead que já faz tudo
+  /// em uma única operação batch (zera unreadCount + marca mensagens + recalcula badge).
+  /// Antes: duplicava lógica do badge_service + recalculava badge para AMBOS os usuários
+  /// Agora: uma única chamada centralizada, recalcula apenas para o usuário atual
   Future<void> markAsRead(String chatId, String userRole) async {
     try {
-      print('═══════════════════════════════════════');
       print('📖 markAsRead | chat=$chatId | role=$userRole');
 
-      // Campo que este usuário precisa marcar como lido
-      final readField = userRole == 'contractor'
-          ? 'read_by_contractor'
-          : 'read_by_employee';
+      // Pega o userId do role atual para recalcular o badge
+      final chatSnapshot = await _firebase.chatRef(chatId).get();
+      if (!chatSnapshot.exists) return;
+      
+      final chatData = chatSnapshot.value as Map<dynamic, dynamic>;
+      final userId = userRole == 'contractor'
+          ? chatData['contractor']?.toString() ?? ''
+          : chatData['employee']?.toString() ?? '';
 
-      // 1. Busca mensagens onde o campo ainda é false
-      final snapshot = await _firebase
-          .chatMessagesRef(chatId)
-          .orderByChild(readField)
-          .equalTo(false)
-          .get();
+      if (userId.isEmpty) return;
 
-      print('📦 Mensagens com $readField=false: ${snapshot.exists ? 'sim' : 'nenhuma'}');
-
-      if (snapshot.exists && snapshot.value is Map) {
-        final data = snapshot.value as Map<dynamic, dynamic>;
-        final Map<String, dynamic> updates = {};
-
-        data.forEach((messageId, value) {
-          if (messageId == '_placeholder') return;
-          // Caminho absoluto a partir da raiz do banco
-          updates['ChatMessages/$chatId/$messageId/$readField'] = true;
-          print('   ✏️ Marcando: ChatMessages/$chatId/$messageId/$readField = true');
-        });
-
-        if (updates.isNotEmpty) {
-          // Batch update — uma única escrita no Firebase
-          await _firebase.database.ref().update(updates);
-          print('✅ ${updates.length} mensagens atualizadas');
-        }
-      }
-
-      // 2. Zera o unreadCount
-      await _firebase.database
-          .ref('Chats/$chatId/unreadCount/$userRole')
-          .set(0);
-      // ✅ ADICIONAR NO FINAL - após zerar unreadCount
-    print('✅ unreadCount/$userRole zerado');
-    
-    // 🔥 CRÍTICO: Recalcular badge global
-    await _recalculateBadgeForUserInChat(chatId, userRole);
-      print('✅ unreadCount/$userRole zerado');
-      print('═══════════════════════════════════════');
+      // ✅ Delega para BadgeHelper que centraliza toda a lógica
+      await BadgeHelper.markChatAsRead(chatId, userId, userRole);
+      
+      print('✅ markAsRead concluído');
     } catch (e) {
       print('❌ Erro em markAsRead: $e');
     }
   }
-
-  Future<void> _recalculateBadgeForUserInChat(String chatId, String userRole) async {
-  try {
-    // Pega contractorId e employeeId do chat
-    final chatRef = _firebase.chatRef(chatId);
-    final chatSnapshot = await chatRef.get();
-    
-    if (!chatSnapshot.exists) return;
-    
-    final chatData = chatSnapshot.value as Map<dynamic, dynamic>;
-    final contractorId = chatData['contractor']?.toString() ?? '';
-    final employeeId = chatData['employee']?.toString() ?? '';
-    
-    // Recalcula para AMBOS os usuários do chat
-    if (contractorId.isNotEmpty) {
-      await BadgeHelper.recalculateChatBadge(contractorId);
-    }
-    if (employeeId.isNotEmpty && employeeId != contractorId) {
-      await BadgeHelper.recalculateChatBadge(employeeId);
-    }
-  } catch (e) {
-    print('❌ Erro ao recalcular badge do chat: $e');
-  }
-}
   // ========================================
   // 7️⃣ STATUS DO OUTRO USUÁRIO
   // ========================================

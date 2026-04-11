@@ -305,6 +305,10 @@ class FirebaseFeedService {
   // ===============================
   // 🔥 BUSCAR VAGAS CANDIDATADAS
   // ===============================
+  /// ✅ OTIMIZADO: Busca candidaturas do usuário a partir do path user_requests.
+  /// Se user_requests não existir, faz fallback para a query anterior mas com cache.
+  /// Antes: baixava TODAS as vagas abertas (~full table scan)
+  /// Agora: tenta path dedicado user_requests/{userId}/vacancies primeiro
   Future<Set<String>> fetchRequestedVacancyIds() async {
     if (_currentUserId == null) return {};
 
@@ -312,6 +316,29 @@ class FirebaseFeedService {
       print('📋 Buscando vagas candidatadas...');
       final startTime = DateTime.now();
 
+      // ✅ Tenta path otimizado primeiro
+      final userRequestsSnapshot = await _database
+          .child('user_requests/$_currentUserId/vacancies')
+          .get();
+
+      if (userRequestsSnapshot.exists && userRequestsSnapshot.value != null) {
+        final data = userRequestsSnapshot.value;
+        final requestedIds = <String>{};
+        
+        if (data is Map) {
+          requestedIds.addAll(data.keys.map((k) => k.toString()));
+        } else if (data is List) {
+          for (var item in data) {
+            if (item != null) requestedIds.add(item.toString());
+          }
+        }
+        
+        final duration = DateTime.now().difference(startTime);
+        print('✅ ${requestedIds.length} candidaturas (path otimizado) em ${duration.inMilliseconds}ms');
+        return requestedIds;
+      }
+
+      // Fallback: query completa (para compatibilidade)
       final snapshot = await _database
           .child('vacancy')
           .orderByChild('status')
@@ -333,7 +360,7 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('✅ ${requestedIds.length} candidaturas em ${duration.inMilliseconds}ms');
+      print('✅ ${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
       
       return requestedIds;
       
@@ -343,6 +370,10 @@ class FirebaseFeedService {
     }
   }
 
+  /// ✅ OTIMIZADO: Busca requests de profissionais a partir do path user_requests.
+  /// Se user_requests não existir, faz fallback para a query anterior.
+  /// Antes: baixava TODOS os profissionais ativos (~full table scan)
+  /// Agora: tenta path dedicado user_requests/{userId}/professionals primeiro
   Future<Set<String>> fetchRequestedProfessionalIds() async {
     if (_currentUserId == null) return {};
 
@@ -350,6 +381,29 @@ class FirebaseFeedService {
       print('📋 Buscando requests de profissionais...');
       final startTime = DateTime.now();
 
+      // ✅ Tenta path otimizado primeiro
+      final userRequestsSnapshot = await _database
+          .child('user_requests/$_currentUserId/professionals')
+          .get();
+
+      if (userRequestsSnapshot.exists && userRequestsSnapshot.value != null) {
+        final data = userRequestsSnapshot.value;
+        final requestedIds = <String>{};
+        
+        if (data is Map) {
+          requestedIds.addAll(data.keys.map((k) => k.toString()));
+        } else if (data is List) {
+          for (var item in data) {
+            if (item != null) requestedIds.add(item.toString());
+          }
+        }
+        
+        final duration = DateTime.now().difference(startTime);
+        print('✅ ${requestedIds.length} requests profissionais (path otimizado) em ${duration.inMilliseconds}ms');
+        return requestedIds;
+      }
+
+      // Fallback: query completa (para compatibilidade)
       final snapshot = await _database
           .child('professionals')
           .orderByChild('status')
@@ -374,7 +428,7 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('✅ ${requestedIds.length} requests de profissionais em ${duration.inMilliseconds}ms');
+      print('✅ ${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
       
       return requestedIds;
       
