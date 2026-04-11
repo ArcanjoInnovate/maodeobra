@@ -1,3 +1,5 @@
+// ignore_for_file: unused_import
+
 import 'package:dartobra_new/screens/auth/login/login_screen.dart';
 import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
@@ -25,6 +27,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   print('📬 Mensagem em background: ${message.notification?.title}');
 }
 
+// ignore: unused_element
 Future<String?> _getCurrentUserId() async {
   try {
     // ✅ PRIORIDADE 1: Firebase Auth (fonte da verdade)

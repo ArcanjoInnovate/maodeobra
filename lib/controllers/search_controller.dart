@@ -1,3 +1,8 @@
+// lib/controllers/search_controller.dart
+
+// ignore_for_file: unused_field
+
+
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/services/cache/cache_service.dart';
 import 'package:dartobra_new/services/expiration_service.dart';
