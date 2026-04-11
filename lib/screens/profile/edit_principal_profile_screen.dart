@@ -1,8 +1,8 @@
 import 'package:dartobra_new/screens/profile/edit_login_info_screen.dart';
 import 'package:flutter/material.dart';
-import 'edit_basic_info.dart';
-import 'edit_contact_info.dart';
-import 'edit_professional_info.dart';
+import 'edit_basic_info_screen.dart';
+import 'edit_contact_info_screen.dart';
+import 'edit_professional_info_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final String local_id;

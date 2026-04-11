@@ -6,7 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
-import 'edit_info_vacancy.dart';
+import 'edit_vacancy_info_screen.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';

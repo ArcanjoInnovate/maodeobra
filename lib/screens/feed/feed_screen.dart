@@ -10,8 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import 'professional_profile.dart';
-import 'vacancy_detail.dart';
+import 'professional_profile_screen.dart';
+import 'vacancy_detail_screen.dart';
 
 // =============================================================================
 // ALTERAÇÕES NESTE ARQUIVO:
