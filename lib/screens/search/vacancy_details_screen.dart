@@ -924,19 +924,19 @@ Future<void> _requestChat() async {
     // ✅ ADICIONA
     requestsList.add(currentUserId);
 
-    // 🔥 SALVA COMO LIST (SEMPRE)
-    await db.child('vacancy/${widget.vacancyId}/requests').set(requestsList);
+    // ✅ OTIMIZAÇÃO: Batch update atômico (todas as escritas em uma única operação)
+    final updates = <String, dynamic>{
+      'vacancy/${widget.vacancyId}/requests': requestsList,
+      'user_requests/$currentUserId/vacancies/${widget.vacancyId}': true,
+      'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
+        'viewed_by_owner': false,
+        'applied_at': DateTime.now().millisecondsSinceEpoch,
+        'worker_name': workerName,
+        'worker_avatar': workerAvatar,
+      },
+    };
 
-    // ✅ OTIMIZAÇÃO: Salva no path user_requests para queries rápidas no feed
-    await db.child('user_requests/$currentUserId/vacancies/${widget.vacancyId}').set(true);
-
-    // Views
-    await db.child('vacancy/${widget.vacancyId}/views/request_views/$currentUserId').set({
-      'viewed_by_owner': false,
-      'applied_at': DateTime.now().millisecondsSinceEpoch,
-      'worker_name': workerName,
-      'worker_avatar': workerAvatar,
-    });
+    await db.update(updates);
 
     _showSuccess('Candidatura enviada!');
     
