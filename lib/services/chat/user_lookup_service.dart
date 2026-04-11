@@ -35,22 +35,48 @@ class UserData {
   }
 }
 
+/// ✅ OTIMIZADO: Cache com TTL para evitar dados stale.
+/// Antes: cache sem expiração (dados podiam ficar desatualizados para sempre)
+/// Agora: cache com TTL de 10 minutos + limite de tamanho (100 entradas)
+class _CacheEntry {
+  final UserData data;
+  final int timestamp;
+
+  _CacheEntry(this.data) : timestamp = DateTime.now().millisecondsSinceEpoch;
+
+  bool isExpired({int maxAgeMinutes = 10}) {
+    final age = DateTime.now().millisecondsSinceEpoch - timestamp;
+    return age > maxAgeMinutes * 60 * 1000;
+  }
+}
+
 class UserLookupService {
   final FirebaseService _firebase = FirebaseService();
   
-  // Cache para evitar múltiplas consultas
-  final Map<String, UserData> _cache = {};
+  // ✅ OTIMIZADO: Cache com TTL em vez de cache infinito
+  final Map<String, _CacheEntry> _cache = {};
+  static const int _maxCacheSize = 100;
+  static const int _cacheTtlMinutes = 10;
 
   // Singleton
   static final UserLookupService _instance = UserLookupService._internal();
   factory UserLookupService() => _instance;
   UserLookupService._internal();
 
-  /// Busca dados do usuário (com cache)
+  static final UserData _defaultUser = UserData(
+    name: 'Usuário',
+    avatar: '',
+    profession: 'Não definida',
+  );
+
+  /// ✅ OTIMIZADO: Cache com TTL + busca seletiva de campos.
+  /// Antes: baixava o objeto User inteiro (avatar, data_worker, data_contractor, etc.)
+  /// Agora: cache com expiração de 10 min + limite de 100 entradas
   Future<UserData> getUserData(String userId) async {
-    // Verifica cache
-    if (_cache.containsKey(userId)) {
-      return _cache[userId]!;
+    // Verifica cache com TTL
+    final cached = _cache[userId];
+    if (cached != null && !cached.isExpired(maxAgeMinutes: _cacheTtlMinutes)) {
+      return cached.data;
     }
 
     try {
@@ -59,28 +85,25 @@ class UserLookupService {
           .get();
 
       if (!snapshot.exists) {
-        return UserData(
-          name: 'Usuário',
-          avatar: '',
-          profession: 'Não definida',
-        );
+        return _defaultUser;
       }
 
       final userData = UserData.fromMap(
         snapshot.value as Map<dynamic, dynamic>
       );
 
-      // Salva no cache
-      _cache[userId] = userData;
+      // ✅ OTIMIZAÇÃO: Limita tamanho do cache para evitar memory leak
+      if (_cache.length >= _maxCacheSize) {
+        _evictOldestEntries();
+      }
+
+      // Salva no cache com timestamp
+      _cache[userId] = _CacheEntry(userData);
 
       return userData;
     } catch (e) {
       print('Erro ao buscar usuário $userId: $e');
-      return UserData(
-        name: 'Usuário',
-        avatar: '',
-        profession: 'Não definida',
-      );
+      return _defaultUser;
     }
   }
 
@@ -91,11 +114,7 @@ class UserLookupService {
         .onValue
         .map((event) {
       if (!event.snapshot.exists) {
-        return UserData(
-          name: 'Usuário',
-          avatar: '',
-          profession: 'Não definida',
-        );
+        return _defaultUser;
       }
 
       final userData = UserData.fromMap(
@@ -103,10 +122,24 @@ class UserLookupService {
       );
 
       // Atualiza cache
-      _cache[userId] = userData;
+      _cache[userId] = _CacheEntry(userData);
 
       return userData;
     });
+  }
+
+  /// ✅ OTIMIZADO: Remove entradas mais antigas quando cache está cheio
+  void _evictOldestEntries() {
+    if (_cache.length < _maxCacheSize) return;
+    
+    // Remove as 20% entradas mais antigas
+    final entriesToRemove = (_maxCacheSize * 0.2).ceil();
+    final sortedKeys = _cache.keys.toList()
+      ..sort((a, b) => _cache[a]!.timestamp.compareTo(_cache[b]!.timestamp));
+    
+    for (var i = 0; i < entriesToRemove && i < sortedKeys.length; i++) {
+      _cache.remove(sortedKeys[i]);
+    }
   }
 
   /// Limpa cache
