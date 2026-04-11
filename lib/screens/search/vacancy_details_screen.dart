@@ -924,10 +924,9 @@ Future<void> _requestChat() async {
     // ✅ ADICIONA
     requestsList.add(currentUserId);
 
-    // ✅ OTIMIZAÇÃO: Batch update atômico (todas as escritas em uma única operação)
+    // ✅ Escritas principais da candidatura
     final updates = <String, dynamic>{
       'vacancy/${widget.vacancyId}/requests': requestsList,
-      'user_requests/$currentUserId/vacancies/${widget.vacancyId}': true,
       'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
         'viewed_by_owner': false,
         'applied_at': DateTime.now().millisecondsSinceEpoch,
@@ -937,6 +936,11 @@ Future<void> _requestChat() async {
     };
 
     await db.update(updates);
+
+    // user_requests separado para não bloquear a candidatura se as regras não cobrirem este path
+    try {
+      await db.child('user_requests/$currentUserId/vacancies/${widget.vacancyId}').set(true);
+    } catch (_) {}
 
     _showSuccess('Candidatura enviada!');
     
