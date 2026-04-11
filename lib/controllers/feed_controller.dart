@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
-import 'package:dartobra_new/models/search_model/professional_model.dart';
-import 'package:dartobra_new/models/search_model/vacancy_model.dart';
-import 'package:dartobra_new/services/services_feed/feed_service.dart';
-import 'package:dartobra_new/services/services_search/ibge_service.dart';
+import 'package:dartobra_new/models/search/professional_model.dart';
+import 'package:dartobra_new/models/search/vacancy_model.dart';
+import 'package:dartobra_new/services/feed/feed_service.dart';
+import 'package:dartobra_new/services/search/ibge_service.dart';
 
 // ✅ Mantido para compatibilidade – mas agora o feed sempre carrega OS DOIS
 enum FeedMode { worker, contractor, unified }

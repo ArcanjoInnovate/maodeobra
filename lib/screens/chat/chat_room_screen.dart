@@ -1,0 +1,542 @@
+// lib/screens/chat_room_screen.dart
+
+import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/services/badge/badge_service.dart';
+import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
+import 'package:dartobra_new/services/chat/chat_service.dart';
+import 'package:dartobra_new/widgets/common/chat_input.dart';
+import 'package:dartobra_new/widgets/common/online_status_indicator.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:dartobra_new/widgets/chat/message_bubble.dart';
+import 'package:dartobra_new/core/utils/date_utils.dart';
+import 'package:dartobra_new/models/chat/message_model.dart';
+
+class ChatRoomScreen extends StatefulWidget {
+  final String chatId;
+  final String contractorId;
+  final String employeeId;
+  final String userRole;
+  final String userId;
+  final String otherUserName;
+  final String? otherUserAvatar;
+
+  const ChatRoomScreen({
+    Key? key,
+    required this.chatId,
+    required this.contractorId,
+    required this.employeeId,
+    required this.userId,
+    required this.userRole,
+    required this.otherUserName,
+    this.otherUserAvatar,
+  }) : super(key: key);
+
+  @override
+  State<ChatRoomScreen> createState() => _ChatRoomScreenState();
+}
+
+class _ChatRoomScreenState extends State<ChatRoomScreen>
+    with WidgetsBindingObserver {
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollToBottom = false;
+  bool _isLoadingMore = false;
+
+  // Controla scroll automático
+  int _previousMessageCount = 0;
+  bool _initialScrollDone = false;
+
+  int _recipientUnreadCount = 0;
+
+  String get _recipientRole =>
+      widget.userRole == 'contractor' ? 'employee' : 'contractor';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeChat();
+      _setupScrollListener();
+      _setupRecipientUnreadStream();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && mounted) {
+      _markAsRead();
+    }
+  }
+
+  void _setupRecipientUnreadStream() {
+    ChatServiceFinal()
+        .getUnreadCountStream(widget.chatId, _recipientRole)
+        .listen((count) {
+      if (mounted) {
+        setState(() => _recipientUnreadCount = count);
+      }
+    });
+  }
+
+  Future<void> _initializeChat() async {
+    if (!mounted) return;
+
+    final controller = context.read<ChatControllerFinal>();
+    await controller.initializeChat(
+      chatId: widget.chatId,
+      contractorId: widget.contractorId,
+      employeeId: widget.employeeId,
+      userRole: widget.userRole,
+    );
+
+    await _markBadgeAsRead();
+
+    // Scroll inicial após carregar mensagens
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom(animated: false);
+        _initialScrollDone = true;
+      });
+    }
+  }
+
+  Future<void> _markBadgeAsRead() async {
+    try {
+      await BadgeHelper.markChatAsRead(
+        widget.chatId,
+        widget.userId,
+        widget.userRole,
+      );
+    } catch (e) {
+      debugPrint('❌ Erro ao atualizar badge: $e');
+    }
+  }
+
+  Future<void> _markAsRead() async {
+    if (!mounted) return;
+    try {
+      final controller = context.read<ChatControllerFinal>();
+      await controller.markAsRead();
+      await _markBadgeAsRead();
+    } catch (e) {
+      debugPrint('❌ Erro ao marcar como lido: $e');
+    }
+  }
+
+  void _setupScrollListener() {
+    _scrollController.addListener(() {
+      if (!mounted) return;
+
+      final isAtBottom = _scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 100;
+
+      if (_showScrollToBottom != !isAtBottom) {
+        setState(() => _showScrollToBottom = !isAtBottom);
+      }
+
+      // Paginação ao chegar no topo
+      if (_scrollController.position.pixels <= 100 && !_isLoadingMore) {
+        _isLoadingMore = true;
+        Future.microtask(() {
+          if (mounted) {
+            context
+                .read<ChatControllerFinal>()
+                .loadMoreMessages()
+                .then((_) => _isLoadingMore = false);
+          }
+        });
+      }
+    });
+  }
+
+  /// Rola para o fim da lista
+  void _scrollToBottom({bool animated = true}) {
+    if (!_scrollController.hasClients) return;
+
+    if (animated) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
+  }
+
+  /// Verifica se o usuário está perto do fim da lista
+  bool get _isNearBottom {
+    if (!_scrollController.hasClients) return true;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.position.pixels;
+    // Considera "perto do fim" se estiver a menos de 150px do final
+    return (maxScroll - current) <= 150;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
+    try {
+      context.read<ChatControllerFinal>().leaveChat();
+    } catch (e) {
+      debugPrint('❌ Erro ao sair do chat: $e');
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: _buildAppBar(),
+      body: Consumer<ChatControllerFinal>(
+        builder: (context, controller, child) {
+          if (controller.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (controller.error != null) {
+            return _buildErrorWidget(controller.error!);
+          }
+
+          // ✅ Detecta nova mensagem e rola automaticamente
+          final currentCount = controller.messages.length;
+          if (_initialScrollDone &&
+              currentCount > _previousMessageCount) {
+            _previousMessageCount = currentCount;
+
+            // Só rola automático se o usuário estiver perto do fim
+            // (não interrompe quem está lendo mensagens antigas)
+            if (_isNearBottom) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _scrollToBottom();
+              });
+            }
+          } else {
+            _previousMessageCount = currentCount;
+          }
+
+          return Column(
+            children: [
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildMessagesList(controller),
+                    if (_showScrollToBottom) _buildScrollToBottomButton(),
+                  ],
+                ),
+              ),
+              ChatInput(
+                onSendMessage: (text) async {
+                  await controller.sendMessage(text);
+                  // Sempre rola ao enviar mensagem própria
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _scrollToBottom();
+                  });
+                },
+                isEnabled: !controller.isSending,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      titleSpacing: 0,
+      title: Consumer<ChatControllerFinal>(
+        builder: (context, controller, child) {
+          final status = controller.otherParticipantStatus;
+          return Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: widget.otherUserAvatar != null
+                    ? NetworkImage(widget.otherUserAvatar!)
+                    : null,
+                child: widget.otherUserAvatar == null
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.otherUserName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (status != null)
+                      AnimatedOnlineStatusIndicator(
+                        participant: status,
+                        showText: true,
+                        size: 8,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        PopupMenuButton<String>(
+          onSelected: _handleMenuAction,
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'clear',
+              child: Row(children: [
+                Icon(Icons.delete_sweep, size: 20),
+                SizedBox(width: 8),
+                Text('Limpar conversa'),
+              ]),
+            ),
+            const PopupMenuItem(
+              value: 'denunciar',
+              child: Row(children: [
+                Icon(Icons.warning, size: 20),
+                SizedBox(width: 8),
+                Text('Denunciar'),
+              ]),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMessagesList(ChatControllerFinal controller) {
+    if (controller.messages.isEmpty) return _buildEmptyState();
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      itemCount: controller.messages.length +
+          (controller.isLoadingMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (controller.isLoadingMore && index == 0) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final messageIndex =
+            controller.isLoadingMore ? index - 1 : index;
+        final message = controller.messages[messageIndex];
+        final isSentByMe = controller.isSentByMe(message);
+
+        Widget? dateSeparator;
+        if (messageIndex == 0 ||
+            _shouldShowDateSeparator(
+              controller.messages[messageIndex - 1].timestamp,
+              message.timestamp,
+            )) {
+          dateSeparator = _buildDateSeparator(message.timestamp);
+        }
+
+        return Column(
+          children: [
+            if (dateSeparator != null) dateSeparator,
+            AnimatedMessageBubble(
+              message: message,
+              isSentByMe: isSentByMe,
+              myRole: widget.userRole,
+              
+              avatarUrl: isSentByMe ? null : widget.otherUserAvatar,
+              onLongPress: () =>
+                  _showMessageOptions(message, isSentByMe),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  bool _shouldShowDateSeparator(int prevTimestamp, int currentTimestamp) {
+    final prev = DateTime.fromMillisecondsSinceEpoch(prevTimestamp);
+    final curr = DateTime.fromMillisecondsSinceEpoch(currentTimestamp);
+    return prev.day != curr.day ||
+        prev.month != curr.month ||
+        prev.year != curr.year;
+  }
+
+  Widget _buildDateSeparator(int timestamp) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            ChatDateUtils.getDateSeparator(timestamp),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline,
+              size: 80, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text('Nenhuma mensagem ainda',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600])),
+          const SizedBox(height: 8),
+          Text('Envie a primeira mensagem!',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScrollToBottomButton() {
+    return Positioned(
+      right: 16,
+      bottom: 16,
+      child: FloatingActionButton.small(
+        onPressed: _scrollToBottom,
+        backgroundColor: Theme.of(context).primaryColor,
+        child: const Icon(Icons.arrow_downward, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(error,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.red)),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _initializeChat,
+              child: const Text('Tentar novamente'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMessageOptions(Message message, bool isSentByMe) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copiar'),
+              onTap: () => Navigator.pop(context),
+            ),
+            if (isSentByMe)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Deletar',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _confirmDelete(message.id);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDelete(String messageId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Deletar mensagem'),
+        content:
+            const Text('Tem certeza que deseja deletar esta mensagem?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Deletar',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+  }
+
+  void _handleMenuAction(String action) {
+    switch (action) {
+      case 'clear':
+        _confirmClearChat();
+        break;
+      case 'denunciar':
+        final reportedId = widget.userRole == 'employee'
+            ? widget.contractorId
+            : widget.employeeId;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ComplaintChat(
+              chatId: widget.chatId,
+              reportId: widget.userId,
+              reportedId: reportedId,
+            ),
+          ),
+        );
+        break;
+    }
+  }
+
+  void _confirmClearChat() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Limpar conversa'),
+        content:
+            const Text('Todas as mensagens serão apagadas. Continuar?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Limpar',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+  }
+}
