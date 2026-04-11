@@ -1,14 +1,14 @@
-import 'dart:io';
+import 'package:dartobra_new/screens/auth/login/login_screen.dart';
+import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
+import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
-import 'package:dartobra_new/screens/screens_init/splash_screen/splash_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:dartobra_new/screens/screens_init/login_screen/login_screen.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';  // ← ADICIONADO
-import 'package:dartobra_new/screens/screens_init/register_screens/onboarding_first/onboarding_first.dart';
+import 'package:flutter/widgets.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
