@@ -8,6 +8,7 @@
       }
     },
     "Chats": {
+      ".read": "auth != null",
       ".indexOn": ["employee", "contractor"],
       "$chatId": {
         ".read": "auth != null",
@@ -22,6 +23,7 @@
       }
     },
     "vacancy": {
+      ".read": "auth != null",
       ".indexOn": ["status", "updated_at", "created_at"],
       "$vacancyId": {
         ".read": "auth != null",
@@ -29,6 +31,7 @@
       }
     },
     "professionals": {
+      ".read": "auth != null",
       ".indexOn": ["status", "updated_at", "created_at"],
       "$professionalId": {
         ".read": "auth != null",
