@@ -1,15 +1,15 @@
-// lib/controllers/search_controller_fixed.dart
+// lib/controllers/search_controller.dart
 
 // ignore_for_file: unused_field
 
-import 'package:dartobra_new/models/search_model/professional_model.dart';
-import 'package:dartobra_new/services/services_cache/cache_service.dart';
-import 'package:dartobra_new/services/services_search/firebase_search_service_optimized.dart';
-import 'package:dartobra_new/services/services_search/professionals_service.dart';
+import 'package:dartobra_new/models/search/professional_model.dart';
+import 'package:dartobra_new/services/cache/cache_service.dart';
+import 'package:dartobra_new/services/search/firebase_search_service.dart';
+import 'package:dartobra_new/services/search/professionals_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import '../models/search_model/vacancy_model.dart';
-import '../services/services_search/ibge_service.dart';
+import '../models/search/vacancy_model.dart';
+import '../services/search/ibge_service.dart';
 
 enum SearchType { professionals, vacancies }
 

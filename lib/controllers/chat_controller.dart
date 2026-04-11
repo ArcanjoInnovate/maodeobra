@@ -1,14 +1,14 @@
-// lib/controllers/chat_controller_final.dart
+// lib/controllers/chat_controller.dart
 
 // ignore_for_file: unused_field
 
-import 'package:dartobra_new/services/services_chat/chat_service.dart';
+import 'package:dartobra_new/services/chat/chat_service.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
-import '../models/chat_model/chat_model.dart';
-import '../models/chat_model/message_model.dart';
-import '../models/chat_model/participant_model.dart';
-import '../services/services_chat/firebase_service.dart';
+import '../models/chat/chat_model.dart';
+import '../models/chat/message_model.dart';
+import '../models/chat/participant_model.dart';
+import '../services/chat/firebase_service.dart';
 
 class ChatControllerFinal extends ChangeNotifier {
   final ChatServiceFinal _chatService = ChatServiceFinal();
