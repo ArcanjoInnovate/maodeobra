@@ -798,7 +798,6 @@ class _ProfessionDropdownState extends State<ProfessionDropdown> {
     'Apontador de Obras',
     'Auxiliar de Obras',
     'Ajudante Geral',
-    'Ceifeiro de Almas',
     'Servente de Obras',
     'Zelador de Obras',
     'Vigia de Obras',

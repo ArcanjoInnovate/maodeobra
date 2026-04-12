@@ -1,12 +1,12 @@
-// lib/screens/chat_room_screen.dart
+// lib/screens/chat_room_screen.dart - VERSÃO OTIMIZADA (ZERO ESPAÇO DESNECESSÁRIO)
 
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/services/badge/badge_service.dart';
 import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
 import 'package:dartobra_new/services/chat/chat_service.dart';
-import 'package:dartobra_new/widgets/common/chat_input.dart';
 import 'package:dartobra_new/widgets/common/online_status_indicator.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:dartobra_new/widgets/chat/message_bubble.dart';
 import 'package:dartobra_new/core/utils/date_utils.dart';
@@ -39,14 +39,17 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen>
     with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  final GlobalKey _inputKey = GlobalKey();
 
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
-
-  int  _previousMessageCount = 0;
-  bool _initialScrollDone    = false;
-
-  int _recipientUnreadCount = 0;
+  int _previousMessageCount = 0;
+  bool _initialScrollDone = false;
+  bool _isTyping = false;
+  bool _isScreenActive = true;
+  double _inputHeight = 56.0;
 
   String get _recipientRole =>
       widget.userRole == 'contractor' ? 'employee' : 'contractor';
@@ -63,26 +66,36 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeChat();
       _setupScrollListener();
-      _setupRecipientUnreadStream();
+      _measureInputHeight();
     });
+
+    _textController.addListener(_onTextChanged);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+
+    _isScreenActive = state == AppLifecycleState.resumed;
+
     if (state == AppLifecycleState.resumed && mounted) {
       _markAsRead();
     }
   }
 
-  /// Detecta abertura/fechamento do teclado pelo tamanho do viewport.
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (!mounted) return;
+
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+
     if (keyboardHeight > 0) {
-      _scrollAfterKeyboard();
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (mounted && _scrollController.hasClients) {
+          _scrollToBottom();
+        }
+      });
     }
   }
 
@@ -90,6 +103,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
+    _textController.removeListener(_onTextChanged);
+    _textController.dispose();
+    _focusNode.dispose();
     try {
       context.read<ChatControllerFinal>().leaveChat();
     } catch (e) {
@@ -99,27 +115,46 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  //  INPUT HEIGHT TRACKING
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void _measureInputHeight() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final RenderBox? renderBox =
+          _inputKey.currentContext?.findRenderObject() as RenderBox?;
+
+      if (renderBox != null) {
+        final newHeight = renderBox.size.height;
+
+        if ((newHeight - _inputHeight).abs() > 1.0) {
+          setState(() {
+            _inputHeight = newHeight;
+          });
+        }
+      }
+    });
+  }
+
+  void _onTextChanged() {
+    _measureInputHeight();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   //  SCROLL HELPERS
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Dispara múltiplos scrolls escalonados para garantir que a lista chegue ao
-  /// fim após o teclado terminar de animar (layout muda em etapas).
-  void _scrollAfterKeyboard() {
-    for (final ms in [100, 300, 600]) {
-      Future.delayed(Duration(milliseconds: ms), () {
-        if (mounted && _scrollController.hasClients) _scrollToBottom();
-      });
-    }
-  }
-
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
+
     final maxExtent = _scrollController.position.maxScrollExtent;
+
     if (animated) {
       _scrollController.animateTo(
         maxExtent,
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOut,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
       );
     } else {
       _scrollController.jumpTo(maxExtent);
@@ -130,7 +165,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     if (!_scrollController.hasClients) return true;
     return (_scrollController.position.maxScrollExtent -
             _scrollController.position.pixels) <=
-        150;
+        200;
   }
 
   void _setupScrollListener() {
@@ -144,7 +179,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         setState(() => _showScrollToBottom = !isAtBottom);
       }
 
-      // Paginação ao chegar no topo
       if (_scrollController.position.pixels <= 100 && !_isLoadingMore) {
         _isLoadingMore = true;
         Future.microtask(() {
@@ -174,43 +208,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       userRole: widget.userRole,
     );
 
-    // markChatAsRead já é chamado dentro de initializeChat → markAsRead
-    // Não precisa chamar _markBadgeAsRead() novamente
-
     if (mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom(animated: false);
-        _initialScrollDone = true;
-      });
-    }
-  }
-
-  void _setupRecipientUnreadStream() {
-    ChatServiceFinal()
-        .getUnreadCountStream(widget.chatId, _recipientRole)
-        .listen((count) {
-      if (mounted) setState(() => _recipientUnreadCount = count);
-    });
-  }
-
-  Future<void> _markBadgeAsRead() async {
-    try {
-      await BadgeHelper.markChatAsRead(
-        widget.chatId,
-        widget.userId,
-        widget.userRole,
-      );
-    } catch (e) {
-      debugPrint('❌ Erro ao atualizar badge: $e');
+      await Future.delayed(const Duration(milliseconds: 100));
+      _scrollToBottom(animated: false);
+      _initialScrollDone = true;
     }
   }
 
   Future<void> _markAsRead() async {
-    if (!mounted) return;
+    if (!mounted || !_isScreenActive) return;
+
     try {
       final controller = context.read<ChatControllerFinal>();
-      // controller.markAsRead() já delega para BadgeHelper.markChatAsRead()
-      // que faz tudo: marca mensagens, zera unreadCount e recalcula badge
       await controller.markAsRead();
     } catch (e) {
       debugPrint('❌ Erro ao marcar como lido: $e');
@@ -236,45 +245,36 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
             return _buildErrorWidget(controller.error!);
           }
 
-          // Detecta nova mensagem e rola automaticamente
           final currentCount = controller.messages.length;
           if (_initialScrollDone && currentCount > _previousMessageCount) {
             _previousMessageCount = currentCount;
+
             if (_isNearBottom) {
-              WidgetsBinding.instance
-                  .addPostFrameCallback((_) => _scrollToBottom());
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _scrollToBottom();
+              });
+            }
+
+            if (_isScreenActive) {
+              Future.delayed(const Duration(milliseconds: 500), () {
+                _markAsRead();
+              });
             }
           } else {
             _previousMessageCount = currentCount;
           }
 
-          return Column(
+          return Stack(
             children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    _buildMessagesList(controller),
-                    if (_showScrollToBottom) _buildScrollToBottomButton(),
-                  ],
-                ),
+              Column(
+                children: [
+                  Expanded(
+                    child: _buildMessagesList(controller),
+                  ),
+                  _buildChatInput(controller),
+                ],
               ),
-              ChatInput(
-                onSendMessage: (text) async {
-                  await controller.sendMessage(text);
-                  // Scroll imediato + fallbacks escalonados após envio
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _scrollToBottom();
-                  });
-                  for (final ms in [100, 300]) {
-                    Future.delayed(Duration(milliseconds: ms), () {
-                      if (mounted && _scrollController.hasClients) {
-                        _scrollToBottom();
-                      }
-                    });
-                  }
-                },
-                isEnabled: !controller.isSending,
-              ),
+              if (_showScrollToBottom) _buildScrollToBottomButton(),
             ],
           );
         },
@@ -347,12 +347,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     );
   }
 
+  /// ✅ Padding fixo e mínimo — o Column já posiciona o TextField corretamente
   Widget _buildMessagesList(ChatControllerFinal controller) {
     if (controller.messages.isEmpty) return _buildEmptyState();
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.only(
+        bottom: 8, // ✅ Mínimo absoluto — sem espaço desnecessário
+        left: 8,
+        right: 8,
+        top: 8,
+      ),
       itemCount:
           controller.messages.length + (controller.isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
@@ -391,6 +397,111 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           ],
         );
       },
+    );
+  }
+
+  Widget _buildChatInput(ChatControllerFinal controller) {
+    return Container(
+      key: _inputKey,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(
+            color: Colors.grey[300]!,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Container(
+                  constraints: const BoxConstraints(
+                    maxHeight: 120,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: TextField(
+                    controller: _textController,
+                    focusNode: _focusNode,
+                    maxLines: null,
+                    minLines: 1,
+                    textCapitalization: TextCapitalization.sentences,
+                    style: const TextStyle(fontSize: 16),
+                    decoration: const InputDecoration(
+                      hintText: 'Digite uma mensagem...',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (text) {
+                      setState(() => _isTyping = text.isNotEmpty);
+                    },
+                    onTap: () {
+                      Future.delayed(const Duration(milliseconds: 100), () {
+                        if (mounted) _scrollToBottom();
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: controller.isSending ||
+                        _textController.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        final text = _textController.text.trim();
+                        if (text.isNotEmpty) {
+                          await controller.sendMessage(text);
+                          _textController.clear();
+                          setState(() => _isTyping = false);
+
+                          _measureInputHeight();
+
+                          Future.delayed(const Duration(milliseconds: 100), () {
+                            if (mounted && _scrollController.hasClients) {
+                              _scrollToBottom();
+                            }
+                          });
+
+                          Future.delayed(const Duration(milliseconds: 300), () {
+                            _markAsRead();
+                          });
+                        }
+                      },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _isTyping && !controller.isSending
+                        ? Theme.of(context).primaryColor
+                        : Colors.grey[300],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.send,
+                    color: _isTyping && !controller.isSending
+                        ? Colors.white
+                        : Colors.grey[500],
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -443,9 +554,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   }
 
   Widget _buildScrollToBottomButton() {
+    // ✅ Offset dinâmico baseado na altura real do input
+    final double bottomPosition = _inputHeight + 16;
+
     return Positioned(
       right: 16,
-      bottom: 16,
+      bottom: bottomPosition,
       child: FloatingActionButton.small(
         onPressed: _scrollToBottom,
         backgroundColor: Theme.of(context).primaryColor,
@@ -491,7 +605,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
             ListTile(
               leading: const Icon(Icons.copy),
               title: const Text('Copiar'),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: message.text));
+                Navigator.pop(context);
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Mensagem copiada'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
             ),
             if (isSentByMe)
               ListTile(

@@ -1,7 +1,7 @@
 // lib/services/app_lifecycle_service.dart
 
 import 'dart:async';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:flutter/material.dart';
 
 /// Serviço que gerencia o ciclo de vida do app e verificações periódicas

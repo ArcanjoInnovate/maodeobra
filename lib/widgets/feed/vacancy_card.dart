@@ -3,7 +3,7 @@
 
 import 'package:dartobra_new/screens/search/my_vacancy_details_screen.dart';
 import 'package:dartobra_new/screens/search/vacancy_details_screen.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
 import 'package:dartobra_new/widgets/expiration_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';  

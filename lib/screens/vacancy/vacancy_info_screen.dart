@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:chewie/chewie.dart';
 import 'package:dartobra_new/screens/vacancy/edit_vacancy_info_screen.dart';
 import 'package:dartobra_new/services/badge/badge_service.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';

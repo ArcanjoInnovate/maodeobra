@@ -86,7 +86,7 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
 
   // ── contador de caracteres para feedback visual ──────────────────────────
   int get _descLen => _descriptionController.text.trim().length;
-  static const int _minDescLen = 80;
+  static const int _minDescLen = 4;
 
   final List<String> salaryTypes = [
     'Diário',

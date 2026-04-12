@@ -1,6 +1,4 @@
-// lib/controllers/chat_controller.dart
-
-// ignore_for_file: unused_field
+// lib/controllers/chat_controller.dart - VERSÃO HÍBRIDA COM TIMER
 
 import 'package:dartobra_new/services/chat/chat_service.dart';
 import 'package:flutter/foundation.dart';
@@ -28,6 +26,9 @@ class ChatControllerFinal extends ChangeNotifier {
   StreamSubscription? _messagesSubscription;
   StreamSubscription? _statusSubscription;
   StreamSubscription? _unreadCountSubscription;
+  
+  // ✅ HÍBRIDO: Timer periódico para mark as read contínuo
+  Timer? _markReadTimer;
 
   String? _chatId;
   String? _userRole;
@@ -81,14 +82,27 @@ class ChatControllerFinal extends ChangeNotifier {
       _setupStatusListener();
       _setupUnreadCountListener();
 
-      // ✅ markAsRead via ChatService — atualiza read_by_ nas mensagens
+      // ✅ HÍBRIDO: Mark as read imediato
       await _chatService.markAsRead(chatId, userRole);
+      
+      // ✅ HÍBRIDO: Inicia timer para mark as read contínuo (da solução sugerida)
+      _startContinuousMarkRead(chatId, userRole);
 
       _setLoading(false);
     } catch (e) {
       _setError('Erro ao inicializar chat: $e');
       _setLoading(false);
     }
+  }
+
+  // ✅ HÍBRIDO: Timer periódico para garantir marcação contínua
+  void _startContinuousMarkRead(String chatId, String userRole) {
+    _markReadTimer?.cancel();
+    _markReadTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_chatId != null && _userRole != null) {
+        _chatService.markAsRead(chatId, userRole);
+      }
+    });
   }
 
   // ========================================
@@ -195,7 +209,7 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // MARK AS READ — chama o service que atualiza o Firebase
+  // MARK AS READ
   // ========================================
 
   Future<void> markAsRead() async {
@@ -227,6 +241,9 @@ class ChatControllerFinal extends ChangeNotifier {
   // ========================================
 
   Future<void> leaveChat() async {
+    // ✅ HÍBRIDO: Cancela o timer antes de sair
+    _markReadTimer?.cancel();
+    
     if (_chatId != null && _userRole != null) {
       await _chatService.setUserOffline(_chatId!, _userRole!);
     }
@@ -244,6 +261,8 @@ class ChatControllerFinal extends ChangeNotifier {
 
   @override
   void dispose() {
+    // ✅ HÍBRIDO: Garante cancelamento do timer
+    _markReadTimer?.cancel();
     leaveChat();
     super.dispose();
   }
@@ -253,6 +272,8 @@ class ChatControllerFinal extends ChangeNotifier {
   // ========================================
 
   void reset() {
+    _markReadTimer?.cancel();
+    
     _currentChat = null;
     _messages.clear();
     _otherParticipantStatus = null;

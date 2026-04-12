@@ -5,7 +5,7 @@
 import 'dart:ui';
 
 import 'package:dartobra_new/services/badge/badge_service.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/widgets/professional_control.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';

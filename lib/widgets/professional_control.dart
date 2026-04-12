@@ -3,7 +3,7 @@
 import 'package:dartobra_new/widgets/expiration_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 
 class ProfessionalStatusControlWidget extends StatefulWidget {
   final bool initialIsActive;

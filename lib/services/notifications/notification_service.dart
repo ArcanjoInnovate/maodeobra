@@ -7,9 +7,71 @@ import 'package:flutter/material.dart';
 
 /// Handler GLOBAL para notificações em background.
 /// IMPORTANTE: Deve estar fora da classe, no top-level.
+///
+/// Como o backend envia mensagens DATA-ONLY (sem bloco "notification"),
+/// o Android não exibe nada automaticamente. Este handler recebe os dados
+/// e exibe via flutter_local_notifications com tag = chatId,
+/// permitindo cancelar todas as notificações de um chat de uma só vez.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('📬 Mensagem em background: ${message.notification?.title}');
+  debugPrint('📬 Mensagem em background: ${message.data}');
+
+  final data = message.data;
+  final type = data['type'];
+
+  // ✅ Trata mensagens de chat (data-only) e outros tipos com notification block
+  if (type == 'chat') {
+    final chatId = data['notificationTag'] ?? data['chatId'];
+    final title = data['notificationTitle'] ?? data['senderName'] ?? 'Nova mensagem';
+    final body = data['notificationBody'] ?? '';
+    final senderAvatar = data['senderAvatar'] ?? '';
+
+    if (chatId == null) return;
+
+    final FlutterLocalNotificationsPlugin localNotifications =
+        FlutterLocalNotificationsPlugin();
+
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@drawable/ic_notification'),
+      iOS: DarwinInitializationSettings(),
+    );
+    await localNotifications.initialize(initSettings);
+
+    final androidDetails = AndroidNotificationDetails(
+      'chat_messages',
+      'Mensagens de Chat',
+      channelDescription: 'Notificações de novas mensagens de chat',
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      icon: '@drawable/ic_notification',
+      color: const Color(0xFF6B21A8),
+      largeIcon: senderAvatar.isNotEmpty
+          ? FilePathAndroidBitmap(senderAvatar)
+          : null,
+      tag: chatId,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      threadIdentifier: chatId,
+    );
+
+    await localNotifications.show(
+      chatId.hashCode,
+      title,
+      body,
+      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      payload:
+          'type:chat|chatId:$chatId|senderId:${data['senderId'] ?? ''}|notificationTag:$chatId',
+    );
+  }
+  // Outros tipos (chat_request, expiration_warning, etc.) têm bloco
+  // "notification" no payload, então o sistema exibe automaticamente.
 }
 
 class NotificationService {
@@ -111,9 +173,7 @@ class NotificationService {
   /// Remove token do Firebase (chamar no logout)
   Future<void> removeToken(String userId) async {
     try {
-      await FirebaseDatabase.instance
-          .ref('Users/$userId/fcmToken')
-          .remove();
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').remove();
       debugPrint('🗑️ Token FCM removido');
     } catch (e) {
       debugPrint('❌ Erro ao remover token: $e');
@@ -168,13 +228,17 @@ class NotificationService {
   void _setupMessageHandlers() {
     // App em FOREGROUND
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('📬 Mensagem recebida (app aberto): ${message.notification?.title}');
+      debugPrint('📬 Mensagem recebida (foreground): ${message.data}');
       _showLocalNotification(message);
     });
 
     // App em BACKGROUND — usuário clica na notificação
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('🔔 Notificação clicada (background)');
+      final chatId = message.data['chatId'] ?? message.data['notificationTag'];
+      if (chatId != null) {
+        dismissChatNotifications(chatId);
+      }
       _handleNotificationClick(message.data);
     });
 
@@ -186,18 +250,60 @@ class NotificationService {
     final message = await _fcm.getInitialMessage();
     if (message != null) {
       debugPrint('🔔 App aberto por notificação');
+      final chatId = message.data['chatId'] ?? message.data['notificationTag'];
+      if (chatId != null) {
+        await dismissChatNotifications(chatId);
+      }
       _handleNotificationClick(message.data);
     }
   }
 
   // ============================================================
-  // EXIBIR NOTIFICAÇÃO LOCAL
+  // EXIBIR NOTIFICAÇÃO LOCAL (FOREGROUND)
+  // ✅ Lê do campo data primeiro (mensagens data-only de chat)
+  // ✅ Cai no notification block como fallback (outros tipos)
   // ============================================================
 
   Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
-      final title = message.notification?.title ?? 'Nova mensagem';
-      final body = message.notification?.body ?? '';
+      final data = message.data;
+
+      // ✅ Lê do data primeiro — mensagens de chat são data-only
+      final title = data['notificationTitle'] ??
+          data['senderName'] ??
+          message.notification?.title ??
+          'Nova mensagem';
+      final body = data['notificationBody'] ??
+          message.notification?.body ??
+          '';
+
+      final chatId = data['notificationTag'] ?? data['chatId'];
+      final senderAvatar = data['senderAvatar'] ?? '';
+
+      final notificationId =
+          chatId != null ? chatId.hashCode : message.hashCode;
+
+      final BigPictureStyleInformation? bigPictureStyle =
+          senderAvatar.isNotEmpty
+              ? BigPictureStyleInformation(
+                  FilePathAndroidBitmap(senderAvatar),
+                  largeIcon: FilePathAndroidBitmap(senderAvatar),
+                  contentTitle: title,
+                  summaryText: body,
+                  hideExpandedLargeIcon: false,
+                )
+              : null;
+
+      final MessagingStyleInformation? messagingStyle =
+          bigPictureStyle == null
+              ? MessagingStyleInformation(
+                  Person(name: title, important: true),
+                  groupConversation: false,
+                  messages: [
+                    Message(body, DateTime.now(), Person(name: title)),
+                  ],
+                )
+              : null;
 
       final androidDetails = AndroidNotificationDetails(
         'chat_messages',
@@ -207,29 +313,68 @@ class NotificationService {
         priority: Priority.high,
         showWhen: true,
         icon: '@drawable/ic_notification',
+        color: const Color(0xFF6B21A8),
+        largeIcon: senderAvatar.isNotEmpty
+            ? FilePathAndroidBitmap(senderAvatar)
+            : null,
+        styleInformation: bigPictureStyle ?? messagingStyle,
+        tag: chatId,
+        playSound: true,
+        enableVibration: true,
       );
 
-      const iosDetails = DarwinNotificationDetails(
+      final iosDetailsWithThread = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        threadIdentifier: chatId ?? '',
       );
 
       final notificationDetails = NotificationDetails(
         android: androidDetails,
-        iOS: iosDetails,
+        iOS: iosDetailsWithThread,
       );
 
       await _localNotifications.show(
-        message.hashCode,
+        notificationId,
         title,
         body,
         notificationDetails,
-        payload: _encodePayload(message.data),
+        payload: _encodePayload(data),
       );
     } catch (e) {
       debugPrint('❌ Erro ao mostrar notificação local: $e');
     }
+  }
+
+  // ============================================================
+  // FECHAR NOTIFICAÇÕES DE UM CHAT ESPECÍFICO
+  // ============================================================
+
+  Future<void> dismissChatNotifications(String chatId) async {
+    try {
+      debugPrint('🧹 Fechando notificações do chat: $chatId');
+
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin != null) {
+        await androidPlugin.cancel(chatId.hashCode, tag: chatId);
+      }
+
+      await _localNotifications.cancel(chatId.hashCode);
+
+      debugPrint('✅ Notificações do chat $chatId removidas');
+    } catch (e) {
+      debugPrint('❌ Erro ao fechar notificações: $e');
+    }
+  }
+
+  /// Fecha TODAS as notificações do app (usar no logout ou clearAll)
+  Future<void> dismissAllNotifications() async {
+    await _localNotifications.cancelAll();
+    debugPrint('🧹 Todas as notificações removidas');
   }
 
   // ============================================================
@@ -240,6 +385,12 @@ class NotificationService {
     debugPrint('👆 Notificação local clicada');
     if (response.payload != null) {
       final data = _decodePayload(response.payload!);
+
+      final chatId = data['chatId'] ?? data['notificationTag'];
+      if (chatId != null) {
+        dismissChatNotifications(chatId);
+      }
+
       _handleNotificationClick(data);
     }
   }
@@ -258,12 +409,13 @@ class NotificationService {
       } else {
         debugPrint('⚠️ Callback de navegação não configurado');
       }
-    } else if (type == 'request') {
+    } else if (type == 'request' || type == 'chat_request') {
       final requestType = data['requestType'];
       final profileId = data['profileId'];
       final vacancyId = data['vacancyId'];
 
-      debugPrint('📩 Solicitação | tipo: $requestType | profile: $profileId | vacancy: $vacancyId');
+      debugPrint(
+          '📩 Solicitação | tipo: $requestType | profile: $profileId | vacancy: $vacancyId');
 
       if (onRequestNotificationTap != null) {
         debugPrint('✅ Abrindo tela de solicitações');
@@ -285,8 +437,10 @@ class NotificationService {
   Map<String, dynamic> _decodePayload(String payload) {
     final Map<String, dynamic> data = {};
     for (final part in payload.split('|')) {
-      final kv = part.split(':');
-      if (kv.length == 2) data[kv[0]] = kv[1];
+      final idx = part.indexOf(':');
+      if (idx != -1) {
+        data[part.substring(0, idx)] = part.substring(idx + 1);
+      }
     }
     return data;
   }

@@ -5,7 +5,7 @@
 
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/services/cache/cache_service.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/search/firebase_search_service.dart';
 import 'package:dartobra_new/services/search/professionals_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';

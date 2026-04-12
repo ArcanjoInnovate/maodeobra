@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/search/vacancy_model.dart';
 
 
-import 'package:dartobra_new/services/expiration_service.dart'; // ← ADICIONAR
+import 'package:dartobra_new/services/expiration/expiration_service.dart'; // ← ADICIONAR
 
 class FirebaseSearchServiceServerPaginated {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();

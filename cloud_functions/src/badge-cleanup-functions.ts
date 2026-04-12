@@ -3,6 +3,7 @@
 
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
 // ============================================================
@@ -55,14 +56,7 @@ async function verifyAndFixBadge(
   try {
     logger.info(`\n🔍 Verificando badge: ${userId} (${userRole})`);
 
-    // ========================================
-    // 1. LÊ BADGE ATUAL (1 leitura)
-    // ========================================
-
-    const badgeSnap = await admin
-      .database()
-      .ref(`badges/${userId}`)
-      .once("value");
+    const badgeSnap = await admin.database().ref(`badges/${userId}`).once("value");
     result.readsUsed++;
 
     if (badgeSnap.exists()) {
@@ -75,13 +69,8 @@ async function verifyAndFixBadge(
 
     logger.info(`  Badge atual: ${JSON.stringify(result.currentBadge)}`);
 
-    // ========================================
-    // 2. CONTA CHATS NÃO LIDOS (2 leituras)
-    // ========================================
-
     let unreadChats = 0;
 
-    // Query chats como EMPLOYEE (1 leitura)
     const employeeChatsSnap = await admin
       .database()
       .ref("Chats")
@@ -93,15 +82,10 @@ async function verifyAndFixBadge(
     if (employeeChatsSnap.exists()) {
       const chats = employeeChatsSnap.val() as Record<string, any>;
       for (const chatId in chats) {
-        const chat = chats[chatId];
-        const unreadCount = chat.unreadCount?.employee || 0;
-        if (unreadCount === 1) {
-          unreadChats++;
-        }
+        if ((chats[chatId].unreadCount?.employee || 0) === 1) unreadChats++;
       }
     }
 
-    // Query chats como CONTRACTOR (1 leitura)
     const contractorChatsSnap = await admin
       .database()
       .ref("Chats")
@@ -113,27 +97,16 @@ async function verifyAndFixBadge(
     if (contractorChatsSnap.exists()) {
       const chats = contractorChatsSnap.val() as Record<string, any>;
       for (const chatId in chats) {
-        const chat = chats[chatId];
-        const unreadCount = chat.unreadCount?.contractor || 0;
-        if (unreadCount === 1) {
-          unreadChats++;
-        }
+        if ((chats[chatId].unreadCount?.contractor || 0) === 1) unreadChats++;
       }
     }
 
-    // Limita a 9
     unreadChats = Math.min(unreadChats, 9);
-
     logger.info(`  Chats não lidos: ${unreadChats}`);
-
-    // ========================================
-    // 3. CONTA REQUESTS NÃO LIDOS (1 leitura)
-    // ========================================
 
     let unreadRequests = 0;
 
     if (userRole === "worker") {
-      // Query perfis profissionais
       const profilesSnap = await admin
         .database()
         .ref("professionals")
@@ -144,23 +117,16 @@ async function verifyAndFixBadge(
 
       if (profilesSnap.exists()) {
         const profiles = profilesSnap.val() as Record<string, any>;
-
         for (const profileId in profiles) {
-          const profile = profiles[profileId];
-          const requestViews = profile.views?.request_views;
-
+          const requestViews = profiles[profileId].views?.request_views;
           if (requestViews) {
             for (const reqId in requestViews) {
-              const request = requestViews[reqId];
-              if (request.viewed_by_owner === false) {
-                unreadRequests++;
-              }
+              if (requestViews[reqId].viewed_by_owner === false) unreadRequests++;
             }
           }
         }
       }
     } else {
-      // Query vagas
       const vacanciesSnap = await admin
         .database()
         .ref("vacancy")
@@ -171,40 +137,21 @@ async function verifyAndFixBadge(
 
       if (vacanciesSnap.exists()) {
         const vacancies = vacanciesSnap.val() as Record<string, any>;
-
         for (const vacancyId in vacancies) {
-          const vacancy = vacancies[vacancyId];
-          const requestViews = vacancy.views?.request_views;
-
+          const requestViews = vacancies[vacancyId].views?.request_views;
           if (requestViews) {
             for (const reqId in requestViews) {
-              const request = requestViews[reqId];
-              if (request.viewed_by_owner === false) {
-                unreadRequests++;
-              }
+              if (requestViews[reqId].viewed_by_owner === false) unreadRequests++;
             }
           }
         }
       }
     }
 
-    // Limita a 9
     unreadRequests = Math.min(unreadRequests, 9);
-
     logger.info(`  Requests não lidos: ${unreadRequests}`);
 
-    // ========================================
-    // 4. CALCULA BADGE CORRETO
-    // ========================================
-
-    result.calculatedBadge = {
-      unread_chats: unreadChats,
-      unread_requests: unreadRequests,
-    };
-
-    // ========================================
-    // 5. VERIFICA SE PRECISA CORRIGIR
-    // ========================================
+    result.calculatedBadge = { unread_chats: unreadChats, unread_requests: unreadRequests };
 
     const needsCorrection =
       result.currentBadge.unread_chats !== result.calculatedBadge.unread_chats ||
@@ -215,17 +162,12 @@ async function verifyAndFixBadge(
       logger.info(`    Antes: ${JSON.stringify(result.currentBadge)}`);
       logger.info(`    Depois: ${JSON.stringify(result.calculatedBadge)}`);
 
-      // Atualiza badge (1 escrita)
-      await admin
-        .database()
-        .ref(`badges/${userId}`)
-        .set({
-          unread_chats: result.calculatedBadge.unread_chats,
-          unread_requests: result.calculatedBadge.unread_requests,
-          updated_at: Date.now(),
-        });
+      await admin.database().ref(`badges/${userId}`).set({
+        unread_chats: result.calculatedBadge.unread_chats,
+        unread_requests: result.calculatedBadge.unread_requests,
+        updated_at: Date.now(),
+      });
       result.writesUsed++;
-
       result.wasCorrected = true;
       logger.info(`  ✅ Badge corrigido!`);
     } else {
@@ -269,17 +211,12 @@ async function verifyMultipleUsers(
     batchResult.totalWrites += result.writesUsed;
 
     if (result.success) {
-      if (result.wasCorrected) {
-        batchResult.correctedCount++;
-      } else {
-        batchResult.correctCount++;
-      }
+      result.wasCorrected ? batchResult.correctedCount++ : batchResult.correctCount++;
     } else {
       batchResult.errorCount++;
     }
   }
 
-  // Relatório final
   logger.info(`\n╔═══════════════════════════════════════╗`);
   logger.info(`║       RELATÓRIO FINAL - BATCH        ║`);
   logger.info(`╚═══════════════════════════════════════╝`);
@@ -322,7 +259,6 @@ async function verifyAllBadges(): Promise<BatchResult> {
   const badges = badgesSnap.val() as Record<string, any>;
   logger.info(`📊 Encontrados ${Object.keys(badges).length} badges\n`);
 
-  // Precisa determinar o role de cada usuário
   const userRoles: Record<string, "worker" | "contractor"> = {};
 
   for (const userId of Object.keys(badges)) {
@@ -348,78 +284,53 @@ async function verifyAllBadges(): Promise<BatchResult> {
 
 // ============================================================
 // CLOUD FUNCTION - SCHEDULED BADGE CLEANUP
+// ✅ Handler retorna void — onSchedule não aceita return com objeto
 // ============================================================
 
 export const weeklyBadgeCleanup = onSchedule(
   {
-    schedule: "0 3 * * 0", // Domingo às 3h da manhã
+    schedule: "0 3 * * 0",
     timeZone: "America/Sao_Paulo",
     region: "us-central1",
   },
-  async (event) => {
+  async (_event) => {
     logger.info("\n═══════════════════════════════════════════");
     logger.info("🕐 MANUTENÇÃO SEMANAL - BADGE CLEANUP");
     logger.info("═══════════════════════════════════════════\n");
     logger.info(`Horário: ${new Date().toISOString()}`);
 
     try {
-      const result = await verifyAllBadges();
-
+      await verifyAllBadges();
       logger.info("\n✅ MANUTENÇÃO CONCLUÍDA COM SUCESSO");
       logger.info("═══════════════════════════════════════════\n");
-
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        ...result,
-      };
     } catch (error) {
       logger.error("\n❌❌❌ ERRO CRÍTICO NA MANUTENÇÃO ❌❌❌");
       logger.error("Erro:", error);
-
-      return {
-        success: false,
-        error: String(error),
-        timestamp: new Date().toISOString(),
-      };
     }
   }
 );
 
 // ============================================================
 // CLOUD FUNCTION - ON-DEMAND BADGE CLEANUP
+// ✅ Handler retorna void
 // ============================================================
 
 export const manualBadgeCleanup = onSchedule(
   {
-    schedule: "every 24 hours", // Apenas para manter viva, será executada manualmente
+    schedule: "every 24 hours",
     timeZone: "America/Sao_Paulo",
     region: "us-central1",
   },
-  async (event) => {
-    // Esta função pode ser invocada manualmente via Firebase Console
-    // ou via CLI: firebase functions:call manualBadgeCleanup
-    
+  async (_event) => {
     logger.info("\n═══════════════════════════════════════════");
     logger.info("🔧 LIMPEZA MANUAL - BADGE CLEANUP");
     logger.info("═══════════════════════════════════════════\n");
 
     try {
-      const result = await verifyAllBadges();
-
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        ...result,
-      };
+      await verifyAllBadges();
+      logger.info("\n✅ LIMPEZA CONCLUÍDA");
     } catch (error) {
       logger.error("❌ Erro na limpeza manual:", error);
-
-      return {
-        success: false,
-        error: String(error),
-        timestamp: new Date().toISOString(),
-      };
     }
   }
 );
@@ -428,37 +339,25 @@ export const manualBadgeCleanup = onSchedule(
 // CLOUD FUNCTION - VERIFICAR BADGE INDIVIDUAL (HTTP)
 // ============================================================
 
-import { onRequest } from "firebase-functions/v2/https";
-
 export const verifyUserBadge = onRequest(
   {
     region: "us-central1",
     cors: true,
   },
   async (request, response) => {
-    // Apenas para admins autenticados
     const userId = request.query.userId as string;
     const userRole = request.query.role as "worker" | "contractor";
 
     if (!userId || !userRole) {
-      response.status(400).send({
-        error: "Missing userId or role parameter",
-      });
+      response.status(400).send({ error: "Missing userId or role parameter" });
       return;
     }
 
     try {
       const result = await verifyAndFixBadge(userId, userRole);
-
-      response.status(200).send({
-        success: true,
-        result,
-      });
+      response.status(200).send({ success: true, result });
     } catch (error) {
-      response.status(500).send({
-        success: false,
-        error: String(error),
-      });
+      response.status(500).send({ success: false, error: String(error) });
     }
   }
 );

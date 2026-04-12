@@ -1,7 +1,8 @@
 // lib/widgets/expiration_warning_widget.dart
 
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:flutter/material.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+
 
 /// Widget que exibe avisos de expiração para vagas e perfis profissionais
 class ExpirationWarningWidget extends StatelessWidget {

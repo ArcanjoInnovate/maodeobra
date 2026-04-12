@@ -5,7 +5,7 @@ import 'package:dartobra_new/screens/feed/professional_profile_screen.dart';
 import 'package:dartobra_new/screens/feed/vacancy_detail_screen.dart';
 import 'package:dartobra_new/screens/search/my_professional_profile_screen.dart';
 import 'package:dartobra_new/screens/search/my_vacancy_details_screen.dart';
-import 'package:dartobra_new/services/expiration_service.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/search/ibge_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
