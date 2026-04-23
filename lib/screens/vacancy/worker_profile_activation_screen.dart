@@ -284,7 +284,7 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       content: Row(children: [
         const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
         const SizedBox(width: 10),
-        Expanded(child: Text('$msg Válido por 7 dias.')),
+        Expanded(child: Text('$msg Válido por 2 dias.')),
       ]),
       backgroundColor: _kGreen,
       behavior: SnackBarBehavior.floating,

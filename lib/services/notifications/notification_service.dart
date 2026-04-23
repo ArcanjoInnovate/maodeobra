@@ -125,6 +125,14 @@ class NotificationService {
   // PERMISSÕES
   // ============================================================
 
+  void updateCallbacks({
+    Function(String chatId, String senderId)? onChatTap,
+    Function(String requestType, String? profileId, String? vacancyId)? onRequestTap,
+  }) {
+    if (onChatTap != null) onNotificationTap = onChatTap;
+    if (onRequestTap != null) onRequestNotificationTap = onRequestTap;
+    debugPrint('🔄 Callbacks de notificação atualizados');
+  }
   Future<NotificationSettings> _requestPermission() async {
     return await _fcm.requestPermission(
       alert: true,

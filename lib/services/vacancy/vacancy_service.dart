@@ -219,7 +219,7 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 5. CRIAR VAGA (COM EXPIRAÇÃO DE 7 DIAS)
+  // 5. CRIAR VAGA (COM EXPIRAÇÃO DE 2 DIAS)
   // ════════════════════════════════════════════════
 
   Future<String?> createVacancy(Map<String, dynamic> vacancyData) async {
@@ -236,7 +236,7 @@ class VacancyService {
       _vacancyCache[vacancyId] = vacancyData;
       _userVacanciesCache.remove(vacancyData['local_id']);
       
-      print('✅ Vaga criada com expiração em 7 dias: ${vacancyData['expires_at']}');
+      print('✅ Vaga criada com expiração em 2 dias: ${vacancyData['expires_at']}');
       return vacancyId;
     } catch (e) {
       print('❌ createVacancy erro: $e');
@@ -365,7 +365,7 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 9. RENOVAR VAGA (ADICIONA MAIS 7 DIAS)
+  // 9. RENOVAR VAGA (ADICIONA MAIS 2 DIAS)
   // ════════════════════════════════════════════════
 
   Future<bool> renewVacancy(String vacancyId) async {

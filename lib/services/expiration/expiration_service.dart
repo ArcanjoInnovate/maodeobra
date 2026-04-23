@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 
 /// Serviço responsável por gerenciar a expiração de vagas e perfis profissionais
-/// Período de expiração: 7 dias
+/// Período de expiração: 2 dias
 class ExpirationService {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   

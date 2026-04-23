@@ -453,7 +453,7 @@ class _InfoVacancyState extends State<InfoVacancy>
           const Text('Renovar Vaga', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ]),
         content: const Text(
-          'Deseja renovar esta vaga por mais 7 dias?\nEla continuará visível para candidatos.',
+          'Deseja renovar esta vaga por mais 2 dias?\nEla continuará visível para candidatos.',
           style: TextStyle(fontSize: 14, height: 1.5),
         ),
         actions: [
@@ -915,8 +915,8 @@ Widget build(BuildContext context) {
                         const SizedBox(width: 8),
                         Text(
                           expired
-                              ? 'Renovar e reativar vaga por 7 dias'
-                              : 'Renovar agora (+7 dias)',
+                              ? 'Renovar e reativar vaga por 2 dias'
+                              : 'Renovar agora (+2 dias)',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -1217,8 +1217,8 @@ Widget build(BuildContext context) {
                         _isRenewing
                             ? 'Renovando...'
                             : _isExpired
-                                ? 'Renovar Vaga (Reativar por 7 dias)'
-                                : 'Renovar Vaga (+7 dias)',
+                                ? 'Renovar Vaga (Reativar por 2 dias)'
+                                : 'Renovar Vaga (+2 dias)',
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF16A34A),

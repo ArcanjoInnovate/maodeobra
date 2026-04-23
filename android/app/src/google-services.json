@@ -35,7 +35,7 @@
               "client_id": "943998527706-6jj0ehvral7tjnta040pdf1o34dnl55f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.vstecnology.maodeobra"
+                "bundle_id": "com.maodeobraoficial.app"
               }
             }
           ]
@@ -71,7 +71,7 @@
               "client_id": "943998527706-6jj0ehvral7tjnta040pdf1o34dnl55f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.vstecnology.maodeobra"
+                "bundle_id": "com.maodeobraoficial.app"
               }
             }
           ]
@@ -107,7 +107,7 @@
               "client_id": "943998527706-6jj0ehvral7tjnta040pdf1o34dnl55f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.vstecnology.maodeobra"
+                "bundle_id": "com.maodeobraoficial.app"
               }
             }
           ]
@@ -118,7 +118,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:943998527706:android:88e88012ecc100e4b29de3",
         "android_client_info": {
-          "package_name": "com.vstecnology.dartobranew"
+          "package_name": "com.maodeobraoficial.app"
         }
       },
       "oauth_client": [
@@ -126,7 +126,7 @@
           "client_id": "943998527706-ovdl68l0ns6el2n3ude6b4va791dcanh.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.vstecnology.dartobranew",
+            "package_name": "com.maodeobraoficial.app",
             "certificate_hash": "79f9b540dcd9f7d98554ab49d74244d8c17a7907"
           }
         },
@@ -151,7 +151,7 @@
               "client_id": "943998527706-6jj0ehvral7tjnta040pdf1o34dnl55f.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.vstecnology.maodeobra"
+                "bundle_id": "com.mao"
               }
             }
           ]

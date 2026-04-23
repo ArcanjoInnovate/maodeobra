@@ -290,7 +290,7 @@ async function verifyAllBadges(): Promise<BatchResult> {
 }
 
 // ============================================================
-// CLOUD FUNCTION - SCHEDULED BADGE CLEANUP
+// CLOUD FUNCTION - SCHEDULED BADGE CLEANUP (semanal)
 // ============================================================
 
 export const weeklyBadgeCleanup = onSchedule(
@@ -317,7 +317,7 @@ export const weeklyBadgeCleanup = onSchedule(
 );
 
 // ============================================================
-// CLOUD FUNCTION - ON-DEMAND BADGE CLEANUP
+// CLOUD FUNCTION - BADGE CLEANUP DIÁRIO
 // ============================================================
 
 export const manualBadgeCleanup = onSchedule(
@@ -528,7 +528,7 @@ async function sendPushNotification(
 }
 
 // ============================================================
-// HELPER - RECALCULAR BADGE
+// HELPER - RECALCULAR BADGE DE CHATS
 // ============================================================
 
 async function recalculateChatBadge(userId: string) {
@@ -676,6 +676,9 @@ export const onChatMessageCreated = onValueCreated(
 
 // ============================================================
 // FUNCTION - CHAT REQUEST NOTIFICATION (PROFESSIONAL)
+// ✅ Única função para o path /professionals/.../request_views/...
+//    A antiga onWorkerRequestCreated foi REMOVIDA pois escutava
+//    o mesmo path e causava duplo incremento no badge.
 // ============================================================
 
 export const onProfessionalChatRequestCreated = onValueCreated(
@@ -742,6 +745,9 @@ export const onProfessionalChatRequestCreated = onValueCreated(
 
 // ============================================================
 // FUNCTION - CHAT REQUEST NOTIFICATION (VACANCY)
+// ✅ Única função para o path /vacancy/.../request_views/...
+//    A antiga onVacancyRequestCreated foi REMOVIDA pois escutava
+//    o mesmo path e causava duplo incremento no badge.
 // ============================================================
 
 export const onVacancyChatRequestCreated = onValueCreated(
@@ -803,117 +809,6 @@ export const onVacancyChatRequestCreated = onValueCreated(
     } catch (err) {
       logger.error(`❌❌❌ ERRO AO PROCESSAR CANDIDATURA ❌❌❌`);
       logger.error(`Erro:`, err);
-    }
-  }
-);
-
-// ============================================================
-// FUNCTION - WORKER REQUEST (compatibilidade)
-// ============================================================
-
-export const onWorkerRequestCreated = onValueCreated(
-  {
-    ref: "/professionals/{profileId}/views/request_views/{requestId}",
-    region: "us-central1",
-  },
-  async (event) => {
-    const profileId = event.params.profileId;
-    const requestData = event.data.val() as any;
-
-    try {
-      const profileSnap = await admin
-        .database()
-        .ref(`professionals/${profileId}`)
-        .once("value");
-
-      if (!profileSnap.exists()) return;
-
-      const profileData = profileSnap.val() as Record<string, any>;
-      const ownerId = profileData.local_id as string;
-
-      await incrementRequestBadge(ownerId);
-
-      const requesterName = requestData.contractor_name || "Alguém";
-      const requesterAvatar = requestData.contractor_avatar || "";
-
-      await sendPushNotification(
-        ownerId,
-        "Nova Solicitação de Contato",
-        `${requesterName} quer entrar em contato com você`,
-        {
-          type: "request",
-          requestType: "worker",
-          profileId,
-          requesterName,
-          requesterAvatar,
-        },
-        requesterAvatar
-      );
-
-      logger.info(`Worker request criado: ${profileId}`);
-    } catch (err) {
-      logger.error("Erro em onWorkerRequestCreated", { error: err });
-    }
-  }
-);
-
-// ============================================================
-// FUNCTION - VACANCY REQUEST (compatibilidade)
-// ============================================================
-
-export const onVacancyRequestCreated = onValueCreated(
-  {
-    ref: "/vacancy/{vacancyId}/views/request_views/{requestId}",
-    region: "us-central1",
-  },
-  async (event) => {
-    const vacancyId = event.params.vacancyId;
-    const requestId = event.params.requestId;
-
-    try {
-      const vacancySnap = await admin
-        .database()
-        .ref(`vacancy/${vacancyId}`)
-        .once("value");
-
-      if (!vacancySnap.exists()) return;
-
-      const vacancyData = vacancySnap.val() as Record<string, any>;
-      const ownerId = vacancyData.local_id as string;
-
-      await incrementRequestBadge(ownerId);
-
-      const requesterSnap = await admin
-        .database()
-        .ref(`Users/${requestId}`)
-        .once("value");
-
-      let requesterName = "Alguém";
-      let requesterAvatar = "";
-
-      if (requesterSnap.exists()) {
-        const requesterData = requesterSnap.val() as Record<string, any>;
-        requesterName = requesterData.Name || "Alguém";
-        requesterAvatar = requesterData.avatar || "";
-      }
-
-      await sendPushNotification(
-        ownerId,
-        "Novo Interesse na Vaga",
-        `${requesterName} tem interesse na sua vaga`,
-        {
-          type: "request",
-          requestType: "contractor",
-          vacancyId,
-          requesterName,
-          requesterAvatar,
-        },
-        requesterAvatar
-      );
-
-      logger.info(`Vacancy request criado: ${vacancyId}`);
-    } catch (err) {
-      logger.error("Erro em onVacancyRequestCreated", { error: err });
     }
   }
 );

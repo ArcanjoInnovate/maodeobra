@@ -974,7 +974,7 @@ class _VacancyManagementState extends State<VacancyManagement> {
                           isExpired
                               ? 'Vaga expirada — toque para renovar'
                               : daysLeft == 1
-                                  ? 'Expira amanhã — renove para manter visibilidade'
+                                  ? 'Expira amanhã — renove'
                                   : 'Expira em $daysLeft dias',
                           style: TextStyle(
                             fontSize: 12,

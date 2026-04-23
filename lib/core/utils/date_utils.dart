@@ -33,7 +33,7 @@ class ChatDateUtils {
       return 'Ontem $time';
     }
 
-    // Esta semana (últimos 7 dias)
+    // Esta semana (últimos 2 dias)
     final weekAgo = today.subtract(Duration(days: 7));
     if (messageDay.isAfter(weekAgo)) {
       final weekDayFormat = DateFormat('EEE', 'pt_BR');

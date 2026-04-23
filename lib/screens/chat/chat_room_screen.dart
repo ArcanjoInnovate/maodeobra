@@ -464,20 +464,27 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                     : () async {
                         final text = _textController.text.trim();
                         if (text.isNotEmpty) {
-                          await controller.sendMessage(text);
+                          // ✅ LIMPA IMEDIATAMENTE - ANTES de enviar
                           _textController.clear();
                           setState(() => _isTyping = false);
-
                           _measureInputHeight();
 
-                          Future.delayed(const Duration(milliseconds: 100), () {
-                            if (mounted && _scrollController.hasClients) {
-                              _scrollToBottom();
-                            }
-                          });
+                          // ✅ ENVIA ASSINCRONAMENTE em paralelo
+                          controller.sendMessage(text).then((_) {
+                            Future.delayed(const Duration(milliseconds: 100), () {
+                              if (mounted && _scrollController.hasClients) {
+                                _scrollToBottom();
+                              }
+                            });
 
-                          Future.delayed(const Duration(milliseconds: 300), () {
-                            _markAsRead();
+                            Future.delayed(const Duration(milliseconds: 300), () {
+                              _markAsRead();
+                            });
+                          }).catchError((e) {
+                            debugPrint('❌ Erro ao enviar: $e');
+                            // ✅ Se der erro, restaura o texto
+                            _textController.text = text;
+                            setState(() => _isTyping = true);
                           });
                         }
                       },
@@ -498,6 +505,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                   ),
                 ),
               ),
+              
             ],
           ),
         ),

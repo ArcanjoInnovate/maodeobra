@@ -67,7 +67,7 @@ class DefaultFirebaseOptions {
     projectId: 'obra-7ebd9',
     databaseURL: 'https://obra-7ebd9-default-rtdb.firebaseio.com',
     storageBucket: 'obra-7ebd9.firebasestorage.app',
-    iosBundleId: 'com.vstecnology.maodeobra',
+    iosBundleId: 'com.maodeobraoficial.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -77,7 +77,7 @@ class DefaultFirebaseOptions {
     projectId: 'obra-7ebd9',
     databaseURL: 'https://obra-7ebd9-default-rtdb.firebaseio.com',
     storageBucket: 'obra-7ebd9.firebasestorage.app',
-    iosBundleId: 'com.vstecnology.maodeobra',
+    iosBundleId: 'com.maodeobraoficial.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

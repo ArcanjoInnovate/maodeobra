@@ -45,5 +45,36 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+<key>NSCameraUsageDescription</key>
+<string>Precisamos acessar sua câmera para você enviar fotos e vídeos.</string>
+
+<!-- Galeria de Fotos -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Precisamos acessar suas fotos para você compartilhar imagens.</string>
+
+<!-- Adicionar fotos (iOS 11+) -->
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Precisamos salvar fotos na sua galeria.</string>
+
+<!-- ======================================================= -->
+<!-- FIREBASE & NOTIFICAÇÕES                                  -->
+<!-- ======================================================= -->
+
+<!-- Background Modes para Firebase Messaging -->
+<key>UIBackgroundModes</key>
+<array>
+    <string>fetch</string>
+    <string>remote-notification</string>
+</array>
+
+<!-- ======================================================= -->
+<!-- CONFIGURAÇÕES GERAIS                                     -->
+<!-- ======================================================= -->
+
+<!-- Prevenir backup iCloud automático (opcional) -->
+<key>com.apple.developer.icloud-container-identifiers</key>
+<array/>
+
 </dict>
 </plist>

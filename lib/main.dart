@@ -5,6 +5,7 @@ import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_f
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
+import 'package:dartobra_new/utils/notification_navigation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -106,6 +107,18 @@ class MyApp extends StatelessWidget {
               print('👤 Auth State: ${currentUser != null ? "LOGADO" : "DESLOGADO"}');
               print('👤 Current User ID: $currentUserId');
 
+              // ✅ ADICIONE ESTE BLOCO - Setup dos handlers de notificação
+              if (currentUserId != null) {
+                // Inicializa NotificationService apenas quando logado
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  final notificationService = NotificationService();
+                  notificationService.initialize(currentUserId);
+                  
+                  // 🔧 SETUP DOS HANDLERS DE NOTIFICAÇÃO
+                  _setupNotificationHandlers(context);
+                });
+              }
+
               return StreamBuilder<DatabaseEvent>(
                 stream: FirebaseDatabase.instance.ref('Administrative').onValue,
                 builder: (context, snapshot) {
@@ -160,5 +173,47 @@ class MyApp extends StatelessWidget {
         },
       ),
     );
+  }
+
+  // 🔧 FUNÇÃO EXTRAÍDA PARA SETUP DOS HANDLERS
+  void _setupNotificationHandlers(BuildContext context) {
+    final notificationService = NotificationService();
+
+    notificationService.onNotificationTap = (String chatId, String senderId) {
+      print('📱 Notificação de chat clicada: chatId=$chatId, senderId=$senderId');
+      NotificationService().dismissChatNotifications(chatId);
+      NotificationNavigationHelper.handleNotification(
+        context,
+        'chat',
+        {'chatId': chatId, 'senderId': senderId},
+        (index) {
+          // Como estamos no MyApp (Stateless), não podemos usar setState diretamente
+          // O NavigationHelper deve lidar com a navegação globalmente
+          print('🔄 Navegando para chat index: $index');
+        },
+      );
+    };
+
+    notificationService.onRequestNotificationTap = (
+      String? requestType,
+      String? profileId,
+      String? vacancyId,
+    ) {
+      print('📱 Notificação de request clicada: type=$requestType, profile=$profileId, vacancy=$vacancyId');
+      NotificationNavigationHelper.handleNotification(
+        context,
+        'chat_request',
+        {
+          'requestType': requestType,
+          'profileId': profileId,
+          'vacancyId': vacancyId,
+        },
+        (index) {
+          print('🔄 Navegando para request index: $index');
+        },
+      );
+    };
+
+    print('✅ Handlers de notificação configurados!');
   }
 }

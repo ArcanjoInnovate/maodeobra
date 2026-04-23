@@ -78,7 +78,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _workerActivated = false;
 
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
-
+  // ==================key navegação de notificação ====================
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   // ==================== LISTENERS ====================
   StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
@@ -95,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ==================== CICLO DE VIDA ====================
 
+  
   @override
   void initState() {
     super.initState();
@@ -102,7 +104,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _setupRealtimeListener();
     BadgeInitializer.ensureBadgeExists(widget.local_id);
     _loadUserData();
-    _setupBadgeListener(); // ← substitui os 3 listeners antigos por 1
+    _setupBadgeListener();
+    
+    // ✅ ADICIONE AQUI
+    _setupNotificationHandlers();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkProfileCompletion();
@@ -116,6 +121,37 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // ==================== NOTIFICAÇÕES ====================
+  void _setupNotificationHandlers() {
+    final notificationService = NotificationService();
+
+    // ✅ Chat aceito → abre tela de chats (índice 2)
+    notificationService.onNotificationTap = (String chatId, String senderId) {
+      debugPrint('🔔 Notificação de chat clicada: $chatId');
+      
+      // Fecha todas as notificações deste chat
+      NotificationService().dismissChatNotifications(chatId);
+      
+      // Navega para a aba de Chats
+      if (mounted) {
+        setState(() => _selectedIndex = 2);
+      }
+    };
+
+    // ✅ Solicitação de chat → abre tela de vagas (índice 3)
+    notificationService.onRequestNotificationTap = (
+      String? requestType,
+      String? profileId,
+      String? vacancyId,
+    ) {
+      debugPrint('🔔 Notificação de request clicada: $requestType');
+      
+      // Navega para a aba de Vagas
+      if (mounted) {
+        setState(() => _selectedIndex = 3);
+      }
+    };
+  }
   // ==================== 🚀 BADGE OTIMIZADO (1 query) ====================
 
   /// Escuta apenas /badges/{userId}.
