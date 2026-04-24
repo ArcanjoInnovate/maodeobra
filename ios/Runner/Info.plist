@@ -26,6 +26,7 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -47,18 +48,21 @@
 			</array>
 		</dict>
 	</dict>
+
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -67,32 +71,28 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
-	<!-- ======================================================= -->
-	<!-- ✅ PERMISSÕES CAMERA/FOTOS - iOS 100% ✅                 -->
-	<!-- ======================================================= -->
+	<!-- ✅ PERMISSÕES -->
 	<key>NSCameraUsageDescription</key>
 	<string>Usamos a câmera para tirar fotos de perfil, serviços e obras.</string>
-	
+
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Precisamos acessar sua galeria para escolher fotos de perfil, serviços e obras.</string>
-	
-	<!-- ======================================================= -->
-	<!-- ✅ NOTIFICAÇÕES - COMPLETO                               -->
-	<!-- ======================================================= -->
+
+	<!-- ✅ NOTIFICAÇÕES -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
+
 	<key>UNUserNotificationUsageDescription</key>
 	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
+
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
 
-	<!-- ======================================================= -->
-	<!-- ✅ BACKGROUND MODES - Notificações + Fetch              -->
-	<!-- ======================================================= -->
+	<!-- ✅ BACKGROUND MODES (CORRIGIDO) -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
-		<string>background-fetch</string>
+		<string>fetch</string>
 	</array>
 
 </dict>
