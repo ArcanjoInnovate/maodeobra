@@ -167,6 +167,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
     ).then((_) => _removeFocusCompletely());
   }
 
+
   Future<void> _pickImageFromSource(ImageSource source) async {
     final bool isCamera = source == ImageSource.camera;
     final String label = isCamera ? 'câmera' : 'galeria';
@@ -174,6 +175,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
         ? 'para tirar sua foto de perfil'
         : 'para escolher sua foto de perfil';
 
+    // ✅ iOS - FORÇA re-ask se necessário
     var result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
 
     if (result == PermissionResult.denied) {
@@ -183,7 +185,9 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
         permissionLabel: label,
         usageReason: reason,
       );
-      if (!wantsToRetry) return;
+      if (!wantsToRetry!) return;
+      
+      // ✅ Tenta de novo
       result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
     }
 
@@ -197,6 +201,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       return;
     }
 
+    // ✅ ImagePicker SÓ AGORA
     try {
       final XFile? image = await _picker.pickImage(
         source: source,

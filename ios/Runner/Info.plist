@@ -67,24 +67,33 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
-<!-- ======================================================= -->
-<!-- PERMISSÕES DE USO                                       -->
-<!-- ======================================================= -->
+	<!-- ======================================================= -->
+	<!-- ✅ PERMISSÕES CAMERA/FOTOS - iOS 100% ✅                 -->
+	<!-- ======================================================= -->
+	<key>NSCameraUsageDescription</key>
+	<string>Usamos a câmera para tirar fotos de perfil, serviços e obras.</string>
+	
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Precisamos acessar sua galeria para escolher fotos de perfil, serviços e obras.</string>
+	
+	<!-- ======================================================= -->
+	<!-- ✅ NOTIFICAÇÕES - COMPLETO                               -->
+	<!-- ======================================================= -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+	<key>UNUserNotificationUsageDescription</key>
+	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
 
-<key>NSCameraUsageDescription</key>
-<string>Usamos a câmera para que você possa tirar fotos de serviços e obras e compartilhá-las na plataforma.</string>
+	<!-- ======================================================= -->
+	<!-- ✅ BACKGROUND MODES - Notificações + Fetch              -->
+	<!-- ======================================================= -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>background-fetch</string>
+	</array>
 
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Precisamos acessar sua galeria para que você possa selecionar e enviar fotos de serviços e obras.</string>
-
-<key>NSPhotoLibraryAddUsageDescription</key>
-<string>Permite salvar imagens do app na sua galeria.</string>
-
-<!-- ======================================================= -->
-<!-- NOTIFICAÇÕES                                            -->
-<!-- ======================================================= -->
-
-<key>FirebaseAppDelegateProxyEnabled</key>
-<true/>
 </dict>
 </plist>

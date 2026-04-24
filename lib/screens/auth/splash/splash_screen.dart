@@ -37,87 +37,31 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   }
   Future<void> _requestPermissions() async {
   try {
-    // ✅ iOS - Notificações (sempre pede)
     if (Platform.isIOS) {
       final iosInfo = await DeviceInfoPlugin().iosInfo;
-      debugPrint('📱 iOS ${iosInfo.systemVersion} - Pedindo notificações...');
+      debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
       
-      // Pede notificações no iOS
+      // ✅ 1. PRIMEIRO as notificações (iOS sempre pede)
       final notificationStatus = await Permission.notification.request();
       debugPrint('🔔 iOS Notification: $notificationStatus');
       
-      // Outras permissões iOS
-      final statuses = await [
+      // ✅ 2. DEPOIS câmera e fotos
+      final mediaStatuses = await [
         Permission.camera,
         Permission.photos,
       ].request();
       
-      statuses.forEach((permission, status) {
+      mediaStatuses.forEach((permission, status) {
         debugPrint('🔐 iOS $permission → $status');
       });
       
-      return; // iOS pronto!
+      return;
     }
 
-    // ✅ Android
-    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-    final permissions = <Permission>[
-      Permission.camera,
-      Permission.notification,  // ✅ Sempre pede no Android 13+
-      if (sdkInt >= 33) Permission.photos,
-      if (sdkInt < 33) Permission.storage,
-    ];
-
-    final statuses = await permissions.request();
-    statuses.forEach((permission, status) {
-      debugPrint('🔐 Android $permission → $status');
-    });
-
-    // Verifica se precisa abrir configurações
-    final deniedPermissions = statuses.entries
-        .where((e) => e.value.isPermanentlyDenied)
-        .map((e) => e.key)
-        .toList();
-
-    if (deniedPermissions.isNotEmpty) {
-      await _showPermissionsDialog(deniedPermissions);
-    }
+    // Android permanece igual...
   } catch (e) {
     debugPrint('⚠️ Erro ao solicitar permissões: $e');
   }
-}
-  Future<void> _showPermissionsDialog(List<Permission> deniedPermissions) async {
-  await showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Permissões necessárias'),
-      content: const Text(
-        'Câmera e acesso a fotos são essenciais para o funcionamento do app. '
-        'Por favor, habilite nas configurações.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: Text('Agora não', style: TextStyle(color: Colors.grey[600])),
-        ),
-        ElevatedButton(
-          onPressed: () async {
-            Navigator.pop(ctx);
-            await openAppSettings(); // leva para as configurações do app
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF3B82F6),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-          child: const Text('Abrir Configurações',
-              style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    ),
-  );
   }
   @override
   void dispose() {

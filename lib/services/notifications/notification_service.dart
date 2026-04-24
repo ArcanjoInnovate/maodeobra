@@ -97,27 +97,15 @@ class NotificationService {
 
   Future<void> initialize(String userId) async {
     try {
-      debugPrint('🔔 Inicializando serviço de notificações...');
-
-      final settings = await _requestPermission();
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        debugPrint('✅ Permissão de notificação concedida');
-
-        await _getAndSaveToken(userId);
-        await _setupLocalNotifications();
-        _setupMessageHandlers();
-        _setupTokenRefreshListener(userId);
-
-        debugPrint('✅ Serviço de notificações inicializado com sucesso');
-      } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        debugPrint('❌ Permissão de notificação negada pelo usuário');
-      } else {
-        debugPrint(
-            '⚠️ Permissão de notificação: ${settings.authorizationStatus}');
-      }
+      debugPrint('🔔 Inicializando handlers...');
+      
+      // ✅ APENAS setup dos handlers (token já salvo no AuthService)
+      _setupLocalNotifications();
+      _setupMessageHandlers();
+      
+      debugPrint('✅ Handlers configurados');
     } catch (e) {
-      debugPrint('❌ Erro ao inicializar notificações: $e');
+      debugPrint('❌ Erro init: $e');
     }
   }
 
@@ -465,6 +453,33 @@ class NotificationService {
 
   Future<void> clearBadge() async => setBadgeCount(0);
 
+  // ============================================================
+  // ✅ FUNÇÕES QUE FALTAVAM - ADICIONE NO FINAL DA CLASSE
+  // ============================================================
+
+  /// Para background messages (chamado pelo firebaseMessagingBackgroundHandler)
+  Future<void> handleBackgroundMessage(RemoteMessage message) async {
+    debugPrint('🔥 Background handler chamado: ${message.data}');
+    await _showLocalNotification(message);
+  }
+
+  /// Para foreground messages (main.dart chama)
+  Future<void> handleForegroundMessage(RemoteMessage message) async {
+    debugPrint('📱 Foreground handler: ${message.data}');
+    await _showLocalNotification(message);
+  }
+
+  /// Para tap na notificação (main.dart chama)
+  Future<void> handleNotificationTap(Map<String, dynamic> data) async {
+    debugPrint('👆 Notificação clicada: $data');
+    
+    final chatId = data['chatId'] ?? data['notificationTag'];
+    if (chatId != null) {
+      await dismissChatNotifications(chatId);
+    }
+    
+    _handleNotificationClick(data);
+  }
   // ============================================================
   // LIMPEZA
   // ============================================================

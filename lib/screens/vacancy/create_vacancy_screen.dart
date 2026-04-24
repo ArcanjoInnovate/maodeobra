@@ -153,7 +153,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
         permissionLabel: 'galeria',
         usageReason: 'para adicionar fotos à vaga',
       );
-      if (!wantsToRetry) return;
+      if (!wantsToRetry!) return;
       result = await PermissionUtil.checkAndRequest(isCamera: false);
     }
 
@@ -221,7 +221,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
         permissionLabel: 'galeria',
         usageReason: 'para adicionar vídeos à vaga',
       );
-      if (!wantsToRetry) return;
+      if (!wantsToRetry!) return;
       result = await PermissionUtil.checkAndRequest(isCamera: false);
     }
 

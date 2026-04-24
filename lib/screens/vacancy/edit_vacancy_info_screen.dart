@@ -3,19 +3,19 @@
 //   1. Upload de imagens e vídeos em listas SEPARADAS desde o início,
 //      eliminando a detecção por extensão na URL (que falha com Firebase Storage).
 //   2. Validação de descrição mínima de 80 caracteres.
+import 'dart:io';
+
+import 'package:chewie/chewie.dart';
 import 'package:dartobra_new/services/storage/moderation_image_service.dart';
 import 'package:dartobra_new/services/storage/storage_service.dart';
-import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
+import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:image_picker/image_picker.dart';
-import 'components.dart';
-import 'dart:io';
 import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
 
-
+import 'components.dart';
 
 class EditInfoVacancy extends StatefulWidget {
   final bool isEditing;
@@ -33,7 +33,8 @@ class EditInfoVacancy extends StatefulWidget {
   final String? existingSalaryType;
   final Map<dynamic, dynamic>? existingMedia;
 
-  EditInfoVacancy({
+  const EditInfoVacancy({
+    super.key,
     this.isEditing = false,
     required this.emailContact,
     required this.phoneContact,
@@ -50,13 +51,12 @@ class EditInfoVacancy extends StatefulWidget {
   });
 
   @override
-  _EditInfoVacancyState createState() => _EditInfoVacancyState();
+  EditInfoVacancyState createState() => EditInfoVacancyState();
 }
 
-class _EditInfoVacancyState extends State<EditInfoVacancy> {
+class EditInfoVacancyState extends State<EditInfoVacancy> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final ImagePicker _picker = ImagePicker();
-  final VacancyService _vacancyService = VacancyService();
   final FirebaseStorageService _storageService = FirebaseStorageService();
 
   final TextEditingController _titleController = TextEditingController();
@@ -72,11 +72,11 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   String? selectedState;
   String? selectedCity;
 
-  List<File> _selectedImages = [];
-  List<File> _selectedVideos = [];
+  final List<File> _selectedImages = [];
+  final List<File> _selectedVideos = [];
   List<String> _existingImageUrls = [];
   List<String> _existingVideoUrls = [];
-  List<String> _urlsToDelete = [];
+  final List<String> _urlsToDelete = [];
 
   bool _isUploading = false;
   bool _isCheckingImage = false;
@@ -107,13 +107,15 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   void _loadExistingData() {
     setState(() => _isLoadingData = true);
 
-    if (widget.existingTitle != null)       _titleController.text       = widget.existingTitle!;
-    if (widget.existingDescription != null) _descriptionController.text = widget.existingDescription!;
+    if (widget.existingTitle != null)
+      _titleController.text = widget.existingTitle!;
+    if (widget.existingDescription != null)
+      _descriptionController.text = widget.existingDescription!;
 
-    selectedProfession  = widget.existingProfession;
-    selectedState       = widget.existingState;
-    selectedCity        = widget.existingCity;
-    selectedSalaryType  = widget.existingSalaryType;
+    selectedProfession = widget.existingProfession;
+    selectedState = widget.existingState;
+    selectedCity = widget.existingCity;
+    selectedSalaryType = widget.existingSalaryType;
 
     if (widget.existingSalary != null &&
         widget.existingSalary != 'A combinar' &&
@@ -127,9 +129,6 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     if (widget.existingMedia != null) {
       if (widget.existingMedia!['images'] != null) {
         _existingImageUrls = List<String>.from(widget.existingMedia!['images']);
-      }
-      if (widget.existingMedia!['videos'] != null) {
-        _existingVideoUrls = List<String>.from(widget.existingMedia!['videos']);
       }
     }
 
@@ -159,7 +158,7 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     for (final image in _selectedImages) {
       current++;
       setState(() {
-        _uploadStatus  = 'Enviando imagem $current de $total...';
+        _uploadStatus = 'Enviando imagem $current de $total...';
         _uploadProgress = 0.0;
       });
 
@@ -182,7 +181,7 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     for (final video in _selectedVideos) {
       current++;
       setState(() {
-        _uploadStatus  = 'Enviando vídeo $current de $total...';
+        _uploadStatus = 'Enviando vídeo $current de $total...';
         _uploadProgress = 0.0;
       });
 
@@ -203,6 +202,7 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     return (uploadedImageUrls, uploadedVideoUrls);
   }
 
+// ✅ _pickImages() COM PERMISSÃO GALERIA
   Future<void> _pickImages() async {
     try {
       final int total = _selectedImages.length + _existingImageUrls.length;
@@ -210,6 +210,25 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
         return;
       }
+
+      // ✅ VERIFICA PERMISSÃO GALERIA
+      final result = await PermissionUtil.checkAndRequest(isCamera: false);
+
+      if (result != PermissionResult.granted) {
+        final retry = await PermissionUtil.showPermissionDialog(
+          context: context,
+          result: result,
+          permissionLabel: 'galeria',
+          usageReason: 'para adicionar fotos da obra',
+        );
+        if (retry == null || !retry) return;
+
+        // Tenta de novo
+        final retryResult =
+            await PermissionUtil.checkAndRequest(isCamera: false);
+        if (retryResult != PermissionResult.granted) return;
+      }
+
       final List<XFile> images = await _picker.pickMultiImage();
       if (images.isNotEmpty) {
         final int remaining = 3 - total;
@@ -218,7 +237,6 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         for (final xfile in candidates) {
           final file = File(xfile.path);
 
-          // ── Moderação via Vision API ──────────────────────────────────────
           setState(() => _isCheckingImage = true);
           final approved = await checkAndShowModerationDialog(
             context,
@@ -229,47 +247,40 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
 
           if (!mounted) return;
           if (approved) {
-            setState(() => _selectedImages.add(file));
+            if (mounted) setState(() => _selectedImages.add(file));
           }
         }
 
         if (images.length > remaining) {
-          _showSnackBar(
-              'Apenas $remaining foto(s) podiam ser adicionadas. Limite: 3',
+          _showSnackBar('Apenas $remaining foto(s) adicionadas. Limite: 3',
               Colors.orange);
         }
       }
     } catch (e) {
       setState(() => _isCheckingImage = false);
-      _showSnackBar('Erro ao selecionar imagens', Colors.red);
+      _showSnackBar('Erro ao selecionar imagens: $e', Colors.red);
     }
   }
 
-  Future<void> _pickVideo() async {
-    try {
-      final int total = _selectedVideos.length + _existingVideoUrls.length;
-      if (total >= 1) {
-        _showSnackBar('Você já adicionou o máximo de 1 vídeo', Colors.orange);
-        return;
-      }
-      final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-      if (video != null) setState(() => _selectedVideos.add(File(video.path)));
-    } catch (e) {
-      _showSnackBar('Erro ao selecionar vídeo', Colors.red);
-    }
-  }
-
-  void _removeImage(int index)         => setState(() => _selectedImages.removeAt(index));
-  void _removeVideo(int index)         => setState(() => _selectedVideos.removeAt(index));
+  void _removeImage(int index) =>
+      setState(() => _selectedImages.removeAt(index));
+  void _removeVideo(int index) =>
+      setState(() => _selectedVideos.removeAt(index));
 
   void _removeExistingImage(int index) {
     final url = _existingImageUrls[index];
-    setState(() { _existingImageUrls.removeAt(index); _urlsToDelete.add(url); });
+    setState(() {
+      _existingImageUrls.removeAt(index);
+      _urlsToDelete.add(url);
+    });
   }
 
   void _removeExistingVideo(int index) {
     final url = _existingVideoUrls[index];
-    setState(() { _existingVideoUrls.removeAt(index); _urlsToDelete.add(url); });
+    setState(() {
+      _existingVideoUrls.removeAt(index);
+      _urlsToDelete.add(url);
+    });
   }
 
   void _showSnackBar(String message, Color color) {
@@ -318,8 +329,8 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     if (!_validateFields()) return;
 
     setState(() {
-      _isUploading    = true;
-      _uploadStatus   = 'Preparando arquivos...';
+      _isUploading = true;
+      _uploadStatus = 'Preparando arquivos...';
       _uploadProgress = 0.0;
     });
 
@@ -327,8 +338,14 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       // ── FIX 1 em ação: recebe listas separadas por tipo ──────────────────
       final (newImageUrls, newVideoUrls) = await _uploadAllMedia();
 
-      final List<String> finalImageUrls = [..._existingImageUrls, ...newImageUrls];
-      final List<String> finalVideoUrls = [..._existingVideoUrls, ...newVideoUrls];
+      final List<String> finalImageUrls = [
+        ..._existingImageUrls,
+        ...newImageUrls
+      ];
+      final List<String> finalVideoUrls = [
+        ..._existingVideoUrls,
+        ...newVideoUrls
+      ];
 
       // Processar salário
       String finalSalary = 'A combinar';
@@ -340,16 +357,18 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       setState(() => _uploadStatus = 'Salvando vaga...');
 
       final Map<String, dynamic> vacancyData = {
-        'title':         _titleController.text.trim().isEmpty ? null : _titleController.text.trim(),
-        'profession':    selectedProfession,
-        'state':         selectedState,
-        'city':          selectedCity,
+        'title': _titleController.text.trim().isEmpty
+            ? null
+            : _titleController.text.trim(),
+        'profession': selectedProfession,
+        'state': selectedState,
+        'city': selectedCity,
         'email_contact': widget.emailContact,
         'phone_contact': widget.phoneContact,
-        'description':   _descriptionController.text.trim(),
-        'salary':        finalSalary,
-        'salary_type':   selectedSalaryType,
-        'local_id':      widget.localId,
+        'description': _descriptionController.text.trim(),
+        'salary': finalSalary,
+        'salary_type': selectedSalaryType,
+        'local_id': widget.localId,
         'midia': {
           'images': finalImageUrls,
           'videos': finalVideoUrls,
@@ -357,7 +376,9 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       };
 
       if (widget.isEditing && widget.vacancyId != null) {
-        await _database.child('vacancy/${widget.vacancyId}').update(vacancyData);
+        await _database
+            .child('vacancy/${widget.vacancyId}')
+            .update(vacancyData);
 
         if (_urlsToDelete.isNotEmpty) {
           setState(() => _uploadStatus = 'Limpando arquivos antigos...');
@@ -368,14 +389,14 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         _showSnackBar('Vaga atualizada com sucesso!', Colors.green);
       } else {
         vacancyData['created_at'] = DateTime.now().toIso8601String();
-        vacancyData['status']     = 'Aberta';
-        vacancyData['requests']   = [];
-        vacancyData['views']      = {'owner_last_viewed': null, 'request_views': {}};
-        vacancyData['stats']      = {
-          'total_views':         0,
-          'unique_viewers':      [],
-          'created_timestamp':   DateTime.now().millisecondsSinceEpoch,
-          'total_applications':  0,
+        vacancyData['status'] = 'Aberta';
+        vacancyData['requests'] = [];
+        vacancyData['views'] = {'owner_last_viewed': null, 'request_views': {}};
+        vacancyData['stats'] = {
+          'total_views': 0,
+          'unique_viewers': [],
+          'created_timestamp': DateTime.now().millisecondsSinceEpoch,
+          'total_applications': 0,
         };
         await _database.child('vacancy').push().set(vacancyData);
         _showSnackBar('Vaga criada com sucesso!', Colors.green);
@@ -385,35 +406,51 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       await Future.delayed(const Duration(seconds: 1));
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      print('Erro ao salvar vaga: $e');
+      debugPrint('Erro ao salvar vaga: $e');
       setState(() => _isUploading = false);
       _showSnackBar('Erro ao salvar vaga. Tente novamente.', Colors.red);
     }
   }
 
   void _viewImageFullscreen(File imageFile, int initialIndex) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => FullscreenMediaViewer(
-        images: _selectedImages, initialIndex: initialIndex, isVideo: false)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => FullscreenMediaViewer(
+                images: _selectedImages,
+                initialIndex: initialIndex,
+                isVideo: false)));
   }
 
   void _viewVideoFullscreen(File videoFile, int initialIndex) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => FullscreenMediaViewer(
-        videos: _selectedVideos, initialIndex: initialIndex, isVideo: true)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => FullscreenMediaViewer(
+                videos: _selectedVideos,
+                initialIndex: initialIndex,
+                isVideo: true)));
   }
 
   void _viewExistingImageFullscreen(String imageUrl) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
-        body: Center(child: InteractiveViewer(child: Image.network(imageUrl))))));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => Scaffold(
+                backgroundColor: Colors.black,
+                appBar: AppBar(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white),
+                body: Center(
+                    child:
+                        InteractiveViewer(child: Image.network(imageUrl))))));
   }
 
   void _viewExistingVideoFullscreen(String videoUrl) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => VideoPlayerScreen(videoUrl: videoUrl)));
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => VideoPlayerScreen(videoUrl: videoUrl)));
   }
 
   @override
@@ -421,8 +458,10 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     if (_isLoadingData) {
       return Scaffold(
         backgroundColor: Colors.grey[50],
-        appBar: AppBar(title: const Text('Carregando...'), backgroundColor: Colors.white),
-        body: const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35))),
+        appBar: AppBar(
+            title: const Text('Carregando...'), backgroundColor: Colors.white),
+        body: const Center(
+            child: CircularProgressIndicator(color: Color(0xFFFF6B35))),
       );
     }
 
@@ -446,12 +485,14 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle('Informações Básicas', Icons.assignment, true),
+                  _buildSectionTitle(
+                      'Informações Básicas', Icons.assignment, true),
                   const SizedBox(height: 16),
 
                   ProfessionDropdown(
                     initialValue: selectedProfession,
-                    onChanged: (value) => setState(() => selectedProfession = value),
+                    onChanged: (value) =>
+                        setState(() => selectedProfession = value),
                   ),
                   const SizedBox(height: 16),
 
@@ -470,7 +511,10 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
 
                   StateDropdown(
                     initialValue: selectedState,
-                    onChanged: (value) => setState(() { selectedState = value; selectedCity = null; }),
+                    onChanged: (value) => setState(() {
+                      selectedState = value;
+                      selectedCity = null;
+                    }),
                   ),
                   const SizedBox(height: 16),
 
@@ -484,31 +528,45 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                   _buildSalaryTypeDropdown(),
                   const SizedBox(height: 16),
 
-                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar') ...[
+                  if (selectedSalaryType != null &&
+                      selectedSalaryType != 'A combinar') ...[
                     _buildSalaryField(),
                     const SizedBox(height: 16),
                   ],
 
                   const SizedBox(height: 8),
-                  _buildSectionTitle('Mídia (Opcional)', Icons.photo_library, false),
+                  _buildSectionTitle(
+                      'Mídia (Opcional)', Icons.photo_library, false),
                   const SizedBox(height: 16),
                   _buildMediaUploadSection(),
                   const SizedBox(height: 16),
 
                   if (_existingImageUrls.isNotEmpty) ...[
-                    _buildExistingMediaGallery(title: 'Imagens Atuais', items: _existingImageUrls, isVideo: false),
+                    _buildExistingMediaGallery(
+                        title: 'Imagens Atuais',
+                        items: _existingImageUrls,
+                        isVideo: false),
                     const SizedBox(height: 16),
                   ],
                   if (_existingVideoUrls.isNotEmpty) ...[
-                    _buildExistingMediaGallery(title: 'Vídeos Atuais', items: _existingVideoUrls, isVideo: true),
+                    _buildExistingMediaGallery(
+                        title: 'Vídeos Atuais',
+                        items: _existingVideoUrls,
+                        isVideo: true),
                     const SizedBox(height: 16),
                   ],
                   if (_selectedImages.isNotEmpty) ...[
-                    _buildMediaGallery(title: 'Novas Imagens', items: _selectedImages, isVideo: false),
+                    _buildMediaGallery(
+                        title: 'Novas Imagens',
+                        items: _selectedImages,
+                        isVideo: false),
                     const SizedBox(height: 16),
                   ],
                   if (_selectedVideos.isNotEmpty) ...[
-                    _buildMediaGallery(title: 'Novos Vídeos', items: _selectedVideos, isVideo: true),
+                    _buildMediaGallery(
+                        title: 'Novos Vídeos',
+                        items: _selectedVideos,
+                        isVideo: true),
                     const SizedBox(height: 16),
                   ],
 
@@ -523,13 +581,17 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: Text(
                         _isUploading
                             ? 'Salvando...'
-                            : (widget.isEditing ? 'Salvar Alterações' : 'Criar Vaga'),
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            : (widget.isEditing
+                                ? 'Salvar Alterações'
+                                : 'Criar Vaga'),
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -552,18 +614,20 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                         children: [
                           CircularProgressIndicator(
                             value: _uploadProgress > 0 ? _uploadProgress : null,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Color(0xFFFF6B35)),
                             strokeWidth: 3,
                           ),
                           const SizedBox(height: 16),
                           Text(_uploadStatus,
-                            style: const TextStyle(fontSize: 16),
-                            textAlign: TextAlign.center),
+                              style: const TextStyle(fontSize: 16),
+                              textAlign: TextAlign.center),
                           if (_uploadProgress > 0) ...[
                             const SizedBox(height: 8),
                             Text(
-                              '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                                '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                    fontSize: 14, color: Colors.grey[600])),
                           ],
                         ],
                       ),
@@ -601,8 +665,8 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                           const SizedBox(height: 6),
                           Text(
                             'Garantindo que o conteúdo é seguro\npara nossa comunidade',
-                            style:
-                                TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -632,14 +696,17 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Descrição *',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700])),
             // contador XX/80
             Text(
               '$_descLen / $_minDescLen',
               style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: reached ? const Color(0xFF22C55E) : Colors.grey[500]),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: reached ? const Color(0xFF22C55E) : Colors.grey[500]),
             ),
           ],
         ),
@@ -651,7 +718,9 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
             border: Border.all(
               color: reached
                   ? const Color(0xFF22C55E)
-                  : (_descLen > 0 ? Colors.orange.shade200 : Colors.grey.shade300),
+                  : (_descLen > 0
+                      ? Colors.orange.shade200
+                      : Colors.grey.shade300),
               width: 1.5,
             ),
           ),
@@ -660,11 +729,13 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
             focusNode: _descriptionFocus,
             maxLines: 5,
             decoration: InputDecoration(
-              hintText: 'Descreva os requisitos, responsabilidades e condições da vaga...',
+              hintText:
+                  'Descreva os requisitos, responsabilidades e condições da vaga...',
               hintStyle: TextStyle(color: Colors.grey[400]),
               prefixIcon: Padding(
-                padding: const EdgeInsets.only(bottom: 68),
-                child: Icon(Icons.description, color: const Color(0xFFFF6B35), size: 20)),
+                  padding: const EdgeInsets.only(bottom: 68),
+                  child: Icon(Icons.description,
+                      color: const Color(0xFFFF6B35), size: 20)),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.all(16),
             ),
@@ -697,10 +768,16 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Tipo de Salário (Opcional)',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF374151))),
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF374151))),
         const SizedBox(height: 8),
         InkWell(
-          onTap: () { FocusScope.of(context).unfocus(); _showSalaryTypeDialog(); },
+          onTap: () {
+            FocusScope.of(context).unfocus();
+            _showSalaryTypeDialog();
+          },
           borderRadius: BorderRadius.circular(12),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
@@ -717,8 +794,10 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                   child: Text(
                     selectedSalaryType ?? 'Selecione o tipo de salário',
                     style: TextStyle(
-                      color: selectedSalaryType != null ? const Color(0xFF1F2937) : Colors.grey[400],
-                      fontSize: 16),
+                        color: selectedSalaryType != null
+                            ? const Color(0xFF1F2937)
+                            : Colors.grey[400],
+                        fontSize: 16),
                   ),
                 ),
                 Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
@@ -737,7 +816,8 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       barrierDismissible: true,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 500),
             child: Column(
@@ -746,14 +826,18 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: const BoxDecoration(
-                    color: Color(0xFF3B82F6),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20), topRight: Radius.circular(20))),
+                      color: Color(0xFF3B82F6),
+                      borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20))),
                   child: Row(children: [
                     const Icon(Icons.schedule, color: Colors.white),
                     const SizedBox(width: 12),
                     const Text('Tipo de Salário',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                   ]),
                 ),
                 Flexible(
@@ -772,21 +856,36 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                           Navigator.pop(dialogContext);
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 16),
                           decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.transparent,
-                            border: Border(bottom: BorderSide(color: Colors.grey[200]!, width: 1))),
+                              color: isSelected
+                                  ? const Color(0xFF3B82F6)
+                                      .withValues(alpha: 0.1)
+                                  : Colors.transparent,
+                              border: Border(
+                                  bottom: BorderSide(
+                                      color: Colors.grey[200]!, width: 1))),
                           child: Row(children: [
                             Icon(Icons.attach_money,
-                              color: isSelected ? const Color(0xFF3B82F6) : Colors.grey[600], size: 22),
+                                color: isSelected
+                                    ? const Color(0xFF3B82F6)
+                                    : Colors.grey[600],
+                                size: 22),
                             const SizedBox(width: 16),
-                            Expanded(child: Text(type,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: isSelected ? const Color(0xFF3B82F6) : Colors.black87,
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal))),
+                            Expanded(
+                                child: Text(type,
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        color: isSelected
+                                            ? const Color(0xFF3B82F6)
+                                            : Colors.black87,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.normal))),
                             if (isSelected)
-                              const Icon(Icons.check_circle, color: Color(0xFF3B82F6), size: 22),
+                              const Icon(Icons.check_circle,
+                                  color: Color(0xFF3B82F6), size: 22),
                           ]),
                         ),
                       );
@@ -807,13 +906,16 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Valor do Salário',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700])),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!)),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[300]!)),
           child: TextField(
             controller: _salaryController,
             focusNode: _salaryFocus,
@@ -825,7 +927,8 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
             decoration: InputDecoration(
               hintText: 'R\$ 0,00',
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: const Icon(Icons.attach_money, color: Color(0xFFFF6B35), size: 20),
+              prefixIcon: const Icon(Icons.attach_money,
+                  color: Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.all(16),
             ),
@@ -841,7 +944,10 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         Icon(icon, color: const Color(0xFFFF6B35), size: 22),
         const SizedBox(width: 8),
         Text(title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+            style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87)),
         if (isRequired) ...[
           const SizedBox(width: 6),
           const Text('*', style: TextStyle(color: Colors.red, fontSize: 18)),
@@ -862,13 +968,16 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700])),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!)),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[300]!)),
           child: TextField(
             controller: controller,
             focusNode: focusNode,
@@ -890,7 +999,6 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     final int totalImages = _selectedImages.length + _existingImageUrls.length;
     final int totalVideos = _selectedVideos.length + _existingVideoUrls.length;
     final bool canAddImages = totalImages < 3;
-    final bool canAddVideo  = totalVideos < 1;
 
     return Container(
       decoration: BoxDecoration(
@@ -913,12 +1021,14 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(10)),
             child: Row(children: [
               Icon(Icons.info_outline, size: 18, color: Colors.blue[700]),
               const SizedBox(width: 8),
-              Expanded(child: Text('Máximo: 3 fotos por vaga',
-                style: TextStyle(fontSize: 12, color: Colors.blue[900]))),
+              Expanded(
+                  child: Text('Máximo: 3 fotos por vaga',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[900]))),
             ]),
           ),
         ],
@@ -926,12 +1036,13 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     );
   }
 
-  Widget _buildUploadButton(IconData icon, String label, VoidCallback onTap, {bool enabled = true}) {
+  Widget _buildUploadButton(IconData icon, String label, VoidCallback onTap,
+      {bool enabled = true}) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
-          color: enabled ? Colors.grey[300]! : Colors.grey[200]!,
-          style: BorderStyle.solid),
+            color: enabled ? Colors.grey[300]! : Colors.grey[200]!,
+            style: BorderStyle.solid),
         borderRadius: BorderRadius.circular(10),
         color: enabled ? Colors.transparent : Colors.grey[100],
       ),
@@ -943,13 +1054,17 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, color: enabled ? const Color(0xFFFF6B35) : Colors.grey[400], size: 22),
+              Icon(icon,
+                  color: enabled ? const Color(0xFFFF6B35) : Colors.grey[400],
+                  size: 22),
               const SizedBox(width: 10),
-              Flexible(child: Text(label,
-                style: TextStyle(
-                  color: enabled ? Colors.grey[700] : Colors.grey[400],
-                  fontSize: 14, fontWeight: FontWeight.w600),
-                textAlign: TextAlign.center)),
+              Flexible(
+                  child: Text(label,
+                      style: TextStyle(
+                          color: enabled ? Colors.grey[700] : Colors.grey[400],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center)),
             ]),
           ),
         ),
@@ -966,15 +1081,25 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Icon(isVideo ? Icons.videocam : Icons.photo, color: Colors.blue[700], size: 18),
+          Icon(isVideo ? Icons.videocam : Icons.photo,
+              color: Colors.blue[700], size: 18),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87)),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: Colors.blue[700], borderRadius: BorderRadius.circular(10)),
-            child: Text('${items.length}',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                  color: Colors.blue[700],
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text('${items.length}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold))),
         ]),
         const SizedBox(height: 12),
         SizedBox(
@@ -991,33 +1116,47 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                         ? _viewExistingVideoFullscreen(items[index])
                         : _viewExistingImageFullscreen(items[index]),
                     child: Container(
-                      width: 120, height: 120,
+                      width: 120,
+                      height: 120,
                       decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue[300]!, width: 2)),
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(12),
+                          border:
+                              Border.all(color: Colors.blue[300]!, width: 2)),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: isVideo
                             ? Stack(alignment: Alignment.center, children: [
-                                Container(color: Colors.black,
-                                  child: const Center(child: Icon(Icons.videocam, size: 40, color: Colors.white70))),
-                                const Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
+                                Container(
+                                    color: Colors.black,
+                                    child: const Center(
+                                        child: Icon(Icons.videocam,
+                                            size: 40, color: Colors.white70))),
+                                const Icon(Icons.play_circle_fill,
+                                    size: 50, color: Colors.white),
                               ])
-                            : Image.network(items[index], fit: BoxFit.cover,
+                            : Image.network(items[index],
+                                fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
-                                  color: Colors.grey[300],
-                                  child: Icon(Icons.broken_image, size: 40, color: Colors.grey[600]))),
+                                    color: Colors.grey[300],
+                                    child: Icon(Icons.broken_image,
+                                        size: 40, color: Colors.grey[600]))),
                       ),
                     ),
                   ),
-                  Positioned(top: 4, right: 4,
-                    child: GestureDetector(
-                      onTap: () => isVideo ? _removeExistingVideo(index) : _removeExistingImage(index),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                        child: const Icon(Icons.close, color: Colors.white, size: 16)))),
+                  Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                          onTap: () => isVideo
+                              ? _removeExistingVideo(index)
+                              : _removeExistingImage(index),
+                          child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                  color: Colors.red, shape: BoxShape.circle),
+                              child: const Icon(Icons.close,
+                                  color: Colors.white, size: 16)))),
                 ]),
               );
             },
@@ -1036,15 +1175,24 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Icon(isVideo ? Icons.videocam : Icons.photo, color: const Color(0xFFFF6B35), size: 18),
+          Icon(isVideo ? Icons.videocam : Icons.photo,
+              color: const Color(0xFFFF6B35), size: 18),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87)),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(10)),
-            child: Text('${items.length}',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                  color: Colors.blue, borderRadius: BorderRadius.circular(10)),
+              child: Text('${items.length}',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold))),
         ]),
         const SizedBox(height: 12),
         SizedBox(
@@ -1061,30 +1209,41 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                         ? _viewVideoFullscreen(items[index], index)
                         : _viewImageFullscreen(items[index], index),
                     child: Container(
-                      width: 120, height: 120,
+                      width: 120,
+                      height: 120,
                       decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[300]!)),
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!)),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: isVideo
                             ? Stack(alignment: Alignment.center, children: [
-                                Container(color: Colors.black,
-                                  child: const Center(child: Icon(Icons.videocam, size: 40, color: Colors.white70))),
-                                const Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
+                                Container(
+                                    color: Colors.black,
+                                    child: const Center(
+                                        child: Icon(Icons.videocam,
+                                            size: 40, color: Colors.white70))),
+                                const Icon(Icons.play_circle_fill,
+                                    size: 50, color: Colors.white),
                               ])
                             : Image.file(items[index], fit: BoxFit.cover),
                       ),
                     ),
                   ),
-                  Positioned(top: 4, right: 4,
-                    child: GestureDetector(
-                      onTap: () => isVideo ? _removeVideo(index) : _removeImage(index),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                        child: const Icon(Icons.close, color: Colors.white, size: 16)))),
+                  Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                          onTap: () => isVideo
+                              ? _removeVideo(index)
+                              : _removeImage(index),
+                          child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                  color: Colors.red, shape: BoxShape.circle),
+                              child: const Icon(Icons.close,
+                                  color: Colors.white, size: 16)))),
                 ]),
               );
             },
@@ -1098,7 +1257,7 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
 // ── VideoPlayerScreen ─────────────────────────────────────────────────────────
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
-  const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
+  const VideoPlayerScreen({super.key, required this.videoUrl});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -1108,7 +1267,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late VideoPlayerController _videoController;
   ChewieController? _chewieController;
   bool _isLoading = true;
-  bool _hasError  = false;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -1118,7 +1277,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
+      _videoController =
+          VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
       await _videoController.initialize();
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
@@ -1128,7 +1288,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       );
       setState(() => _isLoading = false);
     } catch (e) {
-      setState(() { _isLoading = false; _hasError = true; });
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
     }
   }
 
@@ -1152,12 +1315,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         child: _isLoading
             ? const CircularProgressIndicator(color: Color(0xFFFF6B35))
             : _hasError
-                ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.white),
-                    SizedBox(height: 16),
-                    Text('Erro ao carregar vídeo',
-                      style: TextStyle(color: Colors.white, fontSize: 16)),
-                  ])
+                ? const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                        Icon(Icons.error_outline,
+                            size: 64, color: Colors.white),
+                        SizedBox(height: 16),
+                        Text('Erro ao carregar vídeo',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 16)),
+                      ])
                 : _chewieController != null
                     ? Chewie(controller: _chewieController!)
                     : const SizedBox(),

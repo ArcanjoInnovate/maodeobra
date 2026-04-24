@@ -1,50 +1,57 @@
 // ignore_for_file: unused_import
 
+import 'package:dartobra_new/controllers/feed_controller.dart';
 import 'package:dartobra_new/screens/auth/login/login_screen.dart';
 import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
+import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
-import 'package:dartobra_new/utils/notification_navigation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'firebase_options.dart';
-import 'package:dartobra_new/controllers/feed_controller.dart';
-import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ignore: unused_element
+import 'firebase_options.dart';
+
+// ============================================================
+// ✅ BACKGROUND HANDLER GLOBAL
+// ============================================================
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print("🔥 Background message: ${message.data}");
+  NotificationService().handleBackgroundMessage(message);
+}
+
 Future<String?> _getCurrentUserId() async {
   try {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) {
-      print('✅ UserID do Firebase Auth: ${currentUser.uid}');
+      print('✅ UserID: ${currentUser.uid}');
       return currentUser.uid;
     }
 
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('currentUserId');
     if (userId != null) {
-      print('⚠️ UserID do SharedPreferences: $userId');
+      print('⚠️ SharedPref UserID: $userId');
       return userId;
     }
 
     final authBox = await Hive.openBox('auth');
     final hiveUserId = authBox.get('currentUserId');
-    print('⚠️ UserID do Hive: $hiveUserId');
+    print('⚠️ Hive UserID: $hiveUserId');
     return hiveUserId;
   } catch (e) {
-    print('❌ Erro ao pegar userId: $e');
+    print('❌ Erro userId: $e');
     return null;
   }
 }
@@ -56,164 +63,105 @@ void main() async {
   await initializeDateFormatting('pt_BR', null);
   Intl.defaultLocale = 'pt_BR';
 
-  // ✅ Firebase deve ser inicializado ANTES de registrar o handler
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  // ✅ Handler correto do NotificationService — exibe notificação local no background/fechado
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.immersiveSticky,
-    overlays: [],
+  // ✅ iOS Foreground
+  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+    alert: true,
+    badge: true,
+    sound: true,
   );
 
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,
+      overlays: []);
   ExpirationService().debugTestDate();
 
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+  }
+
+  // ✅ SIMPLES E FUNCIONA
+  Future<void> _initializeNotifications() async {
+    final userId = await _getCurrentUserId();
+    if (userId == null) return;
+
+    print('🔔 Init notificações: $userId');
+
+    final service = NotificationService();
+    await service.initialize(userId);
+
+    // ✅ FOREGROUND
+    FirebaseMessaging.onMessage.listen((message) {
+      service.handleForegroundMessage(message);
+    });
+
+    // ✅ TAP handlers
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      service.handleNotificationTap(message.data);
+    });
+
+    // ✅ App fechado → aberto
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null) {
+      service.handleNotificationTap(initial.data);
+    }
+
+    print('✅ Notificações 100% configuradas!');
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => FeedController(),
-          lazy: true,
-        ),
+        ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Mão de Obra',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          useMaterial3: true,
-        ),
+        theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         initialRoute: '/',
         routes: {
           '/': (context) => const SplashPage(),
           '/LoginScreen': (context) => const LoginScreen(),
           '/onboarding_first': (context) => const OnboardingFirst(),
         },
-        builder: (context, child) {
-          return StreamBuilder<User?>(
-            stream: FirebaseAuth.instance.authStateChanges(),
-            builder: (context, authSnapshot) {
-              final currentUser = authSnapshot.data;
-              final currentUserId = currentUser?.uid;
+        home: StreamBuilder<DatabaseEvent>(
+          stream: FirebaseDatabase.instance.ref('Administrative').onValue,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SplashPage();
 
-              print('👤 Auth State: ${currentUser != null ? "LOGADO" : "DESLOGADO"}');
-              print('👤 Current User ID: $currentUserId');
+            final data =
+                snapshot.data!.snapshot.value as Map<dynamic, dynamic>?;
+            final isUpdating = data?['isUpdating'] == true;
+            final testers = (data?['testers'] as List?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [];
+            final userId = FirebaseAuth.instance.currentUser?.uid;
+            final isTester = userId != null && testers.contains(userId);
 
-              // ✅ ADICIONE ESTE BLOCO - Setup dos handlers de notificação
-              if (currentUserId != null) {
-                // Inicializa NotificationService apenas quando logado
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  final notificationService = NotificationService();
-                  notificationService.initialize(currentUserId);
-                  
-                  // 🔧 SETUP DOS HANDLERS DE NOTIFICAÇÃO
-                  _setupNotificationHandlers(context);
-                });
-              }
+            print(
+                '🔧 Maintenance: $isUpdating | Tester: $isTester | User: $userId');
 
-              return StreamBuilder<DatabaseEvent>(
-                stream: FirebaseDatabase.instance.ref('Administrative').onValue,
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return child ?? const SizedBox();
-                  }
-
-                  final data = snapshot.data?.snapshot.value;
-                  Map<dynamic, dynamic>? adminData;
-                  if (data is Map) {
-                    adminData = data;
-                  }
-
-                  final raw = adminData?['isUpdating'];
-                  print('🔥 Administrative/isUpdating = $raw');
-
-                  final isUpdating =
-                      raw == true || raw == 1 || raw.toString() == 'true';
-
-                  List<String> testerIds = [];
-                  try {
-                    final testersRaw = adminData?['testers'];
-                    if (testersRaw is List) {
-                      testerIds = testersRaw
-                          .where(
-                              (id) => id != null && id.toString().isNotEmpty)
-                          .map((id) => id.toString())
-                          .toList();
-                    }
-                  } catch (e) {
-                    print('❌ Erro ao processar testers: $e');
-                  }
-
-                  print('🧪 Testers: $testerIds');
-
-                  final isTester =
-                      currentUserId != null && testerIds.contains(currentUserId);
-                  print('✅ Is Tester: $isTester');
-
-                  if (isTester || !isUpdating) {
-                    print(
-                        '✅ ACESSO LIBERADO (isTester=$isTester, isUpdating=$isUpdating)');
-                    return child ?? const SizedBox();
-                  }
-
-                  print('🔒 MANUTENÇÃO ATIVA');
-                  return const MaintenanceScreen();
-                },
-              );
-            },
-          );
-        },
+            return isTester || !isUpdating
+                ? const SplashPage()
+                : const MaintenanceScreen();
+          },
+        ),
       ),
     );
-  }
-
-  // 🔧 FUNÇÃO EXTRAÍDA PARA SETUP DOS HANDLERS
-  void _setupNotificationHandlers(BuildContext context) {
-    final notificationService = NotificationService();
-
-    notificationService.onNotificationTap = (String chatId, String senderId) {
-      print('📱 Notificação de chat clicada: chatId=$chatId, senderId=$senderId');
-      NotificationService().dismissChatNotifications(chatId);
-      NotificationNavigationHelper.handleNotification(
-        context,
-        'chat',
-        {'chatId': chatId, 'senderId': senderId},
-        (index) {
-          // Como estamos no MyApp (Stateless), não podemos usar setState diretamente
-          // O NavigationHelper deve lidar com a navegação globalmente
-          print('🔄 Navegando para chat index: $index');
-        },
-      );
-    };
-
-    notificationService.onRequestNotificationTap = (
-      String? requestType,
-      String? profileId,
-      String? vacancyId,
-    ) {
-      print('📱 Notificação de request clicada: type=$requestType, profile=$profileId, vacancy=$vacancyId');
-      NotificationNavigationHelper.handleNotification(
-        context,
-        'chat_request',
-        {
-          'requestType': requestType,
-          'profileId': profileId,
-          'vacancyId': vacancyId,
-        },
-        (index) {
-          print('🔄 Navegando para request index: $index');
-        },
-      );
-    };
-
-    print('✅ Handlers de notificação configurados!');
   }
 }
