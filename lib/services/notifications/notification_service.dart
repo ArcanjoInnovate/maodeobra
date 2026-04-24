@@ -155,19 +155,12 @@ class NotificationService {
   // ============================================================
 
   Future<void> _getAndSaveToken(String userId) async {
-    try {
-      final token = await _fcm.getToken();
-
-      if (token != null) {
-        await FirebaseDatabase.instance
-            .ref('Users/$userId/fcmToken')
-            .set(token);
-        debugPrint('✅ Token FCM salvo: ${token.substring(0, 20)}...');
-      } else {
-        debugPrint('⚠️ Token FCM não disponível');
-      }
-    } catch (e) {
-      debugPrint('❌ Erro ao salvar token FCM: $e');
+    final token = await _fcm.getToken(); // ✅ Pega token iOS também
+    
+    if (token != null) {
+      await FirebaseDatabase.instance
+          .ref('Users/$userId/fcmToken')  // ✅ Salva iOS também!
+          .set(token);
     }
   }
 

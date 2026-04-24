@@ -36,42 +36,57 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _initApp();
   }
   Future<void> _requestPermissions() async {
-    if (!Platform.isAndroid) return;
-
-    try {
-      final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-
-      // Monta lista de permissões conforme versão
-      final permissions = <Permission>[
+  try {
+    // ✅ iOS - Notificações (sempre pede)
+    if (Platform.isIOS) {
+      final iosInfo = await DeviceInfoPlugin().iosInfo;
+      debugPrint('📱 iOS ${iosInfo.systemVersion} - Pedindo notificações...');
+      
+      // Pede notificações no iOS
+      final notificationStatus = await Permission.notification.request();
+      debugPrint('🔔 iOS Notification: $notificationStatus');
+      
+      // Outras permissões iOS
+      final statuses = await [
         Permission.camera,
-        if (sdkInt >= 33) Permission.photos,        // Android 13+
-        if (sdkInt >= 33) Permission.notification,  // Android 13+
-        if (sdkInt < 33) Permission.storage,        // Android ≤12
-      ];
-
-      // Pede todas de uma vez
-      final statuses = await permissions.request();
-
-      // Loga resultado
+        Permission.photos,
+      ].request();
+      
       statuses.forEach((permission, status) {
-        debugPrint('🔐 $permission → $status');
+        debugPrint('🔐 iOS $permission → $status');
       });
-
-      // Se alguma vital estiver permanentemente negada, abre configurações
-      final cameraDenied =
-          statuses[Permission.camera]?.isPermanentlyDenied ?? false;
-      final storageDenied = sdkInt >= 33
-          ? (statuses[Permission.photos]?.isPermanentlyDenied ?? false)
-          : (statuses[Permission.storage]?.isPermanentlyDenied ?? false);
-
-      if (cameraDenied || storageDenied) {
-        await _showPermissionsDialog();
-      }
-    } catch (e) {
-      debugPrint('⚠️ Erro ao solicitar permissões: $e');
+      
+      return; // iOS pronto!
     }
+
+    // ✅ Android
+    final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
+    final permissions = <Permission>[
+      Permission.camera,
+      Permission.notification,  // ✅ Sempre pede no Android 13+
+      if (sdkInt >= 33) Permission.photos,
+      if (sdkInt < 33) Permission.storage,
+    ];
+
+    final statuses = await permissions.request();
+    statuses.forEach((permission, status) {
+      debugPrint('🔐 Android $permission → $status');
+    });
+
+    // Verifica se precisa abrir configurações
+    final deniedPermissions = statuses.entries
+        .where((e) => e.value.isPermanentlyDenied)
+        .map((e) => e.key)
+        .toList();
+
+    if (deniedPermissions.isNotEmpty) {
+      await _showPermissionsDialog(deniedPermissions);
+    }
+  } catch (e) {
+    debugPrint('⚠️ Erro ao solicitar permissões: $e');
   }
-  Future<void> _showPermissionsDialog() async {
+}
+  Future<void> _showPermissionsDialog(List<Permission> deniedPermissions) async {
   await showDialog(
     context: context,
     barrierDismissible: false,
