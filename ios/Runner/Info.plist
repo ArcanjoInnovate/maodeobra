@@ -66,5 +66,25 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+<!-- ======================================================= -->
+<!-- PERMISSÕES DE USO                                       -->
+<!-- ======================================================= -->
+
+<key>NSCameraUsageDescription</key>
+<string>Usamos a câmera para que você possa tirar fotos de serviços e obras e compartilhá-las na plataforma.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Precisamos acessar sua galeria para que você possa selecionar e enviar fotos de serviços e obras.</string>
+
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Permite salvar imagens do app na sua galeria.</string>
+
+<!-- ======================================================= -->
+<!-- NOTIFICAÇÕES                                            -->
+<!-- ======================================================= -->
+
+<key>FirebaseAppDelegateProxyEnabled</key>
+<true/>
 </dict>
 </plist>
