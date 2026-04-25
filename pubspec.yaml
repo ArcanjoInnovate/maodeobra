@@ -18,6 +18,7 @@ dependencies:
   # FIREBASE (VERSÕES ESTÁVEIS iOS)
   # =========================
   firebase_core: ^3.3.0
+  firebase_analytics: ^10.7.4  
   firebase_auth: ^5.1.0
   firebase_database: ^11.1.0
   firebase_storage: ^12.1.0

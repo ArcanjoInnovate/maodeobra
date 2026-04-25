@@ -66,7 +66,6 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  // ✅ iOS Foreground
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,
@@ -93,7 +92,7 @@ class _MyAppState extends State<MyApp> {
     _initializeNotifications();
   }
 
-  // ✅ SIMPLES E FUNCIONA
+  // 🚀 DEBUG FCM TOKEN + ALERT VISUAL
   Future<void> _initializeNotifications() async {
     final userId = await _getCurrentUserId();
     if (userId == null) return;
@@ -103,23 +102,106 @@ class _MyAppState extends State<MyApp> {
     final service = NotificationService();
     await service.initialize(userId);
 
-    // ✅ FOREGROUND
+    // ✅ Handlers normais
     FirebaseMessaging.onMessage.listen((message) {
       service.handleForegroundMessage(message);
     });
 
-    // ✅ TAP handlers
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       service.handleNotificationTap(message.data);
     });
 
-    // ✅ App fechado → aberto
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) {
       service.handleNotificationTap(initial.data);
     }
 
-    print('✅ Notificações 100% configuradas!');
+    // 🚀 DEBUG CRÍTICO - TOKEN + PERMISSIONS
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      final settings = await FirebaseMessaging.instance.getNotificationSettings();
+      
+      print('🔍 === FCM DEBUG iOS ===');
+      print('UserID: $userId');
+      print('Token: ${token?.substring(0, 30)}...');
+      print('Permissions: ${settings.authorizationStatus}');
+      print('========================');
+      
+      // ✅ ALERT VISUAL NO IPHONE - VOCÊ VAI VER!
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showDebugAlert(token, settings.authorizationStatus.toString(), userId);
+        }
+      });
+      
+    } catch (e) {
+      print('❌ Token error: $e');
+    }
+
+    print('✅ Notificações configuradas!');
+  }
+
+  // 🎨 ALERT BONITO COM TOKEN
+  void _showDebugAlert(String? token, String permissions, String userId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Row(
+          children: [
+            Icon(Icons.verified, color: Colors.green, size: 28),
+            SizedBox(width: 12),
+            Text('FCM iOS DEBUG', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Container(
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('✅ TOKEN GERADO!', 
+                  style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                const Text('Token (copie):', style: TextStyle(fontWeight: FontWeight.w500)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    token ?? 'ERRO: TOKEN NULL',
+                    style: const TextStyle(
+                      fontFamily: 'monospace', 
+                      fontSize: 11, 
+                      color: Colors.white
+                    ),
+                    maxLines: 4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('Permissions: $permissions', 
+                  style: const TextStyle(fontSize: 13, color: Colors.cyan)),
+                Text('UserID: $userId', 
+                  style: const TextStyle(fontSize: 13, color: Colors.cyan)),
+                const SizedBox(height: 8),
+                const Text('Envie este token pro dev!', 
+                  style: TextStyle(fontSize: 12, color: Colors.orange)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('FECHAR'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

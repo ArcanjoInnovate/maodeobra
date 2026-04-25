@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:dartobra_new/core/repositories/user_repository.dart';
 import 'package:dartobra_new/screens/auth/login/login_controller.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -35,7 +36,66 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _requestPermissions();
     _initApp();
   }
-  Future<void> _requestPermissions() async {
+ Future<void> _requestPermissions() async {
+  try {
+    if (Platform.isIOS) {
+      final iosInfo = await DeviceInfoPlugin().iosInfo;
+      debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
+      
+      // ✅ 1. NOTIFICAÇÕES (Firebase nativo - OBRIGATÓRIO iOS)
+      NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,  // Produção
+      );
+      debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
+      
+      // ✅ 2. CÂMERA
+      final cameraStatus = await Permission.camera.request();
+      debugPrint('📸 iOS Câmera: $cameraStatus');
+      
+      // ✅ 3. FOTOS
+      final photosStatus = await Permission.photos.request();
+      debugPrint('🖼️ iOS Fotos: $photosStatus');
+      
+      // ✅ 4. STORAGE (iOS 14+ usa Photos)
+      debugPrint('💾 iOS Storage: Usando Photos permission');
+      
+    } else if (Platform.isAndroid) {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      debugPrint('🤖 Android ${androidInfo.version.release} - Iniciando permissões...');
+      
+      // ✅ 1. NOTIFICAÇÕES (Android 13+)
+      if (androidInfo.version.sdkInt >= 33) {
+        final notificationStatus = await Permission.notification.request();
+        debugPrint('🔔 Android Notificações: $notificationStatus');
+      }
+      
+      // ✅ 2. CÂMERA
+      final cameraStatus = await Permission.camera.request();
+      debugPrint('📸 Android Câmera: $cameraStatus');
+      
+      // ✅ 3. FOTOS (Android 13+)
+      if (androidInfo.version.sdkInt >= 33) {
+        final photosStatus = await Permission.photos.request();
+        debugPrint('🖼️ Android Fotos: $photosStatus');
+      }
+      
+      // ✅ 4. STORAGE (Android < 13 ou arquivos)
+      final storageStatus = await Permission.storage.request();
+      debugPrint('💾 Android Storage: $storageStatus');
+      
+      // ✅ 5. MANAGE_EXTERNAL_STORAGE (Android 11+ se precisar)
+      // if (androidInfo.version.sdkInt >= 30) {
+      //   final manageStatus = await Permission.manageExternalStorage.request();
+      //   debugPrint('📁 Android Manage Storage: $manageStatus');
+      // }
+    }
+  } catch (e) {
+    debugPrint('⚠️ Erro ao solicitar permissões: $e');
+  }
+
   try {
     if (Platform.isIOS) {
       final iosInfo = await DeviceInfoPlugin().iosInfo;
