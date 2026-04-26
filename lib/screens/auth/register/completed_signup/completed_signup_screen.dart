@@ -73,50 +73,43 @@ class _CompletedSignupState extends State<CompletedSignup>
 
   Future<void> _saveFCMToken(String userId) async {
   try {
-    // ✅ iOS OBRIGATÓRIO: pedir permissão antes de getToken()
     final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    print('📲 Status permissão notificação: ${settings.authorizationStatus}');
-
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      print('⚠️ Usuário negou notificações — token não salvo');
+      if (mounted) setState(() => _statusMessage = '❌ Notificação negada');
       return;
     }
 
-    // ✅ iOS também precisa do APNs token antes do FCM token
-    // Aguarda um momento para o APNs inicializar
     if (Platform.isIOS) {
-      await Future.delayed(const Duration(seconds: 1));
-      final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-      print('🍎 APNs token: ${apnsToken != null ? apnsToken.substring(0, 10) + "..." : "NULL"}');
-      
+      if (mounted) setState(() => _statusMessage = '⏳ Aguardando APNs...');
+      String? apnsToken;
+      for (int i = 0; i < 5; i++) {
+        await Future.delayed(const Duration(seconds: 2));
+        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+        if (mounted) setState(() => _statusMessage = '🍎 APNs tentativa ${i+1}: ${apnsToken != null ? "OK" : "NULL"}');
+        if (apnsToken != null) break;
+      }
       if (apnsToken == null) {
-        print('⚠️ APNs token NULL — FCM não disponível ainda no iOS');
+        if (mounted) setState(() => _statusMessage = '❌ APNs sempre NULL');
         return;
       }
     }
 
+    if (mounted) setState(() => _statusMessage = '⏳ Buscando FCM token...');
     final token = await FirebaseMessaging.instance.getToken();
+    
     if (token != null) {
-      print('📱 FCM Token: ${token.substring(0, 20)}...');
-
-      await FirebaseDatabase.instance
-          .ref('Users/$userId/fcmToken')
-          .set(token);
-
-      print('✅ FCM Token salvo para $userId');
-
-      final service = NotificationService();
-      await service.initialize(userId);
+      if (mounted) setState(() => _statusMessage = '✅ FCM: ${token.substring(0, 15)}...');
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(token);
     } else {
-      print('⚠️ FCM Token ainda NULL após APNs OK');
+      if (mounted) setState(() => _statusMessage = '❌ FCM token NULL');
     }
   } catch (e) {
-    print('❌ Erro ao salvar FCM token: $e');
+    if (mounted) setState(() => _statusMessage = '❌ Erro: $e');
   }
 }
   Future<void> _createUser() async {
