@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -72,29 +74,54 @@ class AuthService {
   // ============================================================
   // ✅ SALVAR FCM TOKEN (iOS + Android)
   // ============================================================
-  Future<void> _saveFCMToken(String userId) async {
-    try {
-      final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) {
-        print('📱 FCM Token pego: ${token.substring(0, 20)}...');
-        
-        // ✅ SALVA NO FIREBASE
-        await FirebaseDatabase.instance
-            .ref('Users/$userId/fcmToken')
-            .set(token);
-            
-        print('✅ FCM Token salvo no Firebase para $userId');
-        
-        // ✅ Inicializa NotificationService
-        final service = NotificationService();
-        await service.initialize(userId);
-      } else {
-        print('⚠️ FCM Token é NULL');
-      }
-    } catch (e) {
-      print('❌ Erro ao salvar FCM token: $e');
+ Future<void> _saveFCMToken(String userId) async {
+  try {
+    // ✅ iOS OBRIGATÓRIO: pedir permissão antes de getToken()
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    print('📲 Status permissão notificação: ${settings.authorizationStatus}');
+
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      print('⚠️ Usuário negou notificações — token não salvo');
+      return;
     }
+
+    // ✅ iOS também precisa do APNs token antes do FCM token
+    // Aguarda um momento para o APNs inicializar
+    if (Platform.isIOS) {
+      await Future.delayed(const Duration(seconds: 1));
+      final apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+      print('🍎 APNs token: ${apnsToken != null ? apnsToken.substring(0, 10) + "..." : "NULL"}');
+      
+      if (apnsToken == null) {
+        print('⚠️ APNs token NULL — FCM não disponível ainda no iOS');
+        return;
+      }
+    }
+
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      print('📱 FCM Token: ${token.substring(0, 20)}...');
+
+      await FirebaseDatabase.instance
+          .ref('Users/$userId/fcmToken')
+          .set(token);
+
+      print('✅ FCM Token salvo para $userId');
+
+      final service = NotificationService();
+      await service.initialize(userId);
+    } else {
+      print('⚠️ FCM Token ainda NULL após APNs OK');
+    }
+  } catch (e) {
+    print('❌ Erro ao salvar FCM token: $e');
   }
+}
 
   // ============================================================
   // ✅ LOGOUT - REMOVE TOKEN
