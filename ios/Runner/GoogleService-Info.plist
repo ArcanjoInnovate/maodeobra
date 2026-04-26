@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>943998527706-hlv8llg2330c3jki9cvdqig10oljq3n4.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.943998527706-hlv8llg2330c3jki9cvdqig10oljq3n4</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>943998527706-574e2kg7v67bs9gn7lvnd2ibffnao5kt.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDehAfMGic-Jlis2XzysfK9wkkA52-8lHY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>943998527706</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.maodeobraoficial.app</string>
+	<key>PROJECT_ID</key>
+	<string>obra-7ebd9</string>
+	<key>STORAGE_BUCKET</key>
+	<string>obra-7ebd9.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:943998527706:ios:b489865744ac6814b29de3</string>
+	<key>DATABASE_URL</key>
+	<string>https://obra-7ebd9-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>
