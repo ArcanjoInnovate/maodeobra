@@ -169,74 +169,60 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
 
 
   Future<void> _pickImageFromSource(ImageSource source) async {
-    final bool isCamera = source == ImageSource.camera;
-    final String label = isCamera ? 'câmera' : 'galeria';
-    final String reason = isCamera
-        ? 'para tirar sua foto de perfil'
-        : 'para escolher sua foto de perfil';
+  final bool isCamera = source == ImageSource.camera;
+  final String label = isCamera ? 'câmera' : 'galeria';
+  final String reason = isCamera
+      ? 'para tirar sua foto de perfil'
+      : 'para escolher sua foto de perfil';
 
-    // ✅ iOS - FORÇA re-ask se necessário
-    var result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
+  final result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
 
-    if (result == PermissionResult.denied) {
-      final wantsToRetry = await PermissionUtil.showPermissionDialog(
-        context: context,
-        result: result,
-        permissionLabel: label,
-        usageReason: reason,
-      );
-      if (!wantsToRetry!) return;
-      
-      // ✅ Tenta de novo
-      result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
-    }
-
-    if (result != PermissionResult.granted) {
-      await PermissionUtil.showPermissionDialog(
-        context: context,
-        result: result,
-        permissionLabel: label,
-        usageReason: reason,
-      );
-      return;
-    }
-
-    // ✅ ImagePicker SÓ AGORA
-    try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        imageQuality: 70,
-        maxWidth: 1024,
-        maxHeight: 1024,
-      );
-
-      if (image != null) {
-        final file = File(image.path);
-
-        setState(() => _isCheckingImage = true);
-        final approved = await checkAndShowModerationDialog(
-          context,
-          file,
-          onCheckEnd: () => setState(() => _isCheckingImage = false),
-        );
-        setState(() => _isCheckingImage = false);
-
-        if (!mounted) return;
-
-        if (approved) {
-          setState(() {
-            _profileImage = file;
-            _currentAvatarUrl = null;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Erro ao selecionar imagem: $e');
-      setState(() => _isCheckingImage = false);
-      _showSnackBar('Erro ao selecionar imagem', isError: true);
-    }
+  if (result != PermissionResult.granted) {
+    // Qualquer resultado não-granted mostra o dialog e encerra.
+    // No iOS após a primeira negativa já vai para Ajustes.
+    await PermissionUtil.showPermissionDialog(
+      context: context,
+      result: result,
+      permissionLabel: label,
+      usageReason: reason,
+    );
+    return;
   }
 
+  try {
+    final XFile? image = await _picker.pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 1024,
+      maxHeight: 1024,
+    );
+
+    if (image != null) {
+      final file = File(image.path);
+
+      setState(() => _isCheckingImage = true);
+      final approved = await checkAndShowModerationDialog(
+        context,
+        file,
+        onCheckEnd: () => setState(() => _isCheckingImage = false),
+      );
+      setState(() => _isCheckingImage = false);
+
+      if (!mounted) return;
+
+      if (approved) {
+        setState(() {
+          _profileImage = file;
+          _currentAvatarUrl = null;
+        });
+      }
+    }
+  } catch (e) {
+    debugPrint('Erro ao selecionar imagem: $e');
+    setState(() => _isCheckingImage = false);
+    _showSnackBar('Erro ao selecionar imagem', isError: true);
+  }
+}
   Future<void> _saveChanges() async {
     if (_nameController.text.trim().isEmpty) {
       _showSnackBar('Digite seu nome', isError: true);

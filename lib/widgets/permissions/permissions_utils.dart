@@ -6,44 +6,64 @@ enum PermissionResult {
   granted,
   denied,
   permanentlyDenied,
-  restricted, // iOS only
+  restricted,
 }
 
 class PermissionUtil {
-  /// Verifica e solicita permissão de câmera ou galeria
-  static Future<PermissionResult> checkAndRequest({required bool isCamera}) async {
-    final Permission permission = isCamera ? Permission.camera : Permission.photos;
-    
+  /// No iOS, após a primeira negativa o sistema não mostra mais o diálogo.
+  /// Por isso distinguimos "nunca pedido ainda" (pode pedir) de "já negado"
+  /// (deve ir para Ajustes).
+  static Future<PermissionResult> checkAndRequest({
+    required bool isCamera,
+  }) async {
+    final Permission permission =
+        isCamera ? Permission.camera : Permission.photos;
+
     final PermissionStatus status = await permission.status;
-    
-    // Já concedida
+
+    // Já concedida (inclui .limited no iOS 14+)
     if (status.isGranted || status.isLimited) {
       return PermissionResult.granted;
     }
-    
-    // Negada permanentemente (Android) ou Restrita (iOS)
+
+    // iOS: restrita por controle parental etc. — não adianta pedir
+    if (status.isRestricted) {
+      return PermissionResult.restricted;
+    }
+
+    // Já negada permanentemente — não adianta pedir de novo, vai para Ajustes
     if (status.isPermanentlyDenied) {
       return PermissionResult.permanentlyDenied;
     }
-    if (Platform.isIOS && status.isRestricted) {
-      return PermissionResult.restricted;
+
+    // iOS: se já foi negada uma vez (denied), o sistema NÃO mostrará o
+    // diálogo novamente — tratar como permanentlyDenied para ir a Ajustes.
+    if (Platform.isIOS && status.isDenied) {
+      // Tenta mesmo assim (caso seja a primeira vez — undetermined no iOS
+      // aparece como .denied antes do primeiro request)
+      final PermissionStatus result = await permission.request();
+      if (result.isGranted || result.isLimited) {
+        return PermissionResult.granted;
+      }
+      // Se ainda negada após o request, no iOS não há como pedir novamente
+      return PermissionResult.permanentlyDenied;
     }
-    
-    // Solicita permissão
+
+    // Android: pode pedir normalmente
     final PermissionStatus result = await permission.request();
-    
+
     if (result.isGranted || result.isLimited) {
       return PermissionResult.granted;
     } else if (result.isPermanentlyDenied) {
       return PermissionResult.permanentlyDenied;
-    } else if (Platform.isIOS && result.isRestricted) {
-      return PermissionResult.restricted;
     } else {
       return PermissionResult.denied;
     }
   }
-  
-  /// Mostra dialog explicando a permissão
+
+  /// Dialog de permissão.
+  /// Retorna true  → usuário quer tentar / foi para Ajustes
+  /// Retorna false → usuário cancelou
   static Future<bool?> showPermissionDialog({
     required BuildContext context,
     required PermissionResult result,
@@ -51,10 +71,10 @@ class PermissionUtil {
     required String usageReason,
   }) async {
     if (result == PermissionResult.granted) return true;
-    
-    final bool isPermanent = result == PermissionResult.permanentlyDenied || 
-                             result == PermissionResult.restricted;
-    
+
+    final bool isPermanent = result == PermissionResult.permanentlyDenied ||
+        result == PermissionResult.restricted;
+
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -62,7 +82,8 @@ class PermissionUtil {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange[700], size: 28),
+            Icon(Icons.warning_amber_rounded,
+                color: Colors.orange[700], size: 28),
             const SizedBox(width: 12),
             const Expanded(
               child: Text(
@@ -78,7 +99,7 @@ class PermissionUtil {
           children: [
             Text(
               isPermanent
-                  ? 'Acesso à $permissionLabel foi negado permanentemente.'
+                  ? 'O acesso à $permissionLabel foi negado. Para continuar, ative a permissão manualmente.'
                   : 'Precisamos de acesso à $permissionLabel $usageReason.',
               style: const TextStyle(fontSize: 15, height: 1.4),
             ),
@@ -96,7 +117,7 @@ class PermissionUtil {
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
-                        'Vá em Ajustes e ative a permissão manualmente.',
+                        'Vá em Ajustes > MãoDeObra e ative a permissão.',
                         style: TextStyle(fontSize: 13, height: 1.3),
                       ),
                     ),
@@ -109,27 +130,23 @@ class PermissionUtil {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancelar',
-              style: TextStyle(color: Colors.grey[600], fontSize: 15),
-            ),
+            child: Text('Cancelar',
+                style: TextStyle(color: Colors.grey[600], fontSize: 15)),
           ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context, true);
-              if (isPermanent) {
-                await openAppSettings();
-              }
+              if (isPermanent) await openAppSettings();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3B82F6),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  borderRadius: BorderRadius.circular(12)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: Text(
-              isPermanent ? 'Abrir Ajustes' : 'Tentar Novamente',
+              isPermanent ? 'Abrir Ajustes' : 'Permitir',
               style: const TextStyle(color: Colors.white, fontSize: 15),
             ),
           ),

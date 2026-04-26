@@ -204,63 +204,57 @@ class EditInfoVacancyState extends State<EditInfoVacancy> {
 
 // ✅ _pickImages() COM PERMISSÃO GALERIA
   Future<void> _pickImages() async {
-    try {
-      final int total = _selectedImages.length + _existingImageUrls.length;
-      if (total >= 3) {
-        _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
-        return;
-      }
-
-      // ✅ VERIFICA PERMISSÃO GALERIA
-      final result = await PermissionUtil.checkAndRequest(isCamera: false);
-
-      if (result != PermissionResult.granted) {
-        final retry = await PermissionUtil.showPermissionDialog(
-          context: context,
-          result: result,
-          permissionLabel: 'galeria',
-          usageReason: 'para adicionar fotos da obra',
-        );
-        if (retry == null || !retry) return;
-
-        // Tenta de novo
-        final retryResult =
-            await PermissionUtil.checkAndRequest(isCamera: false);
-        if (retryResult != PermissionResult.granted) return;
-      }
-
-      final List<XFile> images = await _picker.pickMultiImage();
-      if (images.isNotEmpty) {
-        final int remaining = 3 - total;
-        final List<XFile> candidates = images.take(remaining).toList();
-
-        for (final xfile in candidates) {
-          final file = File(xfile.path);
-
-          setState(() => _isCheckingImage = true);
-          final approved = await checkAndShowModerationDialog(
-            context,
-            file,
-            onCheckEnd: () => setState(() => _isCheckingImage = false),
-          );
-          setState(() => _isCheckingImage = false);
-
-          if (!mounted) return;
-          if (approved) {
-            if (mounted) setState(() => _selectedImages.add(file));
-          }
-        }
-
-        if (images.length > remaining) {
-          _showSnackBar('Apenas $remaining foto(s) adicionadas. Limite: 3',
-              Colors.orange);
-        }
-      }
-    } catch (e) {
-      setState(() => _isCheckingImage = false);
-      _showSnackBar('Erro ao selecionar imagens: $e', Colors.red);
+  try {
+    final int total = _selectedImages.length + _existingImageUrls.length;
+    if (total >= 3) {
+      _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
+      return;
     }
+
+    final result = await PermissionUtil.checkAndRequest(isCamera: false);
+
+    if (result != PermissionResult.granted) {
+      await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: 'galeria',
+        usageReason: 'para adicionar fotos da obra',
+      );
+      return;
+    }
+
+    final List<XFile> images = await _picker.pickMultiImage();
+    if (images.isNotEmpty) {
+      final int remaining = 3 - total;
+      final List<XFile> candidates = images.take(remaining).toList();
+
+      for (final xfile in candidates) {
+        final file = File(xfile.path);
+
+        setState(() => _isCheckingImage = true);
+        final approved = await checkAndShowModerationDialog(
+          context,
+          file,
+          onCheckEnd: () => setState(() => _isCheckingImage = false),
+        );
+        setState(() => _isCheckingImage = false);
+
+        if (!mounted) return;
+        if (approved) setState(() => _selectedImages.add(file));
+      }
+
+      if (images.length > remaining) {
+        _showSnackBar(
+          'Apenas $remaining foto(s) adicionadas. Limite: 3',
+          Colors.orange,
+        );
+      }
+    }
+  } catch (e) {
+    setState(() => _isCheckingImage = false);
+    _showSnackBar('Erro ao selecionar imagens: $e', Colors.red);
   }
+}
 
   void _removeImage(int index) =>
       setState(() => _selectedImages.removeAt(index));
