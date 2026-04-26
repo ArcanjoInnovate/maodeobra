@@ -78,6 +78,9 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Precisamos acessar sua galeria para escolher fotos de perfil, serviços e obras.</string>
 
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Precisamos salvar fotos de obras e serviços na sua galeria.</string>
+
 	<!-- ✅ NOTIFICAÇÕES -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>

@@ -42,87 +42,52 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       final iosInfo = await DeviceInfoPlugin().iosInfo;
       debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
       
-      // ✅ 1. NOTIFICAÇÕES (Firebase nativo - OBRIGATÓRIO iOS)
-      NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
+      // ✅ 1. NOTIFICAÇÕES (Firebase - iOS obrigatório)
+      final NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
         alert: true,
         badge: true,
         sound: true,
-        provisional: false,  // Produção
+        provisional: false,
       );
       debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
       
-      // ✅ 2. CÂMERA
-      final cameraStatus = await Permission.camera.request();
-      debugPrint('📸 iOS Câmera: $cameraStatus');
+      // ✅ 2. CÂMERA + FOTOS juntas
+      final statuses = await [
+        Permission.camera,
+        Permission.photos,
+      ].request();
       
-      // ✅ 3. FOTOS
-      final photosStatus = await Permission.photos.request();
-      debugPrint('🖼️ iOS Fotos: $photosStatus');
-      
-      // ✅ 4. STORAGE (iOS 14+ usa Photos)
-      debugPrint('💾 iOS Storage: Usando Photos permission');
+      statuses.forEach((permission, status) {
+        debugPrint('🔐 iOS $permission → $status');
+      });
       
     } else if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
-      debugPrint('🤖 Android ${androidInfo.version.release} - Iniciando permissões...');
+      debugPrint('🤖 Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
       
       // ✅ 1. NOTIFICAÇÕES (Android 13+)
       if (androidInfo.version.sdkInt >= 33) {
-        final notificationStatus = await Permission.notification.request();
-        debugPrint('🔔 Android Notificações: $notificationStatus');
+        final notifStatus = await Permission.notification.request();
+        debugPrint('🔔 Android Notificações: $notifStatus');
       }
       
       // ✅ 2. CÂMERA
       final cameraStatus = await Permission.camera.request();
       debugPrint('📸 Android Câmera: $cameraStatus');
       
-      // ✅ 3. FOTOS (Android 13+)
+      // ✅ 3. FOTOS (Android 13+) ou STORAGE (Android < 13)
       if (androidInfo.version.sdkInt >= 33) {
         final photosStatus = await Permission.photos.request();
         debugPrint('🖼️ Android Fotos: $photosStatus');
+      } else {
+        final storageStatus = await Permission.storage.request();
+        debugPrint('💾 Android Storage: $storageStatus');
       }
-      
-      // ✅ 4. STORAGE (Android < 13 ou arquivos)
-      final storageStatus = await Permission.storage.request();
-      debugPrint('💾 Android Storage: $storageStatus');
-      
-      // ✅ 5. MANAGE_EXTERNAL_STORAGE (Android 11+ se precisar)
-      // if (androidInfo.version.sdkInt >= 30) {
-      //   final manageStatus = await Permission.manageExternalStorage.request();
-      //   debugPrint('📁 Android Manage Storage: $manageStatus');
-      // }
     }
   } catch (e) {
     debugPrint('⚠️ Erro ao solicitar permissões: $e');
   }
-
-  try {
-    if (Platform.isIOS) {
-      final iosInfo = await DeviceInfoPlugin().iosInfo;
-      debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
-      
-      // ✅ 1. PRIMEIRO as notificações (iOS sempre pede)
-      final notificationStatus = await Permission.notification.request();
-      debugPrint('🔔 iOS Notification: $notificationStatus');
-      
-      // ✅ 2. DEPOIS câmera e fotos
-      final mediaStatuses = await [
-        Permission.camera,
-        Permission.photos,
-      ].request();
-      
-      mediaStatuses.forEach((permission, status) {
-        debugPrint('🔐 iOS $permission → $status');
-      });
-      
-      return;
-    }
-
-    // Android permanece igual...
-  } catch (e) {
-    debugPrint('⚠️ Erro ao solicitar permissões: $e');
-  }
-  }
+}
   @override
   void dispose() {
     _logoController.dispose();

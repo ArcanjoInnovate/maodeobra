@@ -1,3 +1,5 @@
+import 'package:dartobra_new/services/notifications/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -67,6 +69,29 @@ class _CompletedSignupState extends State<CompletedSignup>
     super.dispose();
   }
 
+  Future<void> _saveFCMToken(String userId) async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        print('📱 FCM Token pego: ${token.substring(0, 20)}...');
+        
+        // ✅ SALVA NO FIREBASE
+        await FirebaseDatabase.instance
+            .ref('Users/$userId/fcmToken')
+            .set(token);
+            
+        print('✅ FCM Token salvo no Firebase para $userId');
+        
+        // ✅ Inicializa NotificationService
+        final service = NotificationService();
+        await service.initialize(userId);
+      } else {
+        print('⚠️ FCM Token é NULL');
+      }
+    } catch (e) {
+      print('❌ Erro ao salvar FCM token: $e');
+    }
+  }
   Future<void> _createUser() async {
     try {
       // Fase 1: Criando conta
@@ -140,7 +165,7 @@ class _CompletedSignupState extends State<CompletedSignup>
       };
 
       await _db.child('Users').child(uid).set(userData);
-
+      await _saveFCMToken(uid); 
       // Fase 3: Finalizando
       setState(() => _statusMessage = 'Finalizando cadastro...');
       await Future.delayed(const Duration(milliseconds: 600));
