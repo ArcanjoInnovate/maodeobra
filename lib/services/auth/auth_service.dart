@@ -76,46 +76,30 @@ class AuthService {
   // ✅ SALVAR FCM TOKEN (iOS + Android)
   // ============================================================
   Future<void> _saveFCMToken(String userId) async {
-  try {
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
 
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      onStatusChanged?.call('❌ Notificação negada');
-      return;
-    }
+      final apns = await FirebaseMessaging.instance.getAPNSToken();
+      final fcm = await FirebaseMessaging.instance.getToken();
 
-    if (Platform.isIOS) {
-      onStatusChanged?.call('⏳ Aguardando APNs...');
-      String? apnsToken;
-      for (int i = 0; i < 5; i++) {
-        await Future.delayed(const Duration(seconds: 2));
-        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
-        onStatusChanged?.call('🍎 APNs tentativa ${i+1}: ${apnsToken != null ? "OK" : "NULL"}');
-        if (apnsToken != null) break;
+      // Salva debug no banco independente do resultado
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmDebug').set({
+        'authStatus': settings.authorizationStatus.index,
+        'apnsNull': apns == null,
+        'fcmNull': fcm == null,
+        'platform': 'ios',
+        'ts': DateTime.now().toIso8601String(),
+      });
+
+      if (fcm != null) {
+        await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(fcm);
       }
-      if (apnsToken == null) {
-        onStatusChanged?.call('❌ APNs sempre NULL');
-        return;
-      }
+    } catch (e) {
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmError').set('$e');
     }
-
-    onStatusChanged?.call('⏳ Buscando FCM token...');
-    final token = await FirebaseMessaging.instance.getToken();
-    
-    if (token != null) {
-      onStatusChanged?.call('✅ FCM: ${token.substring(0, 15)}...');
-      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(token);
-    } else {
-      onStatusChanged?.call('❌ FCM token NULL');
-    }
-  } catch (e) {
-    onStatusChanged?.call('❌ Erro: $e');
   }
-}
 
   // ============================================================
   // ✅ LOGOUT - REMOVE TOKEN
