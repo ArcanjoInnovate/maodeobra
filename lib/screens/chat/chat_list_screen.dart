@@ -54,11 +54,12 @@ class _ChatListScreenState extends State<ChatListScreen>
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        // ✅ CORREÇÃO: Desabilita o botão voltar completamente
+        automaticallyImplyLeading: false,
         title: const Text(
           'Mensagens',
           style: TextStyle(color: Colors.black87),
         ),
-        iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           // Badge indicator TOTAL
           StreamBuilder<BadgeData>(

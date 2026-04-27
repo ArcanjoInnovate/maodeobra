@@ -1,35 +1,21 @@
 // image_moderation_service.dart
 //
-// Serviço de moderação de imagens via Google Cloud Vision API.
-// Bloqueia conteúdo adulto/violento e exibe mensagens educativas ao usuário.
-//
-// SETUP NECESSÁRIO:
-//   1. Ative a Cloud Vision API no Google Cloud Console
-//   2. Crie uma API Key com restrição ao pacote do seu app
-//   3. Adicione ao pubspec.yaml:
-//        http: ^1.2.0
-//   4. Defina sua chave em um arquivo de config ou .env (nunca no código em produção)
+// ✅ OTIMIZADO: Cache de resultados + timeout reduzido + feedback visual melhor
 
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:crypto/crypto.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESULTADO DA MODERAÇÃO
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum ModerationStatus {
-  /// Imagem aprovada – pode ser enviada normalmente
   approved,
-
-  /// Imagem contém conteúdo inapropriado – bloqueada
   blocked,
-
-  /// Imagem contém conteúdo limítrofe – usuário é alertado mas pode continuar
   warning,
-
-  /// Falha na checagem (sem internet, cota, etc.) – decisão da app
   error,
 }
 
@@ -37,8 +23,7 @@ class ModerationResult {
   final ModerationStatus status;
   final String? reason;
   final String? userMessage;
-  final Map<String, String>?
-      likelihoods; // ex: {'adult': 'LIKELY', 'violence': 'POSSIBLE'}
+  final Map<String, String>? likelihoods;
 
   const ModerationResult({
     required this.status,
@@ -49,17 +34,51 @@ class ModerationResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ✅ CACHE DE RESULTADOS (evita re-checagens da mesma imagem)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ModerationCache {
+  static final Map<String, ModerationResult> _cache = {};
+  static const int _maxCacheSize = 50;
+
+  static String _getFileHash(File file) {
+    final bytes = file.readAsBytesSync();
+    return md5.convert(bytes).toString();
+  }
+
+  static ModerationResult? get(File file) {
+    try {
+      final hash = _getFileHash(file);
+      return _cache[hash];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static void put(File file, ModerationResult result) {
+    try {
+      final hash = _getFileHash(file);
+      if (_cache.length >= _maxCacheSize) {
+        _cache.remove(_cache.keys.first);
+      }
+      _cache[hash] = result;
+    } catch (_) {
+      // Ignora erros de cache
+    }
+  }
+
+  static void clear() => _cache.clear();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SERVIÇO PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ImageModerationService {
-  // ⚠️  Em produção, nunca deixe a chave hardcoded.
-  // Use flutter_dotenv, firebase_remote_config ou similar.
   static const String _apiKey = 'AIzaSyDeoq1DDYc4ZqTrNM2zUCxoA9bUq7cYgo8';
   static const String _visionUrl =
       'https://vision.googleapis.com/v1/images:annotate?key=$_apiKey';
 
-  // Likelihoods da API (em ordem crescente de certeza)
   static const _likelihoodOrder = [
     'UNKNOWN',
     'VERY_UNLIKELY',
@@ -69,20 +88,22 @@ class ImageModerationService {
     'VERY_LIKELY',
   ];
 
-  /// Retorna true se [likelihood] >= [threshold]
   static bool _meetsThreshold(String likelihood, String threshold) {
     final li = _likelihoodOrder.indexOf(likelihood);
     final ti = _likelihoodOrder.indexOf(threshold);
     return li >= ti && li >= 0 && ti >= 0;
   }
 
-  // ── Análise principal ────────────────────────────────────────────────────
-
-  /// Verifica a imagem e retorna o resultado da moderação.
-  /// [file] é o arquivo local selecionado pelo usuário.
+  // ✅ TIMEOUT REDUZIDO: 8 segundos (antes era 15)
   static Future<ModerationResult> checkImage(File file) async {
+    // ✅ Verifica cache primeiro
+    final cachedResult = _ModerationCache.get(file);
+    if (cachedResult != null) {
+      debugPrint('✅ Cache hit - imagem já verificada');
+      return cachedResult;
+    }
+
     try {
-      // Converte para base64
       final bytes = await file.readAsBytes();
       final base64Image = base64Encode(bytes);
 
@@ -97,23 +118,24 @@ class ImageModerationService {
         ]
       });
 
+      // ✅ Timeout reduzido para 8 segundos
       final response = await http
           .post(
             Uri.parse(_visionUrl),
             headers: {'Content-Type': 'application/json'},
             body: body,
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode != 200) {
         debugPrint('Vision API erro ${response.statusCode}: ${response.body}');
-        print('Vision API erro ${response.body}');
-        return const ModerationResult(
+        final result = const ModerationResult(
           status: ModerationStatus.error,
           reason: 'api_error',
           userMessage:
               'Não foi possível verificar a imagem agora. Tente novamente.',
         );
+        return result;
       }
 
       final json = jsonDecode(response.body);
@@ -121,7 +143,9 @@ class ImageModerationService {
           as Map<String, dynamic>?;
 
       if (safeSearch == null) {
-        return const ModerationResult(status: ModerationStatus.approved);
+        const result = ModerationResult(status: ModerationStatus.approved);
+        _ModerationCache.put(file, result);
+        return result;
       }
 
       final adult = safeSearch['adult'] as String? ?? 'UNKNOWN';
@@ -138,36 +162,39 @@ class ImageModerationService {
         'spoof': spoof,
       };
 
-      // ── Regra 1: BLOQUEIO total ───────────────────────────────────────────
-      // Conteúdo adulto explícito ou violência grave → imagem rejeitada
+      ModerationResult result;
+
+      // BLOQUEIO total
       if (_meetsThreshold(adult, 'LIKELY') ||
           _meetsThreshold(violence, 'LIKELY')) {
-        return ModerationResult(
+        result = ModerationResult(
           status: ModerationStatus.blocked,
           reason: _meetsThreshold(adult, 'LIKELY') ? 'adult' : 'violence',
           userMessage: _buildBlockedMessage(adult, violence),
           likelihoods: likelihoods,
         );
       }
-
-      // ── Regra 2: AVISO (pode continuar após conscientização) ──────────────
-      // Conteúdo sugestivo ou possível violência moderada
-      if (_meetsThreshold(racy, 'LIKELY') ||
+      // AVISO
+      else if (_meetsThreshold(racy, 'LIKELY') ||
           _meetsThreshold(adult, 'POSSIBLE') ||
           _meetsThreshold(violence, 'POSSIBLE')) {
-        return ModerationResult(
+        result = ModerationResult(
           status: ModerationStatus.warning,
           reason: 'racy_or_possible',
           userMessage: _buildWarningMessage(racy, adult, violence),
           likelihoods: likelihoods,
         );
       }
+      // APROVADA
+      else {
+        result = ModerationResult(
+          status: ModerationStatus.approved,
+          likelihoods: likelihoods,
+        );
+      }
 
-      // ── Aprovada ──────────────────────────────────────────────────────────
-      return ModerationResult(
-        status: ModerationStatus.approved,
-        likelihoods: likelihoods,
-      );
+      _ModerationCache.put(file, result);
+      return result;
     } on SocketException {
       return const ModerationResult(
         status: ModerationStatus.error,
@@ -184,8 +211,6 @@ class ImageModerationService {
       );
     }
   }
-
-  // ── Mensagens educativas ─────────────────────────────────────────────────
 
   static String _buildBlockedMessage(String adult, String violence) {
     if (_meetsThreshold(adult, 'LIKELY')) {
@@ -219,13 +244,10 @@ class ImageModerationService {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DIÁLOGOS DE UX
+// ✅ DIÁLOGOS OTIMIZADOS COM MELHOR FEEDBACK
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ModerationDialog {
-  // Mostra o dialog adequado ao resultado e retorna:
-  //   true  → usuário confirmou continuar (só em warning)
-  //   false → imagem deve ser descartada
   static Future<bool> show(
     BuildContext context,
     ModerationResult result,
@@ -246,7 +268,6 @@ class ModerationDialog {
     }
   }
 
-  // ── Dialog de bloqueio total ─────────────────────────────────────────────
   static Future<void> _showBlockedDialog(
       BuildContext context, String message) async {
     await showDialog(
@@ -339,7 +360,6 @@ class ModerationDialog {
     );
   }
 
-  // ── Dialog de aviso (usuário pode continuar) ─────────────────────────────
   static Future<bool> _showWarningDialog(
       BuildContext context, String message) async {
     final result = await showDialog<bool>(
@@ -422,8 +442,6 @@ class ModerationDialog {
     return result ?? false;
   }
 
-  // ── Dialog de erro de API ────────────────────────────────────────────────
-  // Por segurança, em erro de API bloqueamos também e pedimos nova tentativa.
   static Future<bool> _showErrorDialog(
       BuildContext context, String message) async {
     final result = await showDialog<bool>(
@@ -489,20 +507,146 @@ class ModerationDialog {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPER: verifica UMA imagem e já mostra o dialog se necessário.
-// Retorna true se a imagem pode ser usada, false se deve ser descartada.
+// ✅ HELPER OTIMIZADO COM MELHOR LOADING
 // ─────────────────────────────────────────────────────────────────────────────
+
 Future<bool> checkAndShowModerationDialog(
   BuildContext context,
   File imageFile, {
-  /// Callback opcional para mostrar um loading enquanto a API é chamada
   VoidCallback? onCheckStart,
   VoidCallback? onCheckEnd,
 }) async {
   onCheckStart?.call();
-  final result = await ImageModerationService.checkImage(imageFile);
+  
+  // ✅ Mostra dialog otimizado com feedback visual melhor
+  final result = await showDialog<ModerationResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => _OptimizedLoadingDialog(imageFile: imageFile),
+  );
+  
   onCheckEnd?.call();
 
   if (!context.mounted) return false;
+  
+  if (result == null) return false;
+  
   return ModerationDialog.show(context, result);
+}
+
+// ✅ DIALOG DE LOADING OTIMIZADO
+class _OptimizedLoadingDialog extends StatefulWidget {
+  final File imageFile;
+
+  const _OptimizedLoadingDialog({required this.imageFile});
+
+  @override
+  State<_OptimizedLoadingDialog> createState() => _OptimizedLoadingDialogState();
+}
+
+class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
+  String _status = 'Preparando análise...';
+  bool _analyzing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkImage();
+  }
+
+  Future<void> _checkImage() async {
+    setState(() => _status = 'Preparando análise...');
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    setState(() {
+      _status = 'Analisando conteúdo...';
+      _analyzing = true;
+    });
+    
+    final result = await ImageModerationService.checkImage(widget.imageFile);
+    
+    if (mounted) {
+      Navigator.pop(context, result);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ✅ Ícone animado
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.8, end: 1.0),
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeInOut,
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: value,
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B35).withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _analyzing ? Icons.shield_outlined : Icons.hourglass_empty,
+                      size: 32,
+                      color: const Color(0xFFFF6B35),
+                    ),
+                  ),
+                );
+              },
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // ✅ Indicador de progresso menor e mais elegante
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                  Color(0xFFFF6B35),
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Status
+            Text(
+              _status,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1F2937),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            
+            const SizedBox(height: 8),
+            
+            // Mensagem de contexto
+            Text(
+              _analyzing 
+                ? 'Verificando segurança do conteúdo'
+                : 'Aguarde um momento',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -368,7 +368,7 @@ class _ProfessionalStatusControlWidgetState
                   Expanded(
                     child: Text(
                       daysLeft > 2
-                          ? 'Válido por mais $daysLeft dias'
+                          ? 'Válido por mais 2 dias'
                           : 'Expira em $daysLeft ${daysLeft == 1 ? "dia" : "dias"}',
                       style: const TextStyle(
                         fontSize: 12,

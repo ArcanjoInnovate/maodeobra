@@ -1,4 +1,3 @@
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,7 +38,7 @@ class WorkerProfileActivation extends StatefulWidget {
   final String localId;
   final onActivated;
   final bool finished_basic;
-  final String userTelefone; // ✅ NOVO
+  final String userTelefone;
   final String userEmail;
   final bool finished_contact;
   final bool finished_professional;
@@ -131,7 +130,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
     }
   }
 
-  // ── Validação completa do perfil ──────────────────────────────────────────
   bool _isProfileComplete() {
     if (!widget.finished_basic ||
         !widget.finished_contact ||
@@ -146,7 +144,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
     return true;
   }
 
-  // ── Detecta o motivo específico da incompletude e exibe mensagem clara ────
   void _handleProfileIncomplete() {
     final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
     final skills = widget.dataWorker['skills'];
@@ -241,7 +238,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       'company': company,
       'summary': summary,
       'skills': skills,
-      // ✅ NOVOS CAMPOS
       'telefone': widget.userTelefone,
       'email': widget.userEmail,
       'created_at': DateTime.now().toIso8601String(),
@@ -315,8 +311,8 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       body: SafeArea(
         child: _isCheckingProfile
             ? const Center(
-                child:
-                    CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
+                child: CircularProgressIndicator(
+                    color: _kBlue, strokeWidth: 2.5))
             : _hasProfile
                 ? _ActiveProfileTabs(
                     userName: widget.userName,
@@ -422,7 +418,7 @@ class _InactiveView extends StatelessWidget {
           ),
 
           const SizedBox(height: 28),
-          // ✅ ═══════════════ ADICIONE ESTE CARD AQUI ═══════════════
+
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -440,7 +436,8 @@ class _InactiveView extends StatelessWidget {
                     color: _kBlue.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.schedule_rounded, color: _kBlue, size: 22),
+                  child: const Icon(Icons.schedule_rounded,
+                      color: _kBlue, size: 22),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -472,7 +469,7 @@ class _InactiveView extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
-          // ── Checklist de requisitos ──────────────────────────────────
+
           if (!isProfileComplete) ...[
             Container(
               width: double.infinity,
@@ -519,7 +516,6 @@ class _InactiveView extends StatelessWidget {
             const SizedBox(height: 20),
           ],
 
-          // Feature cards
           _FeatureCard(
             icon: Icons.campaign_outlined,
             iconColor: _kBlue,
@@ -920,8 +916,6 @@ class _RequestsTab extends StatefulWidget {
 class _RequestsTabState extends State<_RequestsTab> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   bool _isLoadingRequests = false;
-
-  // ── FIX: flag para evitar criação de chats duplicados ──────────────────────
   bool _isCreatingChat = false;
 
   List<Map<String, dynamic>> _workRequests = [];
@@ -1027,7 +1021,6 @@ class _RequestsTabState extends State<_RequestsTab> {
 
   Future<void> _refreshRequests() async => await _loadWorkRequests();
 
-  // ── Remove da lista SEM exibir snackbar (usado internamente ao aceitar) ───
   Future<void> _removeRequestFromList(String requestLocalId) async {
     if (_myProfileKey == null) return;
     final snapshot =
@@ -1052,7 +1045,6 @@ class _RequestsTabState extends State<_RequestsTab> {
     }
   }
 
-  // ── Recusa exibindo o snackbar de recusa ──────────────────────────────────
   Future<void> _rejectRequest(String requestLocalId) async {
     if (_myProfileKey == null) return;
     try {
@@ -1085,9 +1077,7 @@ class _RequestsTabState extends State<_RequestsTab> {
     }
   }
 
-  // ── FIX PRINCIPAL: guard contra chamadas duplicadas ────────────────────────
   Future<void> _createChat(Map<String, dynamic> requestData) async {
-    // Se já está processando, ignora qualquer toque adicional
     if (_isCreatingChat) return;
 
     setState(() => _isCreatingChat = true);
@@ -1110,7 +1100,6 @@ class _RequestsTabState extends State<_RequestsTab> {
         },
         'messages_offline': {'contractor': {}, 'employee': {}},
       });
-      // Remove da lista sem disparar o snackbar de "recusada"
       await _removeRequestFromList(requestData['local_id']);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1138,7 +1127,6 @@ class _RequestsTabState extends State<_RequestsTab> {
         ));
       }
     } finally {
-      // Libera o flag sempre, mesmo se ocorrer um erro
       if (mounted) setState(() => _isCreatingChat = false);
     }
   }
@@ -1169,7 +1157,8 @@ class _RequestsTabState extends State<_RequestsTab> {
       onRefresh: _refreshRequests,
       child: _isLoadingRequests
           ? const Center(
-              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
+              child:
+                  CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
           : _workRequests.isEmpty
               ? _EmptyRequests()
               : ListView.builder(
@@ -1238,8 +1227,6 @@ class _RequestCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onAccept;
   final VoidCallback onReject;
-
-  // ── FIX: recebe o estado de loading para desabilitar o botão ──────────────
   final bool isCreatingChat;
 
   const _RequestCard({
@@ -1506,7 +1493,11 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   bool _isUpdating = false;
   String? _professionalId;
+
+  // ✅ FONTE ÚNICA DE VERDADE: carregada do Firebase, não de prop
   bool _currentProfessionalIsActive = false;
+  bool _isLoadingStatus = true; // ← aguarda o Firebase antes de renderizar o widget
+
   String? _expiresAt;
   bool _isExpired = false;
   bool _isNearExpiration = false;
@@ -1519,94 +1510,160 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     _initializeProfile();
   }
 
-  // ✅ Método único que executa tudo na ordem correta
   Future<void> _initializeProfile() async {
-    await _findProfessionalId();
+    await _findProfessionalId(); // ← define _professionalId E _currentProfessionalIsActive
     await _loadExpirationInfo();
   }
 
-  Future<void> _loadExpirationInfo() async {
-  if (_professionalId == null || _professionalId!.isEmpty) {
-    print('⚠️ _professionalId está null ou vazio');
-    return;
-  }
- 
-  try {
-    final snapshot =
-        await _database.child('professionals/$_professionalId').get();
- 
-    if (snapshot.exists && snapshot.value != null) {
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
-      final expiresAt = data['expires_at']?.toString();
- 
-      if (mounted) {
-        setState(() {
-          _expiresAt = expiresAt;
-          _isExpired = _expirationService.isExpired(expiresAt);
-          _isNearExpiration = _expirationService.isNearExpiration(expiresAt);
-          _daysLeft = _expirationService.daysUntilExpiration(expiresAt);
+  // ✅ Lê o status real do Firebase e guarda em _currentProfessionalIsActive
+  Future<void> _findProfessionalId() async {
+    try {
+      final snapshot = await _database
+          .child('professionals')
+          .orderByChild('local_id')
+          .equalTo(widget.localId)
+          .once();
+
+      if (snapshot.snapshot.value != null) {
+        final data = snapshot.snapshot.value as Map<dynamic, dynamic>;
+        String? activeKey;
+        String? fallbackKey;
+
+        data.forEach((key, value) {
+          final status =
+              (value as Map?)?['status']?.toString().toLowerCase() ?? '';
+          fallbackKey ??= key.toString();
+          if (status == 'active') activeKey = key.toString();
         });
- 
-        // ✅ DEBUG DETALHADO
-        print('═══════════════════════════════════════════════════════════');
-        print('🧪 DEBUG EXPIRAÇÃO - ${DateTime.now()}');
-        print('═══════════════════════════════════════════════════════════');
-        print('📋 Dados do Firebase:');
-        print('   professionalId: $_professionalId');
-        print('   expires_at (raw): $expiresAt');
-        
-        if (expiresAt != null) {
-          final expirationDate = DateTime.tryParse(expiresAt);
-          print('   expires_at (parsed): $expirationDate');
-        }
-        
-        print('');
-        print('⏰ Configuração do ExpirationService:');
-        print('   testDate: ${ExpirationService.testDate}');
-        print('   _now (getCurrentNow): ${_expirationService.getCurrentNow()}');
-        print('');
-        print('🎯 Resultados do Cálculo:');
-        print('   _isExpired: $_isExpired');
-        print('   _isNearExpiration: $_isNearExpiration');
-        print('   _daysLeft: $_daysLeft dias');
-        print('');
-        
-        // ✅ Verifica inconsistência com testDate
-        final isTestMode = ExpirationService.testDate != null;
-        if (isTestMode && expiresAt != null) {
-          final expirationDate = DateTime.tryParse(expiresAt);
-          if (expirationDate != null) {
-            final realNow = DateTime.now();
-            final testNow = ExpirationService.testDate!;
-            final diffFromReal = expirationDate.difference(realNow).inDays;
-            final diffFromTest = expirationDate.difference(testNow).inDays;
-            
-            print('🧪 MODO DE TESTE ATIVO:');
-            print('   Data real: $realNow');
-            print('   Data simulada: $testNow');
-            print('   Dias até expirar (tempo real): $diffFromReal dias');
-            print('   Dias até expirar (tempo teste): $diffFromTest dias');
-            
-            // Se a diferença é grande, significa que o perfil foi criado antes do testDate
-            if (_isExpired && diffFromReal > 0) {
-              print('   ⚠️ INCONSISTÊNCIA: Perfil expirado no teste mas válido no tempo real');
-              print('   💡 Solução: Use o botão "🧪 Ajustar para Teste" para renovar');
-            }
+
+        final resolvedKey = activeKey ?? fallbackKey;
+        if (resolvedKey != null) {
+          final profData =
+              Map<String, dynamic>.from(data[resolvedKey] as Map);
+          final status = profData['status']?.toString().toLowerCase() ?? '';
+
+          if (mounted) {
+            setState(() {
+              _professionalId = resolvedKey;
+              _currentProfessionalIsActive = status == 'active';
+              _isLoadingStatus = false;
+            });
           }
+          return;
         }
-        
-        print('');
-        print('✅ Banner deve aparecer? ${(_isExpired || (_isNearExpiration && _daysLeft <= 1))}');
-        print('   Condição: expired($_isExpired) OU (near($_isNearExpiration) E days($_daysLeft) <= 1)');
-        print('═══════════════════════════════════════════════════════════');
       }
-    } else {
-      print('⚠️ Perfil profissional não encontrado no Firebase');
+
+      if (mounted) setState(() => _isLoadingStatus = false);
+    } catch (e) {
+      debugPrint('Erro ao buscar ID do profissional: $e');
+      if (mounted) setState(() => _isLoadingStatus = false);
     }
-  } catch (e) {
-    debugPrint('❌ Erro ao carregar expiração: $e');
   }
-}
+
+  Future<void> _loadExpirationInfo() async {
+    if (_professionalId == null || _professionalId!.isEmpty) return;
+
+    try {
+      final snapshot =
+          await _database.child('professionals/$_professionalId').get();
+
+      if (snapshot.exists && snapshot.value != null) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        final expiresAt = data['expires_at']?.toString();
+
+        if (mounted) {
+          setState(() {
+            _expiresAt = expiresAt;
+            _isExpired = _expirationService.isExpired(expiresAt);
+            _isNearExpiration = _expirationService.isNearExpiration(expiresAt);
+            _daysLeft = _expirationService.daysUntilExpiration(expiresAt);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao carregar expiração: $e');
+    }
+  }
+
+  void _showRenewalRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEA580C).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.timer_off_rounded,
+                  color: Color(0xFFEA580C), size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Perfil expirado',
+                style:
+                    TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Seu perfil profissional está expirado e não pode ser pausado ou reativado.\n\n'
+          'Renove-o primeiro para voltar a gerenciar o status.',
+          style: TextStyle(fontSize: 14, height: 1.55),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Agora não',
+                style: TextStyle(color: Colors.grey.shade600)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() => _isUpdating = true);
+              final success = await _expirationService
+                  .renewProfessional(_professionalId!);
+              if (success && mounted) {
+                await _loadExpirationInfo();
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: const Row(children: [
+                    Icon(Icons.check_circle_rounded,
+                        color: Colors.white, size: 20),
+                    SizedBox(width: 12),
+                    Text('Perfil renovado! +2 dias de visibilidade'),
+                  ]),
+                  backgroundColor: const Color(0xFF16A34A),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 3),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  margin: const EdgeInsets.all(16),
+                ));
+              }
+              if (mounted) setState(() => _isUpdating = false);
+            },
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Renovar agora',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF16A34A),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   bool _isProfileComplete() {
     if (!widget.finished_basic ||
@@ -1662,38 +1719,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     widget.onProfileIncomplete();
   }
 
-  Future<void> _findProfessionalId() async {
-    try {
-      final snapshot = await _database
-          .child('professionals')
-          .orderByChild('local_id')
-          .equalTo(widget.localId)
-          .once();
-      if (snapshot.snapshot.value != null) {
-        final data = snapshot.snapshot.value as Map<dynamic, dynamic>;
-        String? activeKey;
-        String? fallbackKey;
-        data.forEach((key, value) {
-          final status =
-              (value as Map?)?['status']?.toString().toLowerCase() ?? '';
-          fallbackKey ??= key.toString();
-          if (status == 'active') activeKey = key.toString();
-        });
-        final resolvedKey = activeKey ?? fallbackKey;
-        if (resolvedKey != null) {
-          final profData = Map<String, dynamic>.from(data[resolvedKey] as Map);
-          final status = profData['status']?.toString().toLowerCase() ?? '';
-          setState(() {
-            _professionalId = resolvedKey;
-            _currentProfessionalIsActive = status == 'active';
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Erro ao buscar ID do profissional: $e');
-    }
-  }
-
   Future<void> _updateProfessionalProfile() async {
     if (!_isProfileComplete()) {
       _handleProfileIncomplete();
@@ -1724,7 +1749,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         'company': widget.dataWorker['company'] ?? '',
         'summary': widget.dataWorker['summary'] ?? '',
         'skills': widget.dataWorker['skills'] ?? [],
-        // ✅ NOVOS CAMPOS
         'telefone': widget.userTelefone,
         'email': widget.userEmail,
         'updated_at': DateTime.now().toIso8601String(),
@@ -1786,124 +1810,296 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   }
 
   Widget _buildExpirationBanner() {
-  final bool expired = _isExpired;
-  final bool shouldShow = expired || (_isNearExpiration && _daysLeft <= 1);
-  
-  // ✅ MODO DEBUG: Mostra info mesmo se não deveria aparecer
-  final isTestMode = ExpirationService.testDate != null;
-  
-  if (!shouldShow && !isTestMode) {
-    return const SizedBox.shrink();
-  }
- 
-  // ✅ Se estiver em modo teste e o perfil parece inconsistente
-  if (isTestMode && !shouldShow) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED), // Orange soft
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEA580C).withOpacity(0.3), width: 1.5),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEA580C).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
+    final bool expired = _isExpired;
+    final bool shouldShow = expired || (_isNearExpiration && _daysLeft <= 1);
+
+    final isTestMode = ExpirationService.testDate != null;
+
+    if (!shouldShow && !isTestMode) {
+      return const SizedBox.shrink();
+    }
+
+    if (isTestMode && !shouldShow) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: const Color(0xFFEA580C).withOpacity(0.3), width: 1.5),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEA580C).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.science_rounded,
+                            color: Color(0xFFEA580C), size: 22),
                       ),
-                      child: const Icon(Icons.science_rounded, 
-                          color: Color(0xFFEA580C), size: 22),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🧪 Modo de Teste Ativo',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFEA580C),
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Perfil criado antes do testDate. Ajuste para ver o banner de renovação.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFEA580C),
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '🧪 Modo de Teste Ativo',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFEA580C),
+                    child: Column(
+                      children: [
+                        _DebugInfoRow(
+                            'Data atual simulada',
+                            _expirationService
+                                .getCurrentNow()
+                                .toString()
+                                .split('.')[0]),
+                        if (_expiresAt != null)
+                          _DebugInfoRow(
+                              'Expira em', _expiresAt!.split('.')[0]),
+                        _DebugInfoRow('Dias restantes', '$_daysLeft dias'),
+                        _DebugInfoRow(
+                            'Status',
+                            _isExpired
+                                ? 'Expirado'
+                                : _isNearExpiration
+                                    ? 'Próximo de expirar'
+                                    : 'Ativo'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+                height: 1,
+                color: const Color(0xFFEA580C).withOpacity(0.3)),
+            InkWell(
+              onTap: _isUpdating
+                  ? null
+                  : () async {
+                      setState(() => _isUpdating = true);
+                      final success = await _expirationService
+                          .renewProfessional(_professionalId!);
+                      if (success && mounted) {
+                        await _loadExpirationInfo();
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: const Row(children: [
+                            Icon(Icons.check_circle_rounded,
+                                color: Colors.white, size: 20),
+                            SizedBox(width: 12),
+                            Text('🧪 Perfil ajustado para o tempo de teste!'),
+                          ]),
+                          backgroundColor: const Color(0xFF16A34A),
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 3),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          margin: const EdgeInsets.all(16),
+                        ));
+                      }
+                      if (mounted) setState(() => _isUpdating = false);
+                    },
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _isUpdating
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Color(0xFFEA580C)),
                             ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            'Perfil criado antes do testDate. Ajuste para ver o banner de renovação.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFFEA580C),
-                              height: 1.3,
-                            ),
-                          ),
-                        ],
+                          )
+                        : const Icon(Icons.refresh_rounded,
+                            size: 18, color: Color(0xFFEA580C)),
+                    const SizedBox(width: 8),
+                    Text(
+                      _isUpdating
+                          ? 'Ajustando...'
+                          : '🧪 Ajustar para Teste (+2 dias)',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFEA580C),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final Color accent =
+        expired ? const Color(0xFFDC2626) : const Color(0xFFEA580C);
+    final Color bgColor =
+        expired ? const Color(0xFFFEF2F2) : const Color(0xFFFFF7ED);
+
+    final String headline = expired
+        ? 'Seu perfil expirou'
+        : _daysLeft == 1
+            ? 'Expira amanhã!'
+            : 'Expira em $_daysLeft dias';
+
+    final String sub = expired
+        ? 'Ele não aparece mais no banco de profissionais. Renove para reativar.'
+        : 'Renove agora para continuar visível para empresas.';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withOpacity(0.3), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Container(
-                  padding: const EdgeInsets.all(10),
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                    color: accent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  child: Icon(
+                    expired
+                        ? Icons.timer_off_rounded
+                        : Icons.hourglass_bottom_rounded,
+                    color: accent,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _DebugInfoRow('Data atual simulada', 
-                          _expirationService.getCurrentNow().toString().split('.')[0]),
-                      if (_expiresAt != null)
-                        _DebugInfoRow('Expira em', _expiresAt!.split('.')[0]),
-                      _DebugInfoRow('Dias restantes', '$_daysLeft dias'),
-                      _DebugInfoRow('Status', _isExpired ? 'Expirado' : 
-                          _isNearExpiration ? 'Próximo de expirar' : 'Ativo'),
+                      Text(
+                        headline,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        sub,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.4,
+                          color: accent.withOpacity(0.75),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          Divider(height: 1, color: const Color(0xFFEA580C).withOpacity(0.3)),
+          Divider(height: 1, color: accent.withOpacity(0.3)),
           InkWell(
-            onTap: _isUpdating ? null : () async {
-              setState(() => _isUpdating = true);
-              
-              // Renova com a data de teste ativa
-              final success = await _expirationService.renewProfessional(_professionalId!);
-              
-              if (success && mounted) {
-                await _loadExpirationInfo();
-                
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: const Row(
-                    children: [
-                      Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                      SizedBox(width: 12),
-                      Text('🧪 Perfil ajustado para o tempo de teste!'),
-                    ],
-                  ),
-                  backgroundColor: const Color(0xFF16A34A),
-                  behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 3),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  margin: const EdgeInsets.all(16),
-                ));
-              }
-              
-              if (mounted) setState(() => _isUpdating = false);
-            },
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+            onTap: _isUpdating
+                ? null
+                : () async {
+                    setState(() => _isUpdating = true);
+                    final success = await _expirationService
+                        .renewProfessional(_professionalId!);
+                    if (success && mounted) {
+                      await _loadExpirationInfo();
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Row(children: [
+                          Icon(Icons.check_circle_rounded,
+                              color: Colors.white, size: 20),
+                          SizedBox(width: 12),
+                          Text('Perfil renovado! +2 dias de visibilidade'),
+                        ]),
+                        backgroundColor: const Color(0xFF16A34A),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 3),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.all(16),
+                      ));
+                    } else if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Row(children: [
+                          Icon(Icons.error_outline,
+                              color: Colors.white, size: 20),
+                          SizedBox(width: 12),
+                          Text('Erro ao renovar perfil'),
+                        ]),
+                        backgroundColor: const Color(0xFFDC2626),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 3),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        margin: const EdgeInsets.all(16),
+                      ));
+                    }
+                    if (mounted) setState(() => _isUpdating = false);
+                  },
+            borderRadius:
+                const BorderRadius.vertical(bottom: Radius.circular(20)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -1913,17 +2109,18 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                           width: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFEA580C)),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFFEA580C)),
                           ),
                         )
-                      : const Icon(Icons.refresh_rounded, size: 18, color: Color(0xFFEA580C)),
+                      : Icon(Icons.refresh_rounded, size: 17, color: accent),
                   const SizedBox(width: 8),
                   Text(
-                    _isUpdating ? 'Ajustando...' : '🧪 Ajustar para Teste (+2 dias)',
-                    style: const TextStyle(
+                    _isUpdating ? 'Renovando...' : 'Renovar agora (+2 dias)',
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFFEA580C),
+                      color: accent,
                     ),
                   ),
                 ],
@@ -1934,165 +2131,12 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       ),
     );
   }
- 
-  // ✅ Banner normal de expiração/renovação
-  final Color accent = expired ? const Color(0xFFDC2626) : const Color(0xFFEA580C);
-  final Color bgColor = expired ? const Color(0xFFFEF2F2) : const Color(0xFFFFF7ED);
- 
-  final String headline = expired
-      ? 'Seu perfil expirou'
-      : _daysLeft == 1
-          ? 'Expira amanhã!'
-          : 'Expira em $_daysLeft dias';
- 
-  final String sub = expired
-      ? 'Ele não aparece mais no banco de profissionais. Renove para reativar.'
-      : 'Renove agora para continuar visível para empresas.';
- 
-  return Container(
-    margin: const EdgeInsets.only(bottom: 16),
-    decoration: BoxDecoration(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: accent.withOpacity(0.3), width: 1.5),
-      boxShadow: [
-        BoxShadow(
-          color: accent.withOpacity(0.08),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-        ),
-      ],
-    ),
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  expired ? Icons.timer_off_rounded : Icons.hourglass_bottom_rounded,
-                  color: accent,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      headline,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: accent,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      sub,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: accent.withOpacity(0.75),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        Divider(height: 1, color: accent.withOpacity(0.3)),
-        InkWell(
-          onTap: _isUpdating
-              ? null
-              : () async {
-                  setState(() => _isUpdating = true);
-                  final success = await _expirationService.renewProfessional(_professionalId!);
-                  
-                  if (success && mounted) {
-                    await _loadExpirationInfo();
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Row(
-                        children: [
-                          Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                          SizedBox(width: 12),
-                          Text('Perfil renovado! +2 dias de visibilidade'),
-                        ],
-                      ),
-                      backgroundColor: const Color(0xFF16A34A),
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 3),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      margin: const EdgeInsets.all(16),
-                    ));
-                  } else if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Row(
-                        children: [
-                          Icon(Icons.error_outline, color: Colors.white, size: 20),
-                          SizedBox(width: 12),
-                          Text('Erro ao renovar perfil'),
-                        ],
-                      ),
-                      backgroundColor: const Color(0xFFDC2626),
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 3),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      margin: const EdgeInsets.all(16),
-                    ));
-                  }
-                  
-                  if (mounted) setState(() => _isUpdating = false);
-                },
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _isUpdating
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFEA580C)),
-                        ),
-                      )
-                    : Icon(Icons.refresh_rounded, size: 17, color: accent),
-                const SizedBox(width: 8),
-                Text(
-                  _isUpdating ? 'Renovando...' : 'Renovar agora (+2 dias)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-  }
+
   @override
   Widget build(BuildContext context) {
     final skills = (widget.dataWorker['skills'] as List?) ?? [];
-    final profession =
-        widget.dataWorker['profession']?.toString() ?? 'Profissão não definida';
+    final profession = widget.dataWorker['profession']?.toString() ??
+        'Profissão não definida';
     final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
     final summaryOk = summary.length >= _kSummaryMinLength;
     final hasSkills = skills.isNotEmpty;
@@ -2103,7 +2147,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
       child: Column(
         children: [
-
           // ── Avatar + Nome ─────────────────────────────────────────────
           Container(
             width: double.infinity,
@@ -2120,7 +2163,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                 ),
               ],
             ),
-            
             child: Column(
               children: [
                 CircleAvatar(
@@ -2154,8 +2196,13 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
               ],
             ),
           ),
-            if (_expiresAt != null && (_isExpired || (_isNearExpiration && _daysLeft <= 1)))
+
+          if (_expiresAt != null &&
+              (_isExpired || (_isNearExpiration && _daysLeft <= 1))) ...[
+            const SizedBox(height: 16),
             _buildExpirationBanner(),
+          ],
+
           const SizedBox(height: 16),
 
           // ── Alerta se perfil incompleto ───────────────────────────────
@@ -2203,16 +2250,19 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _kOrange.withOpacity(0.2)),
+                        border:
+                            Border.all(color: _kOrange.withOpacity(0.2)),
                       ),
                       child: const Row(
                         children: [
-                          Icon(Icons.info_outline, size: 14, color: _kOrange),
+                          Icon(Icons.info_outline,
+                              size: 14, color: _kOrange),
                           SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Acesse "Editar Perfil" → seção Profissional para preencher sua descrição.',
-                              style: TextStyle(fontSize: 12, color: _kOrange),
+                              style:
+                                  TextStyle(fontSize: 12, color: _kOrange),
                             ),
                           ),
                         ],
@@ -2226,14 +2276,56 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           ],
 
           // ── Status Control ────────────────────────────────────────────
-          ProfessionalStatusControlWidget(
-            initialIsActive: _currentProfessionalIsActive,
-            localId: widget.localId,
-            professionalId: _professionalId ?? '',
-            onStatusChanged: (bool isNowActive) {
-              setState(() => _currentProfessionalIsActive = isNowActive);
-            },
-          ),
+          // ✅ Mostra loading enquanto o Firebase não respondeu,
+          //    depois renderiza o widget com o status real.
+          //    O ValueKey garante que o widget é recriado sempre que
+          //    o status muda, respeitando o valor atualizado do Firebase.
+          if (_isLoadingStatus)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: CircularProgressIndicator(
+                      color: _kBlue, strokeWidth: 2.5),
+                ),
+              ),
+            )
+          else if (_isExpired)
+            Stack(
+              children: [
+                IgnorePointer(
+                  child: ProfessionalStatusControlWidget(
+                    key: ValueKey(
+                        'status_${_currentProfessionalIsActive}_${_professionalId}'),
+                    initialIsActive: _currentProfessionalIsActive,
+                    localId: widget.localId,
+                    professionalId: _professionalId ?? '',
+                    onStatusChanged: (_) {},
+                  ),
+                ),
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: _showRenewalRequiredDialog,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ],
+            )
+          else
+            ProfessionalStatusControlWidget(
+              // ✅ ValueKey: força recriação do widget quando o status muda
+              key: ValueKey(
+                  'status_${_currentProfessionalIsActive}_${_professionalId}'),
+              initialIsActive: _currentProfessionalIsActive,
+              localId: widget.localId,
+              professionalId: _professionalId ?? '',
+              onStatusChanged: (bool isNowActive) {
+                setState(() => _currentProfessionalIsActive = isNowActive);
+              },
+            ),
 
           const SizedBox(height: 16),
 
@@ -2288,19 +2380,19 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                     label: 'Empresa',
                     value: widget.dataWorker['company'],
                   ),
-                  // ✅ ADICIONE AQUI
-              if (widget.userTelefone.isNotEmpty && widget.userTelefone != 'Não definido')
-                _InfoRow(
-                  icon: Icons.phone_outlined,
-                  label: 'Telefone',
-                  value: widget.userTelefone,
-                ),
-              if (widget.userEmail.isNotEmpty)
-                _InfoRow(
-                  icon: Icons.email_outlined,
-                  label: 'E-mail de contato',
-                  value: widget.userEmail,
-                ),
+                if (widget.userTelefone.isNotEmpty &&
+                    widget.userTelefone != 'Não definido')
+                  _InfoRow(
+                    icon: Icons.phone_outlined,
+                    label: 'Telefone',
+                    value: widget.userTelefone,
+                  ),
+                if (widget.userEmail.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.email_outlined,
+                    label: 'E-mail de contato',
+                    value: widget.userEmail,
+                  ),
                 if (skills.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const Divider(color: _kBorder),
@@ -2358,7 +2450,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                 Expanded(
                   child: Text(
                     'Sincronize o anúncio com as alterações mais recentes do seu perfil.',
-                    style: TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
+                    style:
+                        TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
                   ),
                 ),
               ],
@@ -2386,7 +2479,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       width: 22,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
                   : Row(
@@ -2419,13 +2513,14 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     );
   }
 }
+
 // ✅ Widget auxiliar para o debug
 class _DebugInfoRow extends StatelessWidget {
   final String label;
   final String value;
- 
+
   const _DebugInfoRow(this.label, this.value);
- 
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -2454,6 +2549,7 @@ class _DebugInfoRow extends StatelessWidget {
     );
   }
 }
+
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2511,8 +2607,8 @@ class _ConfirmationScreen extends StatelessWidget {
   final String userName;
   final String userAvatar;
   final String userCity;
-  final String userTelefone;   // ✅ NOVO
-  final String userEmail; 
+  final String userTelefone;
+  final String userEmail;
   final String userState;
   final String legalType;
   final Map<String, dynamic> dataWorker;
@@ -2523,8 +2619,8 @@ class _ConfirmationScreen extends StatelessWidget {
     required this.userName,
     required this.userAvatar,
     required this.userCity,
-    required this.userTelefone,   // ✅ NOVO
-    required this.userEmail,     // ✅ NOVO
+    required this.userTelefone,
+    required this.userEmail,
     required this.userState,
     required this.legalType,
     required this.dataWorker,
@@ -2576,7 +2672,8 @@ class _ConfirmationScreen extends StatelessWidget {
                   userAvatar.isNotEmpty ? NetworkImage(userAvatar) : null,
               backgroundColor: _kBlueSoft,
               child: userAvatar.isEmpty
-                  ? const Icon(Icons.person_rounded, size: 52, color: _kBlue)
+                  ? const Icon(Icons.person_rounded,
+                      size: 52, color: _kBlue)
                   : null,
             ),
             const SizedBox(height: 16),
@@ -2629,7 +2726,10 @@ class _ConfirmationScreen extends StatelessWidget {
                           ? 'Pessoa Jurídica'
                           : 'Pessoa Física'),
                   if (legalType == 'PJ' &&
-                      dataWorker['company']?.toString().trim().isNotEmpty ==
+                      dataWorker['company']
+                              ?.toString()
+                              .trim()
+                              .isNotEmpty ==
                           true)
                     _ConfirmRow(
                         icon: Icons.business_outlined,
@@ -2639,8 +2739,8 @@ class _ConfirmationScreen extends StatelessWidget {
                       icon: Icons.location_on_outlined,
                       label: 'Localização',
                       value: '$userCity, $userState'),
-                  // ✅ NOVOS
-                  if (userTelefone.isNotEmpty && userTelefone != 'Não definido')
+                  if (userTelefone.isNotEmpty &&
+                      userTelefone != 'Não definido')
                     _ConfirmRow(
                         icon: Icons.phone_outlined,
                         label: 'Telefone',
@@ -2650,7 +2750,8 @@ class _ConfirmationScreen extends StatelessWidget {
                         icon: Icons.email_outlined,
                         label: 'E-mail de contato',
                         value: userEmail),
-                  if (dataWorker['summary']?.toString().isNotEmpty == true) ...[
+                  if (dataWorker['summary']?.toString().isNotEmpty ==
+                      true) ...[
                     const SizedBox(height: 4),
                     const Divider(color: _kBorder),
                     const SizedBox(height: 12),
@@ -2891,10 +2992,12 @@ class _RequestDetailsScreen extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 50,
-              backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+              backgroundImage:
+                  avatar.isNotEmpty ? NetworkImage(avatar) : null,
               backgroundColor: _kBlueSoft,
               child: avatar.isEmpty
-                  ? const Icon(Icons.business_rounded, size: 50, color: _kBlue)
+                  ? const Icon(Icons.business_rounded,
+                      size: 50, color: _kBlue)
                   : null,
             ),
             const SizedBox(height: 16),
@@ -2908,7 +3011,8 @@ class _RequestDetailsScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             if (contractorData['profession']?.toString() != null &&
-                contractorData['profession'].toString() != 'Não definida') ...[
+                contractorData['profession'].toString() !=
+                    'Não definida') ...[
               const SizedBox(height: 4),
               Text(
                 contractorData['profession'],
@@ -2925,13 +3029,17 @@ class _RequestDetailsScreen extends StatelessWidget {
                     label: 'E-mail',
                     value: requestData['email'],
                   ),
-                if (requestData['email_contact']?.toString().isNotEmpty == true)
+                if (requestData['email_contact']
+                        ?.toString()
+                        .isNotEmpty ==
+                    true)
                   _DetailRow(
                     icon: Icons.alternate_email_rounded,
                     label: 'E-mail de Contato',
                     value: requestData['email_contact'],
                   ),
-                if (requestData['telefone']?.toString().isNotEmpty == true &&
+                if (requestData['telefone']?.toString().isNotEmpty ==
+                        true &&
                     requestData['telefone'] != 'Não definido')
                   _DetailRow(
                     icon: Icons.phone_outlined,
@@ -2956,7 +3064,10 @@ class _RequestDetailsScreen extends StatelessWidget {
             _DetailSection(
               title: 'Informações Profissionais',
               children: [
-                if (contractorData['company']?.toString().trim().isNotEmpty ==
+                if (contractorData['company']
+                        ?.toString()
+                        .trim()
+                        .isNotEmpty ==
                     true)
                   _DetailRow(
                     icon: Icons.business_outlined,
@@ -2964,7 +3075,8 @@ class _RequestDetailsScreen extends StatelessWidget {
                     value: contractorData['company'],
                   ),
                 if (contractorData['profession']?.toString() != null &&
-                    contractorData['profession'].toString() != 'Não definida')
+                    contractorData['profession'].toString() !=
+                        'Não definida')
                   _DetailRow(
                     icon: Icons.work_outline_rounded,
                     label: 'Profissão',
@@ -2979,7 +3091,8 @@ class _RequestDetailsScreen extends StatelessWidget {
                           ? 'Pessoa Física'
                           : 'Não definido',
                 ),
-                if (contractorData['summary']?.toString().isNotEmpty == true &&
+                if (contractorData['summary']?.toString().isNotEmpty ==
+                        true &&
                     contractorData['summary'] != 'Não definido') ...[
                   const SizedBox(height: 4),
                   const Divider(color: _kBorder),
@@ -3056,42 +3169,6 @@ class _RequestDetailsScreen extends StatelessWidget {
                       fontSize: 15,
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _kBlueSoft,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _kBlueMid),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.schedule_rounded, color: _kBlue, size: 20),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Duração: 48 horas',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: _kBlue,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Você poderá renovar quando estiver próximo do vencimento',
-                            style: TextStyle(
-                                fontSize: 11, color: _kBlue, height: 1.3),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],

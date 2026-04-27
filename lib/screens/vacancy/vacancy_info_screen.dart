@@ -569,13 +569,61 @@ class _InfoVacancyState extends State<InfoVacancy>
 
   Future<void> _toggleVacancyStatus() async {
     if (_isExpired || _currentStatus.toLowerCase() == 'expirada') {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Esta vaga está expirada. Renove-a antes de alterar o status.'),
-        backgroundColor: Colors.orange.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ));
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEA580C).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.timer_off_rounded,
+                    color: Color(0xFFEA580C), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Vaga expirada',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Esta vaga está expirada e não pode ser pausada ou reativada.\n\n'
+            'Renove-a primeiro para voltar a gerenciar o status.',
+            style: TextStyle(fontSize: 14, height: 1.55),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Agora não',
+                  style: TextStyle(color: Colors.grey.shade600)),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _renewVacancy();
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Renovar agora',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF16A34A),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
+      );
       return;
     }
 
@@ -589,8 +637,11 @@ class _InfoVacancyState extends State<InfoVacancy>
       setState(() => _currentStatus = newStatus);
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(newStatus == 'Pausada' ? 'Vaga pausada com sucesso' : 'Vaga reativada com sucesso'),
-        backgroundColor: newStatus == 'Pausada' ? Colors.orange : Colors.green,
+        content: Text(newStatus == 'Pausada'
+            ? 'Vaga pausada com sucesso'
+            : 'Vaga reativada com sucesso'),
+        backgroundColor:
+            newStatus == 'Pausada' ? Colors.orange : Colors.green,
       ));
     } catch (e) {
       print('Erro ao atualizar status: $e');
