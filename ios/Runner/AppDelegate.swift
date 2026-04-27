@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import FirebaseCore
 import FirebaseMessaging
 
 @main
@@ -10,29 +9,22 @@ import FirebaseMessaging
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     
-    // ✅ Inicializa Firebase
-    FirebaseApp.configure()
+    // ✅ MANTÉM A CONFIGURAÇÃO ORIGINAL
+    // FirebaseAppDelegateProxyEnabled = true faz a config automática
     
-    // ✅ Registra para notificações remotas (CRÍTICO!)
+    // ✅ REGISTRA PARA NOTIFICAÇÕES (ÚNICO ACRÉSCIMO!)
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
       let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
       UNUserNotificationCenter.current().requestAuthorization(
         options: authOptions,
         completionHandler: { granted, error in
-          print("🔔 Permissão concedida: \(granted)")
-          if let error = error {
-            print("❌ Erro permissão: \(error)")
-          }
+          print("🔔 Permissão: \(granted)")
         }
       )
-    } else {
-      let settings: UIUserNotificationSettings =
-        UIUserNotificationSettings(types: [.alert, .badge, .sound], categories: nil)
-      application.registerUserNotificationSettings(settings)
     }
     
-    // ✅ REGISTRA PARA APNs (SEM ISSO, APNs = NULL!)
+    // ✅ ESTE É O PEDAÇO QUE FALTAVA!
     application.registerForRemoteNotifications()
     
     // ✅ Define delegate do Firebase Messaging
@@ -42,38 +34,23 @@ import FirebaseMessaging
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
   
-  // ✅ APNs token recebido com sucesso
+  // ✅ Recebe APNs token
   override func application(_ application: UIApplication,
                             didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-    print("🍎 APNs Token recebido!")
-    
-    // Passa o token para o Firebase
+    print("🍎 APNs OK!")
     Messaging.messaging().apnsToken = deviceToken
-    
-    // Debug: mostra o token
-    let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
-    let token = tokenParts.joined()
-    print("🍎 APNs Token: \(token)")
   }
   
-  // ✅ Erro ao registrar APNs
+  // ✅ Erro APNs
   override func application(_ application: UIApplication,
                             didFailToRegisterForRemoteNotificationsWithError error: Error) {
-    print("❌ Falha APNs: \(error.localizedDescription)")
+    print("❌ APNs: \(error)")
   }
 }
 
 // ✅ Firebase Messaging Delegate
 extension AppDelegate: MessagingDelegate {
   func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-    print("📱 FCM Token: \(fcmToken ?? "nil")")
-    
-    // Notifica o Flutter que tem token novo
-    let dataDict: [String: String] = ["token": fcmToken ?? ""]
-    NotificationCenter.default.post(
-      name: Notification.Name("FCMToken"),
-      object: nil,
-      userInfo: dataDict
-    )
+    print("📱 FCM: \(fcmToken ?? "nil")")
   }
 }

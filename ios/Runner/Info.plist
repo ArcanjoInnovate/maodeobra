@@ -27,10 +27,34 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
 
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
@@ -47,9 +71,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
-	<!-- ✅ PERMISSÕES DE MÍDIA                                              -->
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
+	<!-- ✅ PERMISSÕES -->
 	<key>NSCameraUsageDescription</key>
 	<string>Usamos a câmera para tirar fotos de perfil, serviços e obras.</string>
 
@@ -59,32 +81,22 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Precisamos salvar fotos de obras e serviços na sua galeria.</string>
 
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
-	<!-- ✅ FIREBASE & PUSH NOTIFICATIONS                                    -->
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
-	
-	<!-- ✅ Firebase App Delegate Swizzling -->
+	<!-- ✅ NOTIFICAÇÕES -->
 	<key>FirebaseAppDelegateProxyEnabled</key>
-	<false/>
-	
-	<!-- ⚠️ MUDADO PARA FALSE! -->
-	<!-- Como estamos implementando manualmente no AppDelegate.swift, -->
-	<!-- desativamos o swizzling automático para evitar conflitos -->
+	<true/>
 
-	<!-- ✅ Descrições de notificações (obrigatório iOS) -->
+	<key>UNUserNotificationUsageDescription</key>
+	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
+
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Receba notificações de novos serviços, mensagens e atualizações importantes.</string>
 
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
-	<!-- ✅ BACKGROUND MODES                                                 -->
-	<!-- ═══════════════════════════════════════════════════════════════════ -->
+	<!-- ✅ BACKGROUND MODES -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
 	</array>
-	
-	<!-- Apenas remote-notification é necessário para push -->
-	<!-- 'fetch' e 'processing' foram removidos -->
+	<!-- ⚠️ REMOVIDO 'fetch' para evitar erro na App Store -->
 
 </dict>
 </plist>
