@@ -65,6 +65,27 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // DEBUG TOTAL - remove depois
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await Future.delayed(const Duration(seconds: 3));
+    
+    final settings = await FirebaseMessaging.instance.requestPermission();
+    print('📲 Auth status: ${settings.authorizationStatus}');
+    
+    final apns = await FirebaseMessaging.instance.getAPNSToken();
+    print('🍎 APNs: $apns');
+    
+    final fcm = await FirebaseMessaging.instance.getToken();
+    print('📱 FCM: $fcm');
+    
+    // Salva tudo no banco para você ver
+    await FirebaseDatabase.instance.ref('debug_fcm').set({
+      'apns': apns ?? 'NULL',
+      'fcm': fcm ?? 'NULL',
+      'auth': settings.authorizationStatus.toString(),
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  });
   FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
