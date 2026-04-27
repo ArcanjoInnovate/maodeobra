@@ -65,7 +65,27 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await FirebaseDatabase.instance
+          .ref('Users/${user.uid}/fcmToken')
+          .set(token);
+      print('✅ FCM token salvo via onTokenRefresh: ${token.substring(0, 20)}');
+    }
+  });
 
+  // Tenta pegar token imediatamente também
+  FirebaseMessaging.instance.getToken().then((token) async {
+    if (token != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseDatabase.instance
+            .ref('Users/${user.uid}/fcmToken')
+            .set(token);
+      }
+    }
+  });
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: true,
     badge: true,
