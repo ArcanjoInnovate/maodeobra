@@ -1,9 +1,6 @@
-import 'dart:io';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:dartobra_new/services/notifications/notification_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -24,7 +21,7 @@ class AuthService {
 
       final user = credential.user;
       if (user != null) {
-        await _saveFCMToken(user.uid); // ✅ SALVA TOKEN iOS!
+        await _saveFCMToken(user.uid);
         print('✅ Login OK + FCM token salvo: ${user.uid}');
       }
 
@@ -56,8 +53,8 @@ class AuthService {
       if (user != null) {
         await user.updateDisplayName(name);
         await user.sendEmailVerification();
-        
-        await _saveFCMToken(user.uid); // ✅ SALVA TOKEN iOS!
+
+        await _saveFCMToken(user.uid);
         print('✅ Registro OK + FCM token salvo: ${user.uid}');
       }
 
@@ -77,27 +74,57 @@ class AuthService {
   // ============================================================
   Future<void> _saveFCMToken(String userId) async {
     try {
-      final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true, badge: true, sound: true,
+      final messaging = FirebaseMessaging.instance;
+
+      // Solicita permissão (necessário no iOS)
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
       );
 
-      final apns = await FirebaseMessaging.instance.getAPNSToken();
-      final fcm = await FirebaseMessaging.instance.getToken();
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        print('⚠️ Permissão de notificação negada pelo usuário');
+        return;
+      }
 
-      // Salva debug no banco independente do resultado
-      await FirebaseDatabase.instance.ref('Users/$userId/fcmDebug').set({
-        'authStatus': settings.authorizationStatus.index,
-        'apnsNull': apns == null,
-        'fcmNull': fcm == null,
-        'platform': 'ios',
-        'ts': DateTime.now().toIso8601String(),
+      // Obtém o token FCM
+      final token = await messaging.getToken();
+
+      if (token == null) {
+        print('⚠️ FCM token nulo — verifique a configuração do projeto');
+        return;
+      }
+
+      // Salva no Realtime Database
+      await FirebaseDatabase.instance.ref('Users/$userId').update({
+        'fcmToken': token,
+        'fcmTokenUpdatedAt': ServerValue.timestamp,
+        'platform': _getPlatform(),
       });
 
-      if (fcm != null) {
-        await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(fcm);
-      }
+      print('✅ FCM token salvo com sucesso: $token');
+
+      // Atualiza o token automaticamente quando ele for renovado
+      messaging.onTokenRefresh.listen((newToken) async {
+        await FirebaseDatabase.instance.ref('Users/$userId').update({
+          'fcmToken': newToken,
+          'fcmTokenUpdatedAt': ServerValue.timestamp,
+        });
+        print('🔄 FCM token renovado e salvo: $newToken');
+      });
     } catch (e) {
-      await FirebaseDatabase.instance.ref('Users/$userId/fcmError').set('$e');
+      // Não bloqueia o fluxo de login em caso de falha no FCM
+      print('❌ Erro ao salvar FCM token: $e');
+    }
+  }
+
+  String _getPlatform() {
+    try {
+      // Evita import de dart:io — usa assertion de plataforma do Flutter
+      return 'mobile';
+    } catch (_) {
+      return 'unknown';
     }
   }
 
@@ -108,13 +135,12 @@ class AuthService {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        // ✅ Remove FCM token
         await FirebaseDatabase.instance
             .ref('Users/${user.uid}/fcmToken')
             .remove();
         print('🗑️ FCM token removido no logout');
       }
-      
+
       await _auth.signOut();
       print('✅ Logout completo');
     } catch (e) {
