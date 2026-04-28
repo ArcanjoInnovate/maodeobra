@@ -1055,104 +1055,97 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   }
 
   Future<void> _applyToVacancy() async {
-    setState(() => _isApplying = true);
-    
-    try {
-      // Validação
-      final validation = await ProfileValidationService.validateWorkerProfile();
-      if (!validation.isValid) {
-        setState(() => _isApplying = false);
-        validation.showErrorDialog(context);
-        return;
-      }
-
-      final db = FirebaseDatabase.instance.ref();
-      final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
-      
-      // ✅ DADOS DO TRABALHADOR
-      final userSnapshot = await db.child('Users/$currentUserId').get();
-      String workerName = 'Trabalhador';
-      String workerAvatar = '';
-      if (userSnapshot.exists) {
-        final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-        workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
-        workerAvatar = userData['avatar'] ?? '';
-      }
-
-      // 🔥 LÊ REQUESTS ATUAIS (ROBUSTO)
-      final requestsSnapshot = await db.child('vacancy/${widget.vacancyId}/requests').get();
-      List<String> requestsList = [];
-      
-      if (requestsSnapshot.exists && requestsSnapshot.value != null) {
-        final data = requestsSnapshot.value;
-        if (data is List) {
-          requestsList = List<String>.from(data);
-        } else if (data is String) {
-          // ✅ TRATA CASO STRING SIMPLES
-          requestsList = [data];
-        } else if (data is Map) {
-          requestsList = data.values.map((v) => v.toString()).toList();
-        }
-      }
-
-      // ✅ VERIFICA DUPLICATA
-      if (requestsList.contains(currentUserId)) {
-        setState(() => _isApplying = false);
-        _showError('Você já se candidatou!');
-        return;
-      }
-
-      // ✅ ADICIONA À LISTA
-      requestsList.add(currentUserId);
-
-      final updates = <String, dynamic>{
-        // 🔥 SEMPRE SALVA COMO LISTA
-        'vacancy/${widget.vacancyId}/requests': requestsList,
-        
-        // Views
-        'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
-          'viewed_by_owner': false,
-          'applied_at': DateTime.now().millisecondsSinceEpoch,
-          'worker_name': workerName,
-          'worker_avatar': workerAvatar,
-        },
-      };
-
-      // Stats
-      final statsSnapshot = await db.child('vacancy/${widget.vacancyId}/stats').get();
-      int totalApps = 0;
-      if (statsSnapshot.exists) {
-        totalApps = (statsSnapshot.value as Map?)?['total_applications'] ?? 0;
-      }
-      updates['vacancy/${widget.vacancyId}/stats/total_applications'] = totalApps + 1;
-      updates['vacancy/${widget.vacancyId}/stats/last_application_at'] = DateTime.now().millisecondsSinceEpoch;
-
-      await db.update(updates);
-
-      // user_requests separado para não bloquear a candidatura se as regras não cobrirem este path
-      try {
-        await db.child('user_requests/$currentUserId/vacancies/${widget.vacancyId}').set(true);
-      } catch (_) {}
-
+  setState(() => _isApplying = true);
+  
+  try {
+    // Validação
+    final validation = await ProfileValidationService.validateWorkerProfile();
+    if (!validation.isValid) {
       setState(() => _isApplying = false);
-      
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('✅ Candidatura enviada com sucesso!'),
-        backgroundColor: Color(0xFF10B981),
-        behavior: SnackBarBehavior.floating,
-      ));
-      
-      Navigator.pop(context);
-      
-    } catch (e) {
-      print('❌ ERRO _applyToVacancy: $e');
-      setState(() => _isApplying = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro: $e'),
-        backgroundColor: Colors.red,
-      ));
+      validation.showErrorDialog(context);
+      return;
     }
+
+    final db = FirebaseDatabase.instance.ref();
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    
+    // ✅ DADOS DO TRABALHADOR
+    final userSnapshot = await db.child('Users/$currentUserId').get();
+    String workerName = 'Trabalhador';
+    String workerAvatar = '';
+    if (userSnapshot.exists) {
+      final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+      workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
+      workerAvatar = userData['avatar'] ?? '';
+    }
+
+    // 🔥 OWNER ID (dono da vaga)
+    final ownerLocalId = widget.vacancy['local_id']?.toString() ?? '';
+
+    // ✅ LÊ REQUESTS ATUAIS (ROBUSTO)
+    final requestsSnapshot = await db.child('vacancy/${widget.vacancyId}/requests').get();
+    List<String> requestsList = [];
+    
+    if (requestsSnapshot.exists && requestsSnapshot.value != null) {
+      final data = requestsSnapshot.value;
+      if (data is List) {
+        requestsList = List<String>.from(data);
+      } else if (data is String) {
+        requestsList = [data];
+      } else if (data is Map) {
+        requestsList = data.values.map((v) => v.toString()).toList();
+      }
+    }
+
+    // ✅ VERIFICA DUPLICATA
+    if (requestsList.contains(currentUserId)) {
+      setState(() => _isApplying = false);
+      _showError('Você já se candidatou!');
+      return;
+    }
+
+    // ✅ ADICIONA À LISTA
+    requestsList.add(currentUserId);
+
+    final updates = <String, dynamic>{
+      'vacancy/${widget.vacancyId}/requests': requestsList,
+      'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
+        'viewed_by_owner': false,
+        'applied_at': DateTime.now().millisecondsSinceEpoch,
+        'worker_name': workerName,
+        'worker_avatar': workerAvatar,
+      },
+      'vacancy/${widget.vacancyId}/stats/total_applications': requestsList.length,
+    };
+
+    await db.update(updates);
+
+    setState(() => _isApplying = false);
+    
+    // ✅ SUCESSO
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(
+        children: const [
+          Icon(Icons.check_circle, color: Colors.white, size: 20),
+          SizedBox(width: 12),
+          Text('Candidatura enviada! Dono da vaga foi notificado.'),
+        ],
+      ),
+      backgroundColor: const Color(0xFF10B981),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 4),
+    ));
+    
+    Navigator.pop(context);
+    
+  } catch (e, stack) {
+    print('❌ ERRO _applyToVacancy: $e\n$stack');
+    setState(() => _isApplying = false);
+    _showError('Erro ao enviar candidatura: $e');
   }
+}
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(

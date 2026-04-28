@@ -37,6 +37,20 @@ interface BatchResult {
 }
 
 // ============================================================
+// HELPER - NORMALIZAR REQUESTS (MAP → ARRAY)
+// ============================================================
+
+function _normalizeRequests(requests: any): string[] {
+  if (!requests) return [];
+  if (Array.isArray(requests)) return requests;
+  // Se for Map/Object, pegar apenas os valores que são strings
+  if (typeof requests === 'object') {
+    return Object.values(requests).filter(v => typeof v === 'string') as string[];
+  }
+  return [];
+}
+
+// ============================================================
 // HELPER - VERIFICAR E CORRIGIR BADGE DE UM USUÁRIO
 // ============================================================
 
@@ -401,20 +415,6 @@ async function isUserOnlineInChat(
   }
 }
 
-// ============================================================
-// PUSH DE CHAT — DATA-ONLY
-//
-// ✅ SEM bloco "notification" no payload.
-//    Motivo: se "notification" estiver presente, o SO (Android/iOS)
-//    exibe a notificação automaticamente. O Flutter também exibiria
-//    via flutter_local_notifications → resultado = 2 notificações.
-//
-//    Sem "notification", apenas o handler Dart exibe a notificação,
-//    garantindo controle total (agrupamento por chatId, avatar, etc).
-//
-//    No iOS em background, o bloco apns.payload.aps.alert garante
-//    a exibição mesmo sem o campo "notification" do FCM.
-// ============================================================
 async function sendChatPushNotification(
   userId: string,
   senderName: string,
@@ -441,23 +441,18 @@ async function sendChatPushNotification(
 
     const message: admin.messaging.Message = {
       token,
-      // ✅ SEM bloco "notification" aqui — evita a notificação automática do SO.
-      //    O Flutter exibe via flutter_local_notifications (foreground)
-      //    e via firebaseMessagingBackgroundHandler (background/terminated).
       data: {
         type: "chat",
         chatId,
         senderId,
         senderName,
         senderAvatar: senderAvatarUrl || "",
-        // Campos lidos pelo NotificationService para montar a notificação local
         notificationTitle: senderName,
         notificationBody: displayText,
         notificationTag: chatId,
       },
       android: {
         priority: "high",
-        // ✅ Sem notification block no android — data-only no Android
       },
       apns: {
         headers: {
@@ -466,8 +461,6 @@ async function sendChatPushNotification(
         },
         payload: {
           aps: {
-            // ✅ alert garante exibição no iOS em background/terminated
-            //    sem precisar do campo "notification" do FCM
             alert: {
               title: senderName,
               body: displayText,
@@ -494,13 +487,6 @@ async function sendChatPushNotification(
   }
 }
 
-// ============================================================
-// PUSH GENÉRICA (solicitações, chat aceito, expiração, etc.)
-//
-// ✅ SEM bloco "notification" no payload pelo mesmo motivo acima.
-//    O Flutter exibe via flutter_local_notifications em foreground
-//    e o background handler cuida do restante.
-// ============================================================
 async function sendPushNotification(
   userId: string,
   title: string,
@@ -520,17 +506,14 @@ async function sendPushNotification(
 
     const message: admin.messaging.Message = {
       token,
-      // ✅ SEM bloco "notification" — controle total pelo Flutter
       data: {
         ...data,
         senderAvatar: avatarUrl || "",
-        // Campos lidos pelo NotificationService para montar a notificação local
         notificationTitle: title,
         notificationBody: body,
       },
       android: {
         priority: "high",
-        // ✅ Sem notification block no android — data-only
       },
       apns: {
         headers: {
@@ -539,7 +522,6 @@ async function sendPushNotification(
         },
         payload: {
           aps: {
-            // ✅ alert garante exibição no iOS em background/terminated
             alert: { title, body },
             sound: "default",
             badge: 1,
@@ -560,10 +542,6 @@ async function sendPushNotification(
     }
   }
 }
-
-// ============================================================
-// HELPER - RECALCULAR BADGE DE CHATS
-// ============================================================
 
 async function recalculateChatBadge(userId: string) {
   try {
@@ -618,6 +596,20 @@ async function recalculateChatBadge(userId: string) {
 
 async function incrementRequestBadge(userId: string) {
   try {
+    // ✅ VERIFICA SE FOI CHAMADO DUAS VEZES (proteção)
+    const recentSnap = await admin
+      .database()
+      .ref(`badges/${userId}/last_increment`)
+      .once('value');
+    
+    const lastIncrement = recentSnap.val() as number | null;
+    const now = Date.now();
+    
+    if (lastIncrement && now - lastIncrement < 2000) { // 2 segundos
+      logger.warn(`⚠️ incrementRequestBadge bloqueado (duplicata): ${userId}`);
+      return;
+    }
+
     const badgeRef = admin.database().ref(`badges/${userId}`);
     const snap = await badgeRef.once("value");
     const current = snap.exists() ? snap.val() : { unread_chats: 0, unread_requests: 0 };
@@ -625,12 +617,191 @@ async function incrementRequestBadge(userId: string) {
     await badgeRef.set({
       unread_chats: current.unread_chats || 0,
       unread_requests: Math.min((current.unread_requests || 0) + 1, 9),
-      updated_at: Date.now(),
+      updated_at: now,
+      last_increment: now, // ✅ Marca timestamp
     });
+    
+    logger.info(`✅ Badge incrementado: ${userId} → ${current.unread_requests + 1}`);
   } catch (error) {
-    logger.error("Erro ao incrementar request badge:", error);
+    logger.error("Erro ao incrementar badge:", error);
   }
 }
+
+async function decrementRequestBadge(userId: string) {
+  try {
+    const badgeRef = admin.database().ref(`badges/${userId}`);
+    const snap = await badgeRef.once('value');
+    const current = snap.exists() ? snap.val() : { unread_chats: 0, unread_requests: 0 };
+
+    await badgeRef.set({
+      unread_chats: current.unread_chats || 0,
+      unread_requests: Math.max((current.unread_requests || 0) - 1, 0),
+      updated_at: Date.now(),
+    });
+    
+    logger.info(`✅ Badge decrementado: ${userId} → ${current.unread_requests - 1}`);
+  } catch (error) {
+    logger.error(`❌ Erro ao decrementar badge:`, error);
+  }
+}
+
+// ============================================================
+// HELPER - LIMPAR CANDIDATURAS E BADGES
+// ============================================================
+
+async function cleanupCandidaturesBadges(userId: string, userRole: string) {
+  const database = admin.database();
+  
+  logger.info(`\n🗑️ Limpando candidaturas de ${userId} (${userRole})`);
+  
+  if (userRole === 'worker') {
+    // Buscar vagas onde o worker se candidatou
+    const vacanciesSnap = await database.ref('vacancy').once('value');
+    
+    if (vacanciesSnap.exists()) {
+      const vacancies = vacanciesSnap.val() as Record<string, any>;
+      
+      for (const [vacancyId, vacancyData] of Object.entries(vacancies)) {
+        // ✅ Normalizar requests (pode ser Map ou Array)
+        const requests = _normalizeRequests(vacancyData.requests);
+        
+        if (requests.includes(userId)) {
+          logger.info(`  📌 Removendo de vacancy/${vacancyId}`);
+          
+          // Verificar se não foi visualizado
+          const requestViews = vacancyData.views?.request_views || {};
+          if (requestViews[userId]?.viewed_by_owner === false) {
+            const ownerId = vacancyData.local_id;
+            logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
+            await decrementRequestBadge(ownerId);
+          }
+          
+          // Remover das listas
+          const filteredRequests = requests.filter((id: string) => id !== userId);
+          await database.ref(`vacancy/${vacancyId}/requests`).set(filteredRequests);
+          await database.ref(`vacancy/${vacancyId}/views/request_views/${userId}`).remove();
+        }
+      }
+    }
+  } else {
+    // Buscar professionals onde o contractor se candidatou
+    const professionalsSnap = await database.ref('professionals').once('value');
+    
+    if (professionalsSnap.exists()) {
+      const professionals = professionalsSnap.val() as Record<string, any>;
+      
+      for (const [professionalId, professionalData] of Object.entries(professionals)) {
+        // ✅ Normalizar requests
+        const requests = _normalizeRequests(professionalData.requests);
+        
+        if (requests.includes(userId)) {
+          logger.info(`  📌 Removendo de professionals/${professionalId}`);
+          
+          const requestViews = professionalData.views?.request_views || {};
+          if (requestViews[userId]?.viewed_by_owner === false) {
+            const ownerId = professionalData.local_id;
+            logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
+            await decrementRequestBadge(ownerId);
+          }
+          
+          const filteredRequests = requests.filter((id: string) => id !== userId);
+          await database.ref(`professionals/${professionalId}/requests`).set(filteredRequests);
+          await database.ref(`professionals/${professionalId}/views/request_views/${userId}`).remove();
+        }
+      }
+    }
+  }
+  
+  logger.info(`✅ Limpeza de candidaturas concluída\n`);
+}
+
+// ============================================================
+// CLOUD FUNCTION - DELETAR USUÁRIO
+// ✅ CORRIGIDO: Salva role ANTES de deletar Users
+// ============================================================
+
+import { onValueDeleted } from "firebase-functions/v2/database";
+
+export const onUserDeleted = onValueDeleted(
+  {
+    ref: "/Users/{userId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const userId = event.params.userId;
+
+    try {
+      logger.info(`\n═══════════════════════════════════════════`);
+      logger.info(`🗑️ USUÁRIO DELETADO: ${userId}`);
+      logger.info(`═══════════════════════════════════════════\n`);
+
+      // ✅ Pegar role ANTES de deletar (do snapshot antes da exclusão)
+      const beforeData = event.data.val() as any;
+      const userRole = beforeData?.role || "worker";
+      
+      logger.info(`👤 Role detectado: ${userRole}`);
+
+      // ✅ Limpar candidaturas e ajustar badges dos outros
+      await cleanupCandidaturesBadges(userId, userRole);
+
+      // ✅ Marcar como deletado (expira em 24h) + SALVAR ROLE
+      const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
+      await admin.database().ref(`deleted_users/${userId}`).set({
+        expires_at: expiresAt,
+        role: userRole,  // ✅ Salvar role para referência futura
+        deleted_at: Date.now(),
+      });
+
+      logger.info(`\n✅ Marcado como deletado até ${new Date(expiresAt).toISOString()}`);
+      logger.info(`═══════════════════════════════════════════\n`);
+    } catch (error) {
+      logger.error(`\n❌❌❌ ERRO AO PROCESSAR EXCLUSÃO ❌❌❌`);
+      logger.error(`Erro:`, error);
+    }
+  }
+);
+
+// ============================================================
+// CLOUD FUNCTION - LIMPAR USUÁRIOS DELETADOS ANTIGOS
+// ============================================================
+
+export const cleanupDeletedUsers = onSchedule(
+  {
+    schedule: "every 24 hours",
+    timeZone: "America/Sao_Paulo",
+    region: "us-central1",
+  },
+  async (_event) => {
+    try {
+      logger.info("\n🧹 Limpando usuários deletados antigos...");
+      
+      const now = Date.now();
+      const deletedUsersSnap = await admin.database().ref('deleted_users').once('value');
+      
+      if (!deletedUsersSnap.exists()) {
+        logger.info("ℹ️ Nenhum usuário deletado encontrado");
+        return;
+      }
+      
+      const deletedUsers = deletedUsersSnap.val() as Record<string, any>;
+      let cleaned = 0;
+      
+      for (const [userId, data] of Object.entries(deletedUsers)) {
+        const expiresAt = data?.expires_at || data; // Compatibilidade com formato antigo
+        
+        if (now > expiresAt) {
+          await admin.database().ref(`deleted_users/${userId}`).remove();
+          cleaned++;
+          logger.info(`  🗑️ Removido: ${userId}`);
+        }
+      }
+      
+      logger.info(`✅ Limpeza concluída: ${cleaned} registros removidos\n`);
+    } catch (error) {
+      logger.error(`❌ Erro na limpeza:`, error);
+    }
+  }
+);
 
 // ============================================================
 // FUNCTION - NEW CHAT MESSAGE
@@ -662,7 +833,7 @@ export const onChatMessageCreated = onValueCreated(
         employee: string;
         contractor: string;
         unreadCount?: { employee: number; contractor: number };
-        metadata?: { last_message?: string }; // ← ADICIONADO
+        metadata?: { last_message?: string };
       };
 
       const { employee, contractor, metadata } = chatData;
@@ -680,7 +851,6 @@ export const onChatMessageCreated = onValueCreated(
       if (isFirstMessage) {
         logger.info(`🔕 Primeira mensagem do chat - pulando notificação`);
         
-        // Apenas atualiza metadata, sem notificação
         await admin
           .database()
           .ref(`Chats/${chatId}/unreadCount/${receiverRole}`)
@@ -739,7 +909,6 @@ export const onProfessionalChatRequestCreated = onValueCreated(
   },
   async (event) => {
     const professionalId = event.params.professionalId;
-    const requesterId = event.params.requesterId;
     const requestData = event.data.val() as any;
 
     try {
@@ -775,11 +944,11 @@ export const onProfessionalChatRequestCreated = onValueCreated(
         "Nova Solicitação de Chat 💬",
         `${requesterName} quer conversar com você sobre seu perfil profissional`,
         {
-          type: "request",                    // ✅ Padronizado
-          requestType: "professional",        // ✅ OK
-          profileId: professionalId,          // ✅ Navigation espera profileId
-          vacancyId: "",                      // ✅ Para professional
-          userRole: professionalData.role || "worker",  // ✅ Para mapear depois
+          type: "request",
+          requestType: "professional",
+          profileId: professionalId,
+          vacancyId: "",
+          userRole: professionalData.role || "worker",
         },
         requesterAvatar
       );
@@ -808,61 +977,64 @@ export const onVacancyChatRequestCreated = onValueCreated(
     const requestData = event.data.val() as any;
 
     try {
-      logger.info(`\n════════════════════════════════════════`);
-      logger.info(`💼 NOVA SOLICITAÇÃO DE CHAT (VACANCY)`);
-      logger.info(`════════════════════════════════════════`);
+      // ✅ VERIFICA SE JÁ EXISTIA (evita duplicata)
+      const existingSnap = await admin
+        .database()
+        .ref(`vacancy/${vacancyId}/views/request_views/${requesterId}`)
+        .once('value');
+      
+      if (!existingSnap.exists() || existingSnap.val() === null) {
+        logger.info(`⚠️ Nó removido durante processamento, ignorando`);
+        return;
+      }
+
+      logger.info(`\n🎯 NOVA CANDIDATURA VACANCY (ÚNICA)`);
+      logger.info(`Vaga: ${vacancyId} | Candidato: ${requesterId}`);
 
       const vacancySnap = await admin
         .database()
         .ref(`vacancy/${vacancyId}`)
         .once("value");
 
-      if (!vacancySnap.exists()) {
-        logger.warn(`⚠️ Vaga ${vacancyId} não encontrada`);
-        return;
-      }
-
       const vacancyData = vacancySnap.val() as Record<string, any>;
       const ownerId = vacancyData.local_id as string;
 
       if (!ownerId) {
-        logger.warn(`⚠️ Vaga ${vacancyId} sem local_id`);
+        logger.warn(`⚠️ Vaga sem local_id`);
         return;
       }
 
+      // ✅ INCREMENTA BADGE (ÚNICO)
       await incrementRequestBadge(ownerId);
 
-      const requesterName = requestData.worker_name || "Alguém";
-      const requesterAvatar = requestData.worker_avatar || "";
-      const vacancyTitle = vacancyData.title || "sua vaga";
+      const candidateName = requestData.worker_name || "Candidato";
+      const candidateAvatar = requestData.worker_avatar || "";
 
+      // ✅ PUSH NOTIFICATION
       await sendPushNotification(
         ownerId,
-        "Nova Solicitação de Chat 💬",
-        `${requesterName} quer conversar com você sobre seu perfil profissional`,
-       {
-        type: "request",
-        requestType: "vacancy",
-        profileId: "",
-        vacancyId: vacancyId,
-        userRole: vacancyData.role || "contractor",
-      },
-        requesterAvatar
-
+        "🎯 Nova Candidatura!",
+        `${candidateName} se candidatou à sua vaga "${vacancyData.title || 'Vaga'}"`,
+        {
+          type: "vacancy_request",
+          vacancyId,
+          candidateId: requesterId,
+          candidateName,
+          candidateAvatar,
+        },
+        candidateAvatar
       );
 
-      logger.info(`✅ Notificação de candidatura enviada!`);
-      logger.info(`════════════════════════════════════════\n`);
-    } catch (err) {
-      logger.error(`❌❌❌ ERRO AO PROCESSAR CANDIDATURA ❌❌❌`);
-      logger.error(`Erro:`, err);
+      logger.info(`✅ Badge + Push enviados para: ${ownerId}`);
+      logger.info(`\n✅ PROCESSADO SEM DUPLICATA`);
+
+    } catch (err: any) {
+      logger.error(`❌ ERRO NA CANDIDATURA:`, err);
     }
   }
 );
-
 // ============================================================
 // FUNCTION - CHAT CREATED
-// ✅ Notifica APENAS o employee (quem enviou a solicitação).
 // ============================================================
 
 export const onChatCreated = onValueCreated(
@@ -1001,10 +1173,8 @@ export const checkExpiringProfessionals = onSchedule(
             const timeMessage =
               hoursLeft > 0 ? `${hoursLeft}h ${minutesLeft}min` : `${minutesLeft} minutos`;
 
-            // ✅ Expiração também data-only — sem bloco "notification"
             const message: admin.messaging.Message = {
               token: fcmToken,
-              // ✅ SEM bloco "notification" — Flutter controla a exibição
               data: {
                 type: "expiration_warning",
                 professionalId,
@@ -1016,7 +1186,6 @@ export const checkExpiringProfessionals = onSchedule(
               },
               android: {
                 priority: "high",
-                // ✅ Sem notification block — data-only no Android
               },
               apns: {
                 headers: {
@@ -1075,3 +1244,4 @@ export const checkExpiringProfessionals = onSchedule(
     }
   }
 );
+

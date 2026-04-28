@@ -21,49 +21,43 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      print('\n🔥 ========================================');
+      print('\n========================================');
       print('   BUSCANDO VAGAS (Otimizado v2)');
       print('========================================');
-      print('📍 Filtros: ${filterState ?? 'Todos'} / ${filterCity ?? 'Todas'}');
-      print('💼 Profissão: ${preferredProfession ?? 'Todas'}');
-      print('🚫 Excluir chats: ${chatUserIds.length} usuários');
-      print('📄 Limite: $limit itens');
+      print('Filtros: ${filterState ?? 'Todos'} / ${filterCity ?? 'Todas'}');
+      print('Profissao: ${preferredProfession ?? 'Todas'}');
+      print('Limite: $limit itens');
       
       final startTime = DateTime.now();
       int readsEstimated = 0;
 
-      // ✅ QUERY BASE: ordenada por data de criação
       Query query = _database
           .child('vacancy')
           .orderByChild('updated_at');
 
-      // ✅ PAGINAÇÃO: busca itens ANTES do cursor (mais antigos)
       if (lastCreatedAt != null && lastKey != null) {
         query = query.endBefore(lastCreatedAt, key: lastKey);
       }
 
-      // ✅ BUSCA EXTRA para compensar filtros client-side
       final multiplier = _calculateMultiplier(
         hasStateFilter: filterState != null,
         hasCityFilter: filterCity != null,
         hasProfessionFilter: preferredProfession != null,
-        chatExclusionsCount: chatUserIds.length,
+        chatExclusionsCount: 0,
       );
       final fetchLimit = limit * multiplier;
       
       query = query.limitToLast(fetchLimit);
 
-      // ⚡ EXECUTA QUERY (1 read para metadados + N reads para itens)
       final snapshot = await query.get();
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('ℹ️  Nenhuma vaga encontrada');
+        print('Nenhuma vaga encontrada');
         _printReadStats(startTime, readsEstimated);
         return PaginatedFeedResult(items: [], hasMore: false);
       }
 
-      // ✅ PROCESSA RESULTADOS COM FILTROS
       final vacancies = <VacancyModel>[];
       String? newLastCreatedAt;
       String? newLastKey;
@@ -75,53 +69,48 @@ class FirebaseFeedService {
           
           final vacancy = _parseVacancy(key, data);
           
-          // ✅ FILTRO 1: Status deve ser "Aberta" E NÃO EXPIRADA
+          // FILTRO 1: Status deve ser "Aberta" E NAO EXPIRADA
           final status = vacancy.status.toLowerCase();
           if (status != 'aberta' && status != 'open') {
             continue;
           }
           
-          // ✅ NOVO: Não mostra vagas expiradas
+          // Nao mostra vagas expiradas
           if (status == 'expirada' || status == 'expired') {
-            print('  🚫 Excluindo vaga ${vacancy.id} - expirada');
+            print('  Excluindo vaga ${vacancy.id} - expirada');
             continue;
           }
           
-          // ✅ FILTRO 2: Já candidatado? Pula
+          // FILTRO 2: Ja candidatado? Pula
           if (requestedVacancyIds.contains(vacancy.id)) {
             continue;
           }
           
-          // ✅ FILTRO 3 (AJUSTADO): TEM CHAT COM O DONO DA VAGA? 
-          // PULA APENAS SE NÃO FOR PRÓPRIA VAGA
-          if (chatUserIds.contains(vacancy.localId) && vacancy.localId != _currentUserId) {
-            print('  🚫 Excluindo vaga ${vacancy.id} - chat existente com ${vacancy.localId}');
-            continue;
-          }
+          // REMOVIDO: Filtro de chat - vagas com chat existente NAO sao mais bloqueadas
           
-          // ✅ FILTRO 4: Estado
+          // FILTRO 3: Estado
           if (filterState != null && filterState.isNotEmpty) {
             if (vacancy.state.toUpperCase() != filterState.toUpperCase()) {
               continue;
             }
           }
           
-          // ✅ FILTRO 5: Cidade
+          // FILTRO 4: Cidade
           if (filterCity != null && filterCity.isNotEmpty) {
             if (vacancy.city.toLowerCase() != filterCity.toLowerCase()) {
               continue;
             }
           }
           
-          // ✅ FILTRO 6: Profissão preferida (nas vagas)
+          // FILTRO 5: Profissao preferida (nas vagas)
           if (preferredProfession != null && preferredProfession.isNotEmpty) {
             if (vacancy.profession.toLowerCase() != preferredProfession.toLowerCase()) {
-              print('  🚫 Excluindo vaga ${vacancy.id} - profissão: ${vacancy.profession} != $preferredProfession');
+              print('  Excluindo vaga ${vacancy.id} - profissao: ${vacancy.profession} != $preferredProfession');
               continue;
             }
           }
 
-          // ✅ PASSOU EM TODOS OS FILTROS!
+          // PASSOU EM TODOS OS FILTROS!
           vacancies.add(vacancy);
           newLastCreatedAt = vacancy.createdAt;
           newLastKey = key;
@@ -130,19 +119,19 @@ class FirebaseFeedService {
           if (vacancies.length >= limit) break;
           
         } catch (e) {
-          print('⚠️  Erro ao parsear vaga: $e');
+          print('Erro ao parsear vaga: $e');
         }
       }
 
-      // ✅ ORDENA: mais recentes primeiro
+      // ORDENA: mais recentes primeiro
       vacancies.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       // Tem mais se a query retornou items suficientes
       final hasMore = snapshot.children.length >= fetchLimit && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('✅ ${vacancies.length} vagas retornadas (de ${snapshot.children.length} lidas)');
-      print('📊 Taxa de aprovação: ${(vacancies.length / snapshot.children.length * 100).toStringAsFixed(1)}%');
+      print('${vacancies.length} vagas retornadas (de ${snapshot.children.length} lidas)');
+      print('Taxa de aprovacao: ${(vacancies.length / snapshot.children.length * 100).toStringAsFixed(1)}%');
       print('========================================\n');
 
       return PaginatedFeedResult(
@@ -153,14 +142,14 @@ class FirebaseFeedService {
       );
 
     } catch (e, stack) {
-      print('❌ Erro ao buscar vagas: $e');
+      print('Erro ao buscar vagas: $e');
       print('Stack: $stack');
       return PaginatedFeedResult(items: [], hasMore: false);
     }
   }
 
   // ===============================
-  // 🔥 BUSCAR PROFISSIONAIS - OTIMIZADO
+  // BUSCAR PROFISSIONAIS - OTIMIZADO
   // ===============================
   Future<PaginatedFeedResult<ProfessionalModel>> fetchProfessionalsForFeed({
     required String? filterState,
@@ -173,12 +162,11 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      print('\n🔥 ========================================');
+      print('\n========================================');
       print('   BUSCANDO PROFISSIONAIS (Otimizado v2)');
       print('========================================');
-      print('📍 Filtros: ${filterState ?? 'Todos'} / ${filterCity ?? 'Todas'}');
-      print('💼 Profissão: ${preferredProfession ?? 'Todas'}');
-      print('🚫 Excluir chats: ${chatUserIds.length} usuários');
+      print('Filtros: ${filterState ?? 'Todos'} / ${filterCity ?? 'Todas'}');
+      print('Profissao: ${preferredProfession ?? 'Todas'}');
       
       final startTime = DateTime.now();
       int readsEstimated = 0;
@@ -195,7 +183,7 @@ class FirebaseFeedService {
         hasStateFilter: filterState != null,
         hasCityFilter: filterCity != null,
         hasProfessionFilter: preferredProfession != null,
-        chatExclusionsCount: chatUserIds.length,
+        chatExclusionsCount: 0,
       );
       final fetchLimit = limit * multiplier;
       
@@ -205,7 +193,7 @@ class FirebaseFeedService {
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('ℹ️  Nenhum profissional encontrado');
+        print('Nenhum profissional encontrado');
         _printReadStats(startTime, readsEstimated);
         return PaginatedFeedResult(items: [], hasMore: false);
       }
@@ -221,53 +209,48 @@ class FirebaseFeedService {
           
           final prof = _parseProfessional(key, data);
           
-          // ✅ FILTRO 1: Status ativo (exclui 'paused' e 'expired')
+          // FILTRO 1: Status ativo (exclui 'paused' e 'expired')
           final status = prof.status.toLowerCase();
           if (status != 'active' && status != 'ativo') {
-            print('  🚫 Excluindo profissional ${prof.id} - status: $status');
+            print('  Excluindo profissional ${prof.id} - status: $status');
             continue;
           }
           
-          // ✅ NOVO: Não mostra perfis expirados
+          // Nao mostra perfis expirados
           if (status == 'expired') {
-            print('  🚫 Excluindo profissional ${prof.id} - expirado');
+            print('  Excluindo profissional ${prof.id} - expirado');
             continue;
           }
           
-          // ✅ FILTRO 2: Já solicitado? Pula
+          // FILTRO 2: Ja solicitado? Pula
           if (requestedProfessionalIds.contains(prof.id)) {
             continue;
           }
           
-          // ✅ FILTRO 3 (AJUSTADO): TEM CHAT COM ESTE PROFISSIONAL?
-          // PULA APENAS SE NÃO FOR O PRÓPRIO PERFIL
-          if (chatUserIds.contains(prof.localId) && prof.localId != _currentUserId) {
-            print('  🚫 Excluindo profissional ${prof.id} - chat com ${prof.localId}');
-            continue;
-          }
+          // REMOVIDO: Filtro de chat - profissionais com chat existente NAO sao mais bloqueados
           
-          // ✅ FILTRO 4: Estado
+          // FILTRO 3: Estado
           if (filterState != null && filterState.isNotEmpty) {
             if (prof.state.toUpperCase() != filterState.toUpperCase()) {
               continue;
             }
           }
           
-          // ✅ FILTRO 5: Cidade
+          // FILTRO 4: Cidade
           if (filterCity != null && filterCity.isNotEmpty) {
             if (prof.city.toLowerCase() != filterCity.toLowerCase()) {
               continue;
             }
           }
           
-          // ✅ FILTRO 6: Profissão preferida
+          // FILTRO 5: Profissao preferida
           if (preferredProfession != null && preferredProfession.isNotEmpty) {
             if (prof.profession.toLowerCase() != preferredProfession.toLowerCase()) {
               continue;
             }
           }
 
-          // ✅ PASSOU EM TODOS OS FILTROS!
+          // PASSOU EM TODOS OS FILTROS!
           professionals.add(prof);
           newLastUpdatedAt = prof.updatedAt;
           newLastKey = key;
@@ -275,7 +258,7 @@ class FirebaseFeedService {
           if (professionals.length >= limit) break;
           
         } catch (e) {
-          print('⚠️  Erro ao parsear profissional: $e');
+          print('Erro ao parsear profissional: $e');
         }
       }
 
@@ -284,8 +267,8 @@ class FirebaseFeedService {
       final hasMore = snapshot.children.length >= fetchLimit && professionals.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('✅ ${professionals.length} profissionais retornados (de ${snapshot.children.length} lidos)');
-      print('📊 Taxa de aprovação: ${(professionals.length / snapshot.children.length * 100).toStringAsFixed(1)}%');
+      print('${professionals.length} profissionais retornados (de ${snapshot.children.length} lidos)');
+      print('Taxa de aprovacao: ${(professionals.length / snapshot.children.length * 100).toStringAsFixed(1)}%');
       print('========================================\n');
 
       return PaginatedFeedResult(
@@ -296,27 +279,22 @@ class FirebaseFeedService {
       );
 
     } catch (e, stack) {
-      print('❌ Erro ao buscar profissionais: $e');
+      print('Erro ao buscar profissionais: $e');
       print('Stack: $stack');
       return PaginatedFeedResult(items: [], hasMore: false);
     }
   }
 
   // ===============================
-  // 🔥 BUSCAR VAGAS CANDIDATADAS
+  // BUSCAR VAGAS CANDIDATADAS
   // ===============================
-  /// ✅ OTIMIZADO: Busca candidaturas do usuário a partir do path user_requests.
-  /// Se user_requests não existir, faz fallback para a query anterior mas com cache.
-  /// Antes: baixava TODAS as vagas abertas (~full table scan)
-  /// Agora: tenta path dedicado user_requests/{userId}/vacancies primeiro
   Future<Set<String>> fetchRequestedVacancyIds() async {
     if (_currentUserId == null) return {};
 
     try {
-      print('📋 Buscando vagas candidatadas...');
+      print('Buscando vagas candidatadas...');
       final startTime = DateTime.now();
 
-      // ✅ Tenta path otimizado primeiro
       final userRequestsSnapshot = await _database
           .child('user_requests/$_currentUserId/vacancies')
           .get();
@@ -334,7 +312,7 @@ class FirebaseFeedService {
         }
         
         final duration = DateTime.now().difference(startTime);
-        print('✅ ${requestedIds.length} candidaturas (path otimizado) em ${duration.inMilliseconds}ms');
+        print('${requestedIds.length} candidaturas (path otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
@@ -360,28 +338,23 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('✅ ${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
+      print('${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
       
       return requestedIds;
       
     } catch (e) {
-      print('❌ Erro ao buscar candidaturas: $e');
+      print('Erro ao buscar candidaturas: $e');
       return {};
     }
   }
 
-  /// ✅ OTIMIZADO: Busca requests de profissionais a partir do path user_requests.
-  /// Se user_requests não existir, faz fallback para a query anterior.
-  /// Antes: baixava TODOS os profissionais ativos (~full table scan)
-  /// Agora: tenta path dedicado user_requests/{userId}/professionals primeiro
   Future<Set<String>> fetchRequestedProfessionalIds() async {
     if (_currentUserId == null) return {};
 
     try {
-      print('📋 Buscando requests de profissionais...');
+      print('Buscando requests de profissionais...');
       final startTime = DateTime.now();
 
-      // ✅ Tenta path otimizado primeiro
       final userRequestsSnapshot = await _database
           .child('user_requests/$_currentUserId/professionals')
           .get();
@@ -399,7 +372,7 @@ class FirebaseFeedService {
         }
         
         final duration = DateTime.now().difference(startTime);
-        print('✅ ${requestedIds.length} requests profissionais (path otimizado) em ${duration.inMilliseconds}ms');
+        print('${requestedIds.length} requests profissionais (path otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
@@ -428,31 +401,31 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('✅ ${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
+      print('${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
       
       return requestedIds;
       
     } catch (e) {
-      print('❌ Erro ao buscar requests de profissionais: $e');
+      print('Erro ao buscar requests de profissionais: $e');
       return {};
     }
   }
 
   // ===============================
-  // 💬 BUSCAR CHATS - ULTRA OTIMIZADO
+  // BUSCAR CHATS
   // ===============================
-  /// ✅ Usa duas queries com índices para buscar apenas chats do usuário
-  /// ✅ Retorna Set de local_ids das pessoas com quem o usuário já conversou
+  /// Busca IDs de pessoas com quem o usuario ja conversou
+  /// Mantido para uso em outras partes do app (ex: exibir indicador de chat)
   Future<Set<String>> fetchChatUserIds() async {
     if (_currentUserId == null) return {};
 
     try {
-      print('💬 Buscando chats...');
+      print('Buscando chats...');
       final startTime = DateTime.now();
 
       final chatUserIds = <String>{};
 
-      // ✅ QUERY 1: Chats onde sou contractor
+      // QUERY 1: Chats onde sou contractor
       final contractorQuery = _database
           .child('Chats')
           .orderByChild('contractor')
@@ -469,7 +442,7 @@ class FirebaseFeedService {
         }
       }
 
-      // ✅ QUERY 2: Chats onde sou employee
+      // QUERY 2: Chats onde sou employee
       final employeeQuery = _database
           .child('Chats')
           .orderByChild('employee')
@@ -487,22 +460,21 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('✅ ${chatUserIds.length} chats encontrados em ${duration.inMilliseconds}ms');
-      print('   🔍 IDs: ${chatUserIds.take(5).join(", ")}${chatUserIds.length > 5 ? "..." : ""}');
+      print('${chatUserIds.length} chats encontrados em ${duration.inMilliseconds}ms');
+      print('   IDs: ${chatUserIds.take(5).join(", ")}${chatUserIds.length > 5 ? "..." : ""}');
       
       return chatUserIds;
       
     } catch (e) {
-      print('❌ Erro ao buscar chats: $e');
+      print('Erro ao buscar chats: $e');
       return {};
     }
   }
 
   // ===============================
-  // 🔧 HELPERS PRIVADOS
+  // HELPERS PRIVADOS
   // ===============================
 
-  /// Calcula multiplicador para buscar itens extras baseado nos filtros ativos
   int _calculateMultiplier({
     bool hasStateFilter = false,
     bool hasCityFilter = false,
@@ -511,17 +483,11 @@ class FirebaseFeedService {
   }) {
     int multiplier = 1;
     
-    // Cada filtro adiciona complexidade
     if (hasStateFilter) multiplier += 1;
     if (hasCityFilter) multiplier += 1;
     if (hasProfessionFilter) multiplier += 1;
     
-    // Chats com muitas pessoas exigem mais margem
-    if (chatExclusionsCount > 0) {
-      multiplier += (chatExclusionsCount / 5).ceil(); // +1 a cada 5 chats
-    }
-    
-    // Limita entre 2 e 6 para não exagerar
+    // Limita entre 2 e 6 para nao exagerar
     return multiplier.clamp(2, 6);
   }
 
@@ -568,7 +534,7 @@ class FirebaseFeedService {
       telefone: data['telefone']?.toString() ?? '',
       type: data['type'] ?? '',
       updatedAt: data['updated_at'] ?? data['created_at'] ?? '',
-      expiresAt: data['expires_at']?.toString() ?? '', // ✅ NOVO!
+      expiresAt: data['expires_at']?.toString() ?? '',
     );
   }
 
@@ -596,25 +562,24 @@ class FirebaseFeedService {
 
   void _printReadStats(DateTime startTime, int reads) {
     final duration = DateTime.now().difference(startTime);
-    final cost = reads * 0.00036; // Custo por read no Firebase
+    final cost = reads * 0.00036;
     
-    print('📊 Estatísticas:');
-    print('   ⏱️  Tempo: ${duration.inMilliseconds}ms');
-    print('   📖 Reads: $reads');
-    print('   💰 Custo: \$${cost.toStringAsFixed(6)}');
+    print('Estatisticas:');
+    print('   Tempo: ${duration.inMilliseconds}ms');
+    print('   Reads: $reads');
+    print('   Custo: \$${cost.toStringAsFixed(6)}');
     
-    // Alertas de otimização
     if (reads > 50) {
-      print('   ⚠️  ALERTA: Muitos reads! Considere adicionar mais filtros server-side');
+      print('   ALERTA: Muitos reads! Considere adicionar mais filtros server-side');
     }
     if (duration.inMilliseconds > 2000) {
-      print('   ⚠️  ALERTA: Query lenta! Verifique índices do Firebase');
+      print('   ALERTA: Query lenta! Verifique indices do Firebase');
     }
   }
 }
 
 // ===============================
-// 📦 RESULTADO PAGINADO
+// RESULTADO PAGINADO
 // ===============================
 class PaginatedFeedResult<T> {
   final List<T> items;
