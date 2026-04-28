@@ -5,6 +5,7 @@ import 'package:dartobra_new/screens/complaints/complaint_user_search_screen.dar
 import 'package:dartobra_new/screens/search/search_page.dart';
 import 'package:dartobra_new/screens/feed/feed_screen.dart';
 import 'package:dartobra_new/services/notifications/badge_init.dart';
+import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -123,35 +124,40 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ==================== NOTIFICAÇÕES ====================
   void _setupNotificationHandlers() {
-    final notificationService = NotificationService();
+  final service = NotificationService();
 
-    // ✅ Chat aceito → abre tela de chats (índice 2)
-    notificationService.onNotificationTap = (String chatId, String senderId) {
-      debugPrint('🔔 Notificação de chat clicada: $chatId');
-      
-      // Fecha todas as notificações deste chat
-      NotificationService().dismissChatNotifications(chatId);
-      
-      // Navega para a aba de Chats
-      if (mounted) {
-        setState(() => _selectedIndex = 2);
-      }
-    };
+  // ✅ Role correto baseado no activeMode do usuário
+  final userRole = _activeMode == 'worker' ? 'employee' : 'contractor';
 
-    // ✅ Solicitação de chat → abre tela de vagas (índice 3)
-    notificationService.onRequestNotificationTap = (
-      String? requestType,
-      String? profileId,
-      String? vacancyId,
-    ) {
-      debugPrint('🔔 Notificação de request clicada: $requestType');
-      
-      // Navega para a aba de Vagas
-      if (mounted) {
-        setState(() => _selectedIndex = 3);
-      }
-    };
-  }
+  service.updateCallbacks(
+    onChatTap: (chatId, senderId) async {
+      service.dismissChatNotifications(chatId);
+
+      if (!mounted) return;
+
+      // ✅ Navega direto para o chat específico
+      await NotificationNavigationService().navigateToChat(
+        context: context,
+        chatId: chatId,
+        userId: widget.local_id,
+        userRole: userRole,
+      );
+    },
+    onRequestTap: (requestType, profileId, vacancyId) async {
+      if (!mounted) return;
+
+      // ✅ Navega para a tela certa baseado no role
+      await NotificationNavigationService().navigateToRequest(
+        context: context,
+        userId: widget.local_id,
+        userRole: userRole,
+        requestType: requestType ?? '',
+        profileId: profileId,
+        vacancyId: vacancyId,
+      );
+    },
+  );
+}
   // ==================== 🚀 BADGE OTIMIZADO (1 query) ====================
 
   /// Escuta apenas /badges/{userId}.
@@ -342,6 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Escreve no Firebase → Cloud Function recalcula badges automaticamente
     // Não há mais necessidade de cancelar/recriar listeners de badge aqui
     await _updateActiveMode(newMode);
+    _setupNotificationHandlers();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1081,6 +1088,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (user != null) {
                     await NotificationService().removeToken(user.uid);
                   }
+
+                  NotificationService().updateCallbacks(
+                    onChatTap: null,
+                    onRequestTap: null,
+                  );
                   
                   await FirebaseAuth.instance.signOut();
                   Navigator.pushReplacementNamed(context, '/LoginScreen');

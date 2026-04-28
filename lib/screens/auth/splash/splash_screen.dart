@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:dartobra_new/core/repositories/user_repository.dart';
+import 'package:dartobra_new/main.dart' as MyApp;
 import 'package:dartobra_new/screens/auth/login/login_controller.dart';
+import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
+import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -126,35 +129,70 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
 
   // ── Inicialização ──────────────────────────────────────────────────────────
 
-  Future<void> _initApp() async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 1500));
+ Future<void> _initApp() async {
+  try {
+    await Future.delayed(const Duration(milliseconds: 1500));
 
-      final User? currentUser = _auth.currentUser;
+    final User? currentUser = _auth.currentUser;
 
-      if (currentUser == null) {
-        print('❌ Nenhum usuário logado');
-        _goToLogin();
-        return;
-      }
-
-      print('✅ Usuário logado: ${currentUser.uid}');
-
-      final user = await _repo.fetchUser(currentUser.uid);
-
-      if (user == null) {
-        print('⚠️ Dados do usuário não encontrados — fazendo logout');
-        await _auth.signOut();
-        _goToLogin();
-        return;
-      }
-
-      if (!mounted) return;
-      await _loginCtrl.navigateToNextScreen(context, user);
-    } catch (e) {
-      print('❌ Erro ao inicializar app: $e');
+    if (currentUser == null) {
       _goToLogin();
+      return;
     }
+
+    final user = await _repo.fetchUser(currentUser.uid);
+
+    if (user == null) {
+      await _auth.signOut();
+      _goToLogin();
+      return;
+    }
+
+    // ✅ ADICIONE AQUI — usuário confirmado, configura notificações
+    await _refreshNotificationCallbacks(currentUser.uid, user.activeMode);
+
+    if (!mounted) return;
+    await _loginCtrl.navigateToNextScreen(context, user);
+  } catch (e) {
+    print('❌ Erro: $e');
+    _goToLogin();
+  }
+}
+
+// ✅ ADICIONE ESTE MÉTODO no _SplashPageState
+  Future<void> _refreshNotificationCallbacks(String userId, String userRole) async {
+    final service = NotificationService();
+
+    await service.initialize(userId);
+
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        final context = MyApp.navigatorKey.currentContext;
+        if (context == null) return;
+
+        await NotificationNavigationService().navigateToChat(
+          context: context,
+          chatId: chatId,
+          userId: userId,
+          userRole: userRole,
+        );
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        final context = MyApp.navigatorKey.currentContext;
+        if (context == null) return;
+
+        await NotificationNavigationService().navigateToRequest(
+          context: context,
+          userId: userId,
+          userRole: userRole,
+          requestType: requestType ?? '',
+          profileId: profileId,
+          vacancyId: vacancyId,
+        );
+      },
+    );
+
+    print('✅ Callbacks configurados | user: $userId | role: $userRole');
   }
 
   void _goToLogin() {

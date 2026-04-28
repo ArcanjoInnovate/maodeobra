@@ -6,6 +6,7 @@ import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_f
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
+import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -93,7 +94,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   // ✅ CHAVE GLOBAL DE NAVEGAÇÃO — permite navegar de qualquer
   //    lugar do app sem precisar de um BuildContext de widget
   // ============================================================
-  static final GlobalKey<NavigatorState> navigatorKey =
+   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
 
   // ============================================================
@@ -188,18 +189,66 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   //    O NotificationService também tem seu próprio guard interno,
   //    mas esta camada extra garante que nem chegamos lá duas vezes.
   // ============================================================
-  Future<void> _initializeNotifications() async {
-    if (_notificationsInitialized) return;
-    _notificationsInitialized = true;
+  // Substitua _initializeNotifications() por esta versão completa
 
-    final userId = await _getCurrentUserId();
-    if (userId == null) {
-      print('⚠️ userId nulo — handlers de notificação não configurados ainda');
-      return;
-    }
+Future<void> _initializeNotifications() async {
+  if (_notificationsInitialized) return;
+  _notificationsInitialized = true;
 
-    final service = NotificationService();
+  final userId = await _getCurrentUserId();
+  if (userId == null) {
+    print('⚠️ userId nulo — callbacks não configurados ainda');
+    return;
+  }
+
+  final service = NotificationService();
     await service.initialize(userId);
+
+    // ✅ Busca o role do usuário uma vez
+    final userRole = await _getUserRole(userId);
+
+    // ✅ Configura callbacks usando navigatorKey (não precisa de BuildContext direto)
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+
+        await NotificationNavigationService().navigateToChat(
+          context: context,
+          chatId: chatId,
+          userId: userId,
+          userRole: userRole,
+        );
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        final context = navigatorKey.currentContext;
+        if (context == null) return;
+
+        await NotificationNavigationService().navigateToRequest(
+          context: context,
+          userId: userId,
+          userRole: userRole,
+          requestType: requestType ?? '',
+          profileId: profileId,
+          vacancyId: vacancyId,
+        );
+      },
+    );
+
+    print('✅ Callbacks de notificação configurados para userId: $userId | role: $userRole');
+  }
+
+  // ✅ Busca o role do usuário no Firebase
+  Future<String> _getUserRole(String userId) async {
+    try {
+      final snapshot = await FirebaseDatabase.instance
+          .ref('Users/$userId/userRole')
+          .get();
+      return snapshot.value?.toString() ?? 'employee';
+    } catch (e) {
+      print('❌ Erro ao buscar userRole: $e');
+      return 'employee';
+    }
   }
 
   @override
