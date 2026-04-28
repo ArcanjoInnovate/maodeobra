@@ -217,7 +217,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           '/LoginScreen': (context) => const LoginScreen(),
           '/onboarding_first': (context) => const OnboardingFirst(),
         },
-        home: const SplashPage(),]
+        home: const SplashPage(),
       ),
     );
   }
