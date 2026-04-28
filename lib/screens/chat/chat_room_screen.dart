@@ -76,10 +76,28 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
+    final wasActive = _isScreenActive;
     _isScreenActive = state == AppLifecycleState.resumed;
 
-    if (state == AppLifecycleState.resumed && mounted) {
-      _markAsRead();
+    if (!mounted) return;
+
+    final controller = context.read<ChatControllerFinal>();
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (!wasActive) {
+          controller.handleAppResumed();
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        if (wasActive) {
+          controller.handleAppPaused();
+        }
+        break;
+      default:
+        break;
     }
   }
 
@@ -294,15 +312,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           final status = controller.otherParticipantStatus;
           return Row(
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.grey[300],
-                backgroundImage: widget.otherUserAvatar != null
-                    ? NetworkImage(widget.otherUserAvatar!)
-                    : null,
-                child: widget.otherUserAvatar == null
-                    ? const Icon(Icons.person, color: Colors.white)
-                    : null,
+              OnlineStatusBadge(
+                isOnline: status?.isOnline ?? false,
+                size: 14,
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.grey[300],
+                  backgroundImage: widget.otherUserAvatar != null
+                      ? NetworkImage(widget.otherUserAvatar!)
+                      : null,
+                  child: widget.otherUserAvatar == null
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -315,6 +337,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     if (status != null)
                       AnimatedOnlineStatusIndicator(

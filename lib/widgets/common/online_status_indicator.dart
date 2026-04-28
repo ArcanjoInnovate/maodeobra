@@ -61,7 +61,7 @@ class OnlineStatusIndicator extends StatelessWidget {
   }
 }
 
-/// Versão animada com pulsação para status online
+/// Versão animada com pulsação sutil e transição suave entre estados
 class AnimatedOnlineStatusIndicator extends StatefulWidget {
   final ParticipantData participant;
   final bool showText;
@@ -82,87 +82,117 @@ class AnimatedOnlineStatusIndicator extends StatefulWidget {
 class _AnimatedOnlineStatusIndicatorState
     extends State<AnimatedOnlineStatusIndicator>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  static const _onlineColor = Color(0xFF25D366);
+  static const _offlineColor = Color(0xFFB0B0B0);
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: Duration(milliseconds: 1500),
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
 
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeInOut,
-      ),
+    _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
     if (widget.participant.isOnline) {
-      _controller.repeat(reverse: true);
+      _pulseController.repeat(reverse: true);
     }
   }
 
   @override
   void didUpdateWidget(AnimatedOnlineStatusIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     if (widget.participant.isOnline != oldWidget.participant.isOnline) {
       if (widget.participant.isOnline) {
-        _controller.repeat(reverse: true);
+        _pulseController.repeat(reverse: true);
       } else {
-        _controller.stop();
-        _controller.value = 0;
+        _pulseController.stop();
+        _pulseController.value = 0;
       }
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isOnline = widget.participant.isOnline;
+    final statusText = ChatDateUtils.formatLastSeen(
+      widget.participant.lastSeen,
+      isOnline,
+    );
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ScaleTransition(
-          scale: _scaleAnimation,
-          child: Container(
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: widget.participant.isOnline ? Colors.green : Colors.grey,
-              boxShadow: widget.participant.isOnline
-                  ? [
-                      BoxShadow(
-                        color: Colors.green.withOpacity(0.5),
-                        blurRadius: 6,
-                        spreadRadius: 2,
+        SizedBox(
+          width: widget.size + 6,
+          height: widget.size + 6,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (isOnline)
+                AnimatedBuilder(
+                  animation: _pulseAnimation,
+                  builder: (context, child) {
+                    return Container(
+                      width: widget.size + (4 * _pulseAnimation.value),
+                      height: widget.size + (4 * _pulseAnimation.value),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _onlineColor.withOpacity(
+                          0.25 * (1.0 - _pulseAnimation.value),
+                        ),
                       ),
-                    ]
-                  : null,
-            ),
+                    );
+                  },
+                ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOut,
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isOnline ? _onlineColor : _offlineColor,
+                  boxShadow: isOnline
+                      ? [
+                          BoxShadow(
+                            color: _onlineColor.withOpacity(0.35),
+                            blurRadius: 4,
+                            spreadRadius: 0.5,
+                          ),
+                        ]
+                      : null,
+                ),
+              ),
+            ],
           ),
         ),
         if (widget.showText) ...[
-          SizedBox(width: 6),
-          Text(
-            ChatDateUtils.formatLastSeen(
-              widget.participant.lastSeen,
-              widget.participant.isOnline,
-            ),
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 13,
-              fontWeight: widget.participant.isOnline
-                  ? FontWeight.w600
-                  : FontWeight.normal,
+          const SizedBox(width: 4),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Text(
+              statusText,
+              key: ValueKey(isOnline ? 'online' : statusText),
+              style: TextStyle(
+                color: isOnline ? _onlineColor : Colors.grey[500],
+                fontSize: 12,
+                fontWeight: isOnline ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.1,
+              ),
             ),
           ),
         ],
@@ -192,12 +222,15 @@ class OnlineStatusBadge extends StatelessWidget {
         Positioned(
           right: 0,
           bottom: 0,
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
             width: size,
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isOnline ? Colors.green : Colors.grey,
+              color: isOnline
+                  ? const Color(0xFF25D366)
+                  : const Color(0xFFB0B0B0),
               border: Border.all(color: Colors.white, width: 2),
             ),
           ),
