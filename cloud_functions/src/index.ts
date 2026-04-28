@@ -4,8 +4,14 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
-// Inicializa imediatamente
-admin.initializeApp();
+
+const serviceAccount = require('../serviceAccountKey.json');
+
+// Inicializa com credenciais e database URL
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://obra-7ebd9-default-rtdb.firebaseio.com"
+});
 
 interface BadgeData {
   unread_chats: number;
@@ -406,13 +412,30 @@ async function sendChatPushNotification(
   senderAvatarUrl?: string
 ) {
   try {
+    logger.info(`🔍 Buscando FCM token para: ${userId}`);
+    logger.info(`   Caminho: Users/${userId}/fcmToken`);
+    
     const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
+    
+    logger.info(`   Snapshot exists: ${tokenSnap.exists()}`);
+    
     if (!tokenSnap.exists()) {
-      logger.info(`Usuário ${userId} não tem FCM token`);
+      logger.warn(`⚠️ Usuário ${userId} não tem FCM token no snapshot`);
+      
+      // Debug adicional - verifica se o nó Users existe
+      const userSnap = await admin.database().ref(`Users/${userId}`).once("value");
+      logger.info(`   Nó Users/${userId} existe: ${userSnap.exists()}`);
+      
+      if (userSnap.exists()) {
+        const userData = userSnap.val();
+        logger.info(`   Campos disponíveis: ${Object.keys(userData).join(', ')}`);
+      }
+      
       return;
     }
 
     const token = tokenSnap.val() as string;
+    logger.info(`✅ Token encontrado: ${token.substring(0, 30)}...`);
 
     const displayText =
       messageText && messageText.length > 80
@@ -454,13 +477,14 @@ async function sendChatPushNotification(
     await admin.messaging().send(message);
     logger.info(`✅ Push chat enviada para ${userId} [tag: ${chatId}]`);
   } catch (error: any) {
+    logger.error(`❌ Erro completo ao enviar push:`, error);
+    
     if (
       error.code === "messaging/invalid-registration-token" ||
       error.code === "messaging/registration-token-not-registered"
     ) {
+      logger.warn(`🗑️ Removendo token inválido de ${userId}`);
       await admin.database().ref(`Users/${userId}/fcmToken`).remove();
-    } else {
-      logger.error("Erro ao enviar push chat", { error });
     }
   }
 }

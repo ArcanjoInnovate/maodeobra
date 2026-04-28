@@ -179,6 +179,26 @@ class _MyAppState extends State<MyApp> {
 
     final service = NotificationService();
     await service.initialize(userId);
+    // Logo depois de await service.initialize(userId);
+
+  // ✅ LISTENER PARA DEBUG - Ver se notificação chega
+  FirebaseMessaging.onMessage.listen((message) {
+    print('🔔 NOTIFICAÇÃO RECEBIDA (foreground)!');
+    print('   Data: ${message.data}');
+    print('   Notification: ${message.notification?.title}');
+    
+    // Mostra um snackbar visual também
+    final messenger = ScaffoldMessenger.maybeOf(navigatorKey.currentContext!);
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('🔔 Push recebida: ${message.data['senderName'] ?? 'Chat'}'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+    
+    service.handleForegroundMessage(message);
+  });
 
     FirebaseMessaging.onMessage.listen((message) {
       service.handleForegroundMessage(message);
