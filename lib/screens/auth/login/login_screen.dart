@@ -1,8 +1,16 @@
+import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/screens/auth/login/login_controller.dart';
 import 'package:dartobra_new/screens/auth/login/password_recovery_screen.dart';
+import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
+import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
 import 'package:dartobra_new/services/auth/auth_service.dart';
+import 'package:dartobra_new/services/notifications/notification_service.dart';
+import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
+import 'package:dartobra_new/main.dart'; // Para acessar navigatorKey
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:provider/provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -126,6 +134,169 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // ── Configuração de Notificações ───────────────────────────────────────────
+
+  Future<void> _setupNotificationCallbacks(String userId, String userRole) async {
+    final service = NotificationService();
+
+    service.updateCallbacks(
+      onChatTap: (String chatId, String senderId) async {
+        // ✅ NAVEGA PARA CHAT_ROOM_SCREEN
+        try {
+          final chatSnapshot = await FirebaseDatabase.instance
+              .ref('Chats/$chatId')
+              .get();
+
+          if (!chatSnapshot.exists) {
+            debugPrint('❌ Chat não encontrado: $chatId');
+            return;
+          }
+
+          final chatData = Map<String, dynamic>.from(chatSnapshot.value as Map);
+          final contractorId = chatData['contractor']?.toString() ?? '';
+          final employeeId = chatData['employee']?.toString() ?? '';
+
+          // Determina qual é o outro usuário
+          final isContractor = userRole == 'contractor';
+          final otherUserId = isContractor ? employeeId : contractorId;
+
+          // Busca dados do outro usuário
+          final userSnapshot = await FirebaseDatabase.instance
+              .ref('Users/$otherUserId')
+              .get();
+
+          if (!userSnapshot.exists) {
+            debugPrint('❌ Usuário não encontrado: $otherUserId');
+            return;
+          }
+
+          final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+          final otherUserName = userData['Name']?.toString() ?? 'Usuário';
+          final otherUserAvatar = userData['avatar']?.toString();
+
+          // Navega para ChatRoomScreen
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (context) => ChangeNotifierProvider(
+                create: (_) => ChatControllerFinal(),
+                child: ChatRoomScreen(
+                  chatId: chatId,
+                  contractorId: contractorId,
+                  employeeId: employeeId,
+                  userRole: userRole,
+                  userId: userId,
+                  otherUserName: otherUserName,
+                  otherUserAvatar: otherUserAvatar,
+                ),
+              ),
+            ),
+          );
+        } catch (e) {
+          debugPrint('❌ Erro ao abrir chat: $e');
+        }
+      },
+      onRequestTap: (String requestType, String? profileId, String? vacancyId) async {
+        // ✅ NAVEGA PARA A TELA CORRETA BASEADO NO ROLE
+        try {
+          if (userRole == 'contractor') {
+            // ✅ CONTRATANTE → Abre InfoVacancy na tab de candidatos
+            if (vacancyId == null || vacancyId.isEmpty) {
+              debugPrint('⚠️ vacancyId nulo ou vazio');
+              return;
+            }
+
+            final vacancySnapshot = await FirebaseDatabase.instance
+                .ref('vacancy/$vacancyId')
+                .get();
+
+            if (!vacancySnapshot.exists) {
+              debugPrint('❌ Vaga não encontrada: $vacancyId');
+              return;
+            }
+
+            final vacancyData = Map<String, dynamic>.from(vacancySnapshot.value as Map);
+
+            // Busca dados do usuário contratante
+            final userSnapshot = await FirebaseDatabase.instance
+                .ref('Users/$userId')
+                .get();
+
+            if (!userSnapshot.exists) {
+              debugPrint('❌ Dados do usuário não encontrados');
+              return;
+            }
+
+            final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+
+            // Navega para InfoVacancy com tab de candidatos (index 1)
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (context) => InfoVacancy(
+                  userPhone: userData['telefone']?.toString() ?? '',
+                  userEmail: userData['email']?.toString() ?? '',
+                  legalType: userData['legalType']?.toString() ?? 'PF',
+                  companyName: vacancyData['company']?.toString() ?? '',
+                  description: vacancyData['description']?.toString() ?? '',
+                  state: vacancyData['state']?.toString() ?? '',
+                  city: vacancyData['city']?.toString() ?? '',
+                  profession: vacancyData['profession']?.toString() ?? '',
+                  status: vacancyData['status']?.toString() ?? '',
+                  title: vacancyData['title']?.toString() ?? '',
+                  salary: vacancyData['salary']?.toString() ?? '',
+                  salaryType: vacancyData['salary_type']?.toString() ?? '',
+                  media: vacancyData['midia'] as Map<dynamic, dynamic>?,
+                  requests: vacancyData['requests'] as List<dynamic>?,
+                  vacancyId: vacancyId,
+                  localId: userId,
+                  initialTabIndex: 1, // ✅ Abre na tab de candidatos
+                ),
+              ),
+            );
+          } else {
+            // ✅ FUNCIONÁRIO → Abre WorkerProfileActivation na tab de solicitações
+            final userSnapshot = await FirebaseDatabase.instance
+                .ref('Users/$userId')
+                .get();
+
+            if (!userSnapshot.exists) {
+              debugPrint('❌ Dados do usuário não encontrados');
+              return;
+            }
+
+            final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+            final dataWorker = userData['data_worker'] as Map<dynamic, dynamic>? ?? {};
+
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (context) => WorkerProfileActivation(
+                  userName: userData['Name']?.toString() ?? '',
+                  userAvatar: userData['avatar']?.toString() ?? '',
+                  userCity: userData['city']?.toString() ?? '',
+                  userState: userData['state']?.toString() ?? '',
+                  legalType: userData['legalType']?.toString() ?? 'PF',
+                  dataWorker: Map<String, dynamic>.from(dataWorker),
+                  isActive: userData['isActive'] == true,
+                  localId: userId,
+                  onActivated: () {},
+                  finished_basic: dataWorker['finished_basic'] == true,
+                  finished_contact: dataWorker['finished_contact'] == true,
+                  finished_professional: dataWorker['finished_professional'] == true,
+                  userTelefone: userData['telefone']?.toString() ?? '',
+                  userEmail: userData['email']?.toString() ?? '',
+                  onProfileIncomplete: () {},
+                ),
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('❌ Erro ao abrir solicitação: $e');
+        }
+      },
+    );
+
+    debugPrint('✅ Callbacks de notificação configurados para $userRole');
+  }
+
   // ── Login ──────────────────────────────────────────────────────────────────
 
   Future<void> _handleLogin() async {
@@ -143,6 +314,23 @@ class _LoginScreenState extends State<LoginScreen>
       if (user == null) {
         setState(() => _isLoading = false);
         return;
+      }
+
+      // ✅ CONFIGURA CALLBACKS DE NOTIFICAÇÃO ANTES DE NAVEGAR
+      try {
+        final userSnapshot = await FirebaseDatabase.instance
+            .ref('Users/${user.uid}')
+            .get();
+
+        if (userSnapshot.exists) {
+          final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+          final userRole = userData['role']?.toString() ?? 'employee';
+
+          // Configura os callbacks de notificação
+          await _setupNotificationCallbacks(user.uid, userRole);
+        }
+      } catch (e) {
+        debugPrint('⚠️ Erro ao configurar callbacks de notificação: $e');
       }
 
       // Busca UserModel e navega para a tela correta (ban / suspensão / advertência / home)

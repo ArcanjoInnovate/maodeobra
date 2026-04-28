@@ -428,6 +428,7 @@ class NotificationService {
 
       if (onRequestNotificationTap != null) {
         debugPrint('✅ Abrindo tela de solicitações');
+        // ✅ PASSA OS IDS PARA O CALLBACK
         onRequestNotificationTap!(requestType, profileId, vacancyId);
       } else {
         debugPrint('⚠️ Callback de requests não configurado');

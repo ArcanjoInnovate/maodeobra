@@ -30,6 +30,7 @@ class InfoVacancy extends StatefulWidget {
   final List<dynamic>? requests;
   final String localId;
   final String vacancyId;
+  final int initialTabIndex;
 
   const InfoVacancy({
     super.key,
@@ -49,6 +50,7 @@ class InfoVacancy extends StatefulWidget {
     required this.vacancyId,
     required this.userEmail,
     required this.localId,
+    this.initialTabIndex = 0,
   });
 
   @override
@@ -89,7 +91,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTabIndex,);
 
     _currentStatus = widget.status;
     _currentTitle = widget.title;
@@ -100,6 +102,7 @@ class _InfoVacancyState extends State<InfoVacancy>
     _currentSalary = widget.salary;
     _currentSalaryType = widget.salaryType;
     _currentMedia = widget.media;
+    
 
     _loadMedia();
     _loadCandidates();

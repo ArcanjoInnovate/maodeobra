@@ -662,9 +662,10 @@ export const onChatMessageCreated = onValueCreated(
         employee: string;
         contractor: string;
         unreadCount?: { employee: number; contractor: number };
+        metadata?: { last_message?: string }; // ← ADICIONADO
       };
 
-      const { employee, contractor } = chatData;
+      const { employee, contractor, metadata } = chatData;
       const senderRole = messageData.sender as "employee" | "contractor";
       const sender = senderRole === "employee" ? employee : contractor;
       const receiver = senderRole === "employee" ? contractor : employee;
@@ -672,6 +673,25 @@ export const onChatMessageCreated = onValueCreated(
 
       logger.info(`👤 Sender: ${sender} (${senderRole})`);
       logger.info(`👤 Receiver: ${receiver} (${receiverRole})`);
+
+      // ✅ VERIFICA SE É A PRIMEIRA MENSAGEM DO CHAT
+      const isFirstMessage = !metadata?.last_message || metadata.last_message === '';
+      
+      if (isFirstMessage) {
+        logger.info(`🔕 Primeira mensagem do chat - pulando notificação`);
+        
+        // Apenas atualiza metadata, sem notificação
+        await admin
+          .database()
+          .ref(`Chats/${chatId}/unreadCount/${receiverRole}`)
+          .set(0);
+
+        await recalculateChatBadge(receiver);
+
+        logger.info(`\n✅ PRIMEIRA MENSAGEM PROCESSADA (SEM NOTIFICAÇÃO)`);
+        logger.info(`════════════════════════════════════════\n`);
+        return;
+      }
 
       const isOnline = await isUserOnlineInChat(chatId, receiverRole);
       logger.info(`📶 Online: ${isOnline}`);

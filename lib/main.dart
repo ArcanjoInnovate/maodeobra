@@ -26,6 +26,7 @@ import 'firebase_options.dart';
 //    Usa APENAS o handler do notification_service.dart.
 //    NÃO declare outro handler aqui — duplicaria as notificações.
 // ============================================================
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<String?> _getCurrentUserId() async {
   try {
@@ -60,7 +61,6 @@ void main() async {
   Intl.defaultLocale = 'pt_BR';
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
   // ✅ Usa APENAS o handler definido em notification_service.dart
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
@@ -210,8 +210,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
+      
         title: 'Mão de Obra',
         navigatorKey: navigatorKey,
+        
         theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         routes: {
           '/LoginScreen': (context) => const LoginScreen(),
