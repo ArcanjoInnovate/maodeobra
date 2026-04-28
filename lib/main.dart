@@ -64,10 +64,13 @@ void main() async {
   // ✅ Usa APENAS o handler definido em notification_service.dart
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
+  // ✅ CORRIGIDO: alert:false evita que o iOS exiba o banner automaticamente
+  //    em foreground via aps.alert, o que causava notificação duplicada.
+  //    O NotificationService exibe via flutter_local_notifications no onMessage.
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-    alert: true,
-    badge: true,
-    sound: true,
+    alert: false,
+    badge: false,
+    sound: false,
   );
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,
@@ -83,7 +86,9 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+// ✅ ADICIONADO: WidgetsBindingObserver para detectar quando o app volta
+//    ao foreground e zerar o badge do ícone automaticamente.
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   // ============================================================
   // ✅ CHAVE GLOBAL DE NAVEGAÇÃO — permite navegar de qualquer
   //    lugar do app sem precisar de um BuildContext de widget
@@ -104,13 +109,30 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+    // ✅ Registra o observer para receber eventos de ciclo de vida do app
+    WidgetsBinding.instance.addObserver(this);
     _initializeNotifications();
     _listenToMaintenance();
   }
 
   @override
   void dispose() {
+    // ✅ Remove o observer ao destruir o widget para evitar memory leak
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // ============================================================
+  // ✅ CICLO DE VIDA DO APP
+  //    Zera o badge do ícone toda vez que o usuário abre/retorna
+  //    ao app — independente de ter tocado nas notificações.
+  // ============================================================
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print('📱 App retornou ao foreground — zerando badge');
+      NotificationService().clearBadge();
+    }
   }
 
   // ============================================================
@@ -195,7 +217,7 @@ class _MyAppState extends State<MyApp> {
           '/LoginScreen': (context) => const LoginScreen(),
           '/onboarding_first': (context) => const OnboardingFirst(),
         },
-        home: const SplashPage(),
+        home: const SplashPage(),]
       ),
     );
   }

@@ -470,7 +470,17 @@ class NotificationService {
     }
   }
 
-  Future<void> clearBadge() async => setBadgeCount(0);
+  Future<void> clearBadge() async {
+  try {
+    final supported = await FlutterAppBadger.isAppBadgeSupported();
+    if (supported) {
+      await FlutterAppBadger.removeBadge();
+      debugPrint('🔢 Badge removido');
+    }
+  } catch (e) {
+    debugPrint('⚠️ Erro ao remover badge: $e');
+  }
+}
 
   // ============================================================
   // FUNÇÕES PÚBLICAS PARA USO EXTERNO

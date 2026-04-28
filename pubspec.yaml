@@ -2,7 +2,7 @@ name: dartobra_new
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+85
+version: 1.0.0+86
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -13,6 +13,7 @@ dependencies:
 
   # UI
   cupertino_icons: ^1.0.8
+  flutter_app_badger: ^1.5.0
 
   # =========================
   # FIREBASE (VERSÕES ESTÁVEIS iOS)

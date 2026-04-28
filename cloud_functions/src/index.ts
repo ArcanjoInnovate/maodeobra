@@ -401,7 +401,20 @@ async function isUserOnlineInChat(
   }
 }
 
-// Notificação específica de mensagem de chat
+// ============================================================
+// PUSH DE CHAT — DATA-ONLY
+//
+// ✅ SEM bloco "notification" no payload.
+//    Motivo: se "notification" estiver presente, o SO (Android/iOS)
+//    exibe a notificação automaticamente. O Flutter também exibiria
+//    via flutter_local_notifications → resultado = 2 notificações.
+//
+//    Sem "notification", apenas o handler Dart exibe a notificação,
+//    garantindo controle total (agrupamento por chatId, avatar, etc).
+//
+//    No iOS em background, o bloco apns.payload.aps.alert garante
+//    a exibição mesmo sem o campo "notification" do FCM.
+// ============================================================
 async function sendChatPushNotification(
   userId: string,
   senderName: string,
@@ -428,27 +441,23 @@ async function sendChatPushNotification(
 
     const message: admin.messaging.Message = {
       token,
-      notification: {
-        title: senderName,
-        body: displayText,
-      },
+      // ✅ SEM bloco "notification" aqui — evita a notificação automática do SO.
+      //    O Flutter exibe via flutter_local_notifications (foreground)
+      //    e via firebaseMessagingBackgroundHandler (background/terminated).
       data: {
         type: "chat",
         chatId,
         senderId,
         senderName,
         senderAvatar: senderAvatarUrl || "",
+        // Campos lidos pelo NotificationService para montar a notificação local
+        notificationTitle: senderName,
+        notificationBody: displayText,
+        notificationTag: chatId,
       },
       android: {
         priority: "high",
-        notification: {
-          channelId: "chat_messages",
-          priority: "high",
-          sound: "default",
-          icon: "ic_notification",
-          color: "#6B21A8",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
+        // ✅ Sem notification block no android — data-only no Android
       },
       apns: {
         headers: {
@@ -457,6 +466,8 @@ async function sendChatPushNotification(
         },
         payload: {
           aps: {
+            // ✅ alert garante exibição no iOS em background/terminated
+            //    sem precisar do campo "notification" do FCM
             alert: {
               title: senderName,
               body: displayText,
@@ -483,7 +494,13 @@ async function sendChatPushNotification(
   }
 }
 
-// Notificação genérica (solicitações, chat aceito, expiração, etc.)
+// ============================================================
+// PUSH GENÉRICA (solicitações, chat aceito, expiração, etc.)
+//
+// ✅ SEM bloco "notification" no payload pelo mesmo motivo acima.
+//    O Flutter exibe via flutter_local_notifications em foreground
+//    e o background handler cuida do restante.
+// ============================================================
 async function sendPushNotification(
   userId: string,
   title: string,
@@ -503,21 +520,17 @@ async function sendPushNotification(
 
     const message: admin.messaging.Message = {
       token,
-      notification: { title, body },
+      // ✅ SEM bloco "notification" — controle total pelo Flutter
       data: {
         ...data,
         senderAvatar: avatarUrl || "",
+        // Campos lidos pelo NotificationService para montar a notificação local
+        notificationTitle: title,
+        notificationBody: body,
       },
       android: {
         priority: "high",
-        notification: {
-          channelId: "default",
-          priority: "high",
-          sound: "default",
-          icon: "ic_notification",
-          color: "#6B21A8",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
+        // ✅ Sem notification block no android — data-only
       },
       apns: {
         headers: {
@@ -526,6 +539,7 @@ async function sendPushNotification(
         },
         payload: {
           aps: {
+            // ✅ alert garante exibição no iOS em background/terminated
             alert: { title, body },
             sound: "default",
             badge: 1,
@@ -830,7 +844,6 @@ export const onVacancyChatRequestCreated = onValueCreated(
 // ============================================================
 // FUNCTION - CHAT CREATED
 // ✅ Notifica APENAS o employee (quem enviou a solicitação).
-//    O contractor já sabe que aceitou — não faz sentido notificá-lo.
 // ============================================================
 
 export const onChatCreated = onValueCreated(
@@ -847,10 +860,8 @@ export const onChatCreated = onValueCreated(
     try {
       const { employee, contractor } = chatData;
 
-      // Busca info do contractor para montar a mensagem para o employee
       const contractorInfo = await getSenderInfo(contractor);
 
-      // ✅ Só notifica o employee — ele não sabia que foi aceito
       await sendPushNotification(
         employee,
         "Solicitação Aceita! 🎉",
@@ -971,29 +982,22 @@ export const checkExpiringProfessionals = onSchedule(
             const timeMessage =
               hoursLeft > 0 ? `${hoursLeft}h ${minutesLeft}min` : `${minutesLeft} minutos`;
 
+            // ✅ Expiração também data-only — sem bloco "notification"
             const message: admin.messaging.Message = {
               token: fcmToken,
-              notification: {
-                title: "⏰ Seu perfil está expirando!",
-                body: `Seu perfil profissional expira em ${timeMessage}. Renove agora para continuar visível!`,
-              },
+              // ✅ SEM bloco "notification" — Flutter controla a exibição
               data: {
                 type: "expiration_warning",
                 professionalId,
                 expiresAt,
                 hoursLeft: hoursLeft.toString(),
                 minutesLeft: minutesLeft.toString(),
+                notificationTitle: "⏰ Seu perfil está expirando!",
+                notificationBody: `Seu perfil profissional expira em ${timeMessage}. Renove agora para continuar visível!`,
               },
               android: {
                 priority: "high",
-                notification: {
-                  channelId: "expiration_alerts",
-                  priority: "high",
-                  sound: "default",
-                  color: "#EA580C",
-                  icon: "ic_notification",
-                  clickAction: "FLUTTER_NOTIFICATION_CLICK",
-                },
+                // ✅ Sem notification block — data-only no Android
               },
               apns: {
                 headers: {
