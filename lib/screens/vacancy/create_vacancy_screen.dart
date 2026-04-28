@@ -2,6 +2,7 @@ import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
 import 'package:dartobra_new/services/storage/moderation_image_service.dart';
 import 'package:dartobra_new/services/storage/storage_service.dart';
+import 'package:dartobra_new/widgets/image/local_full_screen_viewer.dart';
 import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -385,8 +386,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => FullscreenMediaViewer(
-          images: _selectedImages,
+        builder: (_) => LocalFullscreenViewer(
+          files: _selectedImages,
           initialIndex: initialIndex,
           isVideo: false,
         ),
