@@ -218,6 +218,25 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
+  // APP LIFECYCLE (OFFLINE ROBUSTO)
+  // ========================================
+
+  Future<void> handleAppPaused() async {
+    _markReadTimer?.cancel();
+    if (_chatId != null && _userRole != null) {
+      await _chatService.setUserOffline(_chatId!, _userRole!);
+    }
+  }
+
+  Future<void> handleAppResumed() async {
+    if (_chatId != null && _userRole != null) {
+      await _chatService.setUserOnline(_chatId!, _userRole!);
+      await _chatService.markAsRead(_chatId!, _userRole!);
+      _startContinuousMarkRead(_chatId!, _userRole!);
+    }
+  }
+
+  // ========================================
   // ESTADO INTERNO
   // ========================================
 
