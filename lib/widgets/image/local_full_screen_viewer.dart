@@ -44,6 +44,7 @@ class _LocalFullscreenViewerState extends State<LocalFullscreenViewer> {
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
     ));
   }
 
@@ -64,22 +65,38 @@ class _LocalFullscreenViewerState extends State<LocalFullscreenViewer> {
       // ✅ extendBodyBehindAppBar para imagem ocupar tela cheia
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        // ✅ Botão de voltar sempre visível, branco
-        backgroundColor: Colors.transparent,
+        // ✅ Fundo semi-transparente para destacar o botão
+        backgroundColor: Colors.black.withOpacity(0.3),
         elevation: 0,
+        // ✅ Botão de voltar sempre visível, branco
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
           onPressed: () => Navigator.of(context).pop(),
         ),
         // Contador de itens (ex: "2 / 3")
         title: widget.files.length > 1
-            ? Text(
-                '${_currentIndex + 1} / ${widget.files.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentIndex + 1} / ${widget.files.length}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               )
             : null,
         centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
       ),
       body: widget.isVideo
           ? _buildVideoPlaceholder()
@@ -97,7 +114,7 @@ class _LocalFullscreenViewerState extends State<LocalFullscreenViewer> {
       onPageChanged: (i) => setState(() => _currentIndex = i),
       itemBuilder: (context, index) {
         return InteractiveViewer(
-          minScale: 0.8,
+          minScale: 0.5,
           maxScale: 4.0,
           child: Center(
             child: Image.file(

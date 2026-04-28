@@ -72,61 +72,33 @@ class AuthService {
   // ============================================================
   // ✅ SALVAR FCM TOKEN (iOS + Android)
   // ============================================================
-  Future<void> _saveFCMToken(String userId) async {
-    try {
-      final messaging = FirebaseMessaging.instance;
+Future<void> _saveFCMToken(String userId) async {
+  try {
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
 
-      // Solicita permissão (necessário no iOS)
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        print('⚠️ Permissão de notificação negada pelo usuário');
-        return;
-      }
-
-      // Obtém o token FCM
-      final token = await messaging.getToken();
-
-      if (token == null) {
-        print('⚠️ FCM token nulo — verifique a configuração do projeto');
-        return;
-      }
-
-      // Salva no Realtime Database
-      await FirebaseDatabase.instance.ref('Users/$userId').update({
-        'fcmToken': token,
-        'fcmTokenUpdatedAt': ServerValue.timestamp,
-        'platform': _getPlatform(),
-      });
-
-      print('✅ FCM token salvo com sucesso: $token');
-
-      // Atualiza o token automaticamente quando ele for renovado
-      messaging.onTokenRefresh.listen((newToken) async {
-        await FirebaseDatabase.instance.ref('Users/$userId').update({
-          'fcmToken': newToken,
-          'fcmTokenUpdatedAt': ServerValue.timestamp,
-        });
-        print('🔄 FCM token renovado e salvo: $newToken');
-      });
-    } catch (e) {
-      // Não bloqueia o fluxo de login em caso de falha no FCM
-      print('❌ Erro ao salvar FCM token: $e');
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      onStatusChanged?.call('❌ Notificação negada');
+      return;
     }
-  }
 
-  String _getPlatform() {
-    try {
-      // Evita import de dart:io — usa assertion de plataforma do Flutter
-      return 'mobile';
-    } catch (_) {
-      return 'unknown';
+    onStatusChanged?.call('⏳ Buscando FCM token...');
+    final token = await FirebaseMessaging.instance.getToken();
+
+    if (token != null) {
+      onStatusChanged?.call('✅ FCM: ${token.substring(0, 15)}...');
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(token);
+    } else {
+      onStatusChanged?.call('❌ FCM token NULL');
     }
+  } catch (e) {
+    onStatusChanged?.call('❌ Erro: $e');
   }
+}
+
 
   // ============================================================
   // ✅ LOGOUT - REMOVE TOKEN

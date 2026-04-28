@@ -7,6 +7,8 @@ import 'package:dartobra_new/screens/admin/warning/warning_screen.dart';
 import 'package:dartobra_new/screens/home/home_screen.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 class LoginController {
@@ -16,6 +18,35 @@ class LoginController {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final UserRepository _repo = UserRepository();
 
+  void Function(String message)? onStatusChanged;
+
+  // ── Salvar codigo fcm ──────────────────────────────────────────────────────
+  Future<void> _saveFCMToken(String userId) async {
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        onStatusChanged?.call('❌ Notificação negada');
+        return;
+      }
+
+      onStatusChanged?.call('⏳ Buscando FCM token...');
+      final token = await FirebaseMessaging.instance.getToken();
+
+      if (token != null) {
+        onStatusChanged?.call('✅ FCM: ${token.substring(0, 15)}...');
+        await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(token);
+      } else {
+        onStatusChanged?.call('❌ FCM token NULL');
+      }
+    } catch (e) {
+      onStatusChanged?.call('❌ Erro: $e');
+    }
+  }
   // ── Auth ───────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> signIn({
@@ -23,17 +54,21 @@ class LoginController {
     required String password,
   }) async {
     try {
-      print('🔐 Iniciando login para: $email');
+      debugPrint('🔐 Iniciando login para: $email');
 
       final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      print('✅ Login bem-sucedido! UID: ${credential.user?.uid}');
+      final user = credential.user;
+      if (user != null) {
+        await _saveFCMToken(user.uid);
+        debugPrint('✅ Login OK + FCM token salvo: ${user.uid}');
+      }
       return {'success': true, 'user': credential.user};
     } on FirebaseAuthException catch (e) {
-      print('🔥 FirebaseAuthException - Código: ${e.code}');
+      debugPrint('🔥 FirebaseAuthException - Código: ${e.code}');
 
       if (e.code == 'invalid-credential' ||
           e.code == 'wrong-password' ||
@@ -100,7 +135,7 @@ class LoginController {
     final user = await _repo.fetchUser(localId);
 
     if (user == null) {
-      print('⚠️ Dados do usuário não encontrados para $localId');
+      debugPrint('⚠️ Dados do usuário não encontrados para $localId');
       return;
     }
 
@@ -115,7 +150,7 @@ class LoginController {
   ) async {
     // 1 – Banido
     if (user.isBanned) {
-      print('🚫 Usuário banido');
+      debugPrint('🚫 Usuário banido');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -131,7 +166,7 @@ class LoginController {
 
     // 2 – Suspenso
     if (user.isSuspended) {
-      print('⏸️ Usuário suspenso');
+      debugPrint('⏸️ Usuário suspenso');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -146,7 +181,7 @@ class LoginController {
 
     // 3 – Advertência
     if (user.hasWarning) {
-      print('⚠️ Usuário com advertência');
+      debugPrint('⚠️ Usuário com advertência');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -160,7 +195,7 @@ class LoginController {
     }
 
     // 4 – Home (fluxo normal)
-    print('🏠 Navegando para HomeScreen');
+    debugPrint('🏠 Navegando para HomeScreen');
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser != null) {
       await NotificationService().initialize(firebaseUser.uid);

@@ -1,6 +1,7 @@
+import 'package:dartobra_new/screens/auth/login/login_controller.dart';
 import 'package:dartobra_new/screens/auth/login/password_recovery_screen.dart';
+import 'package:dartobra_new/services/auth/auth_service.dart';
 import 'package:flutter/material.dart';
-import 'login_controller.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool _isLoading = false;
 
   final controller = LoginController();
+  final AuthService _authService = AuthService();
   final _formKey = GlobalKey<FormState>();
 
   late final AnimationController _animationController;
