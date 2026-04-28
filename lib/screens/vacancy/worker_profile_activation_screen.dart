@@ -60,7 +60,7 @@ class WorkerProfileActivation extends StatefulWidget {
     required this.finished_basic,
     required this.finished_contact,
     required this.finished_professional,
-    required this.onProfileIncomplete,
+    required this.onProfileIncomplete, required int initialTabIndex,
   });
 
   @override

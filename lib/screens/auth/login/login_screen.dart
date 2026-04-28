@@ -283,7 +283,7 @@ class _LoginScreenState extends State<LoginScreen>
                   finished_professional: dataWorker['finished_professional'] == true,
                   userTelefone: userData['telefone']?.toString() ?? '',
                   userEmail: userData['email']?.toString() ?? '',
-                  onProfileIncomplete: () {},
+                  onProfileIncomplete: () {}, initialTabIndex: 0,
                 ),
               ),
             );

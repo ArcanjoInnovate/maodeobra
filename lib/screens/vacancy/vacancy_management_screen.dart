@@ -616,7 +616,7 @@ class _VacancyManagementState extends State<VacancyManagement> {
         finished_contact: widget.finished_contact,
         finished_professional: widget.finished_professional,
         onProfileIncomplete: _showIncompleteProfileDialog,
-        onActivated: _onWorkerActivated,
+        onActivated: _onWorkerActivated, initialTabIndex: 0,
       );
     }
      Future<void> _refreshVacancies() async {
