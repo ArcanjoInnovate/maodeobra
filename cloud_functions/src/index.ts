@@ -4,10 +4,8 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
-
 const serviceAccount = require('../serviceAccountKey.json');
 
-// Inicializa com credenciais e database URL
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://obra-7ebd9-default-rtdb.firebaseio.com"
@@ -403,6 +401,7 @@ async function isUserOnlineInChat(
   }
 }
 
+// Notificação específica de mensagem de chat
 async function sendChatPushNotification(
   userId: string,
   senderName: string,
@@ -412,25 +411,10 @@ async function sendChatPushNotification(
   senderAvatarUrl?: string
 ) {
   try {
-    logger.info(`🔍 Buscando FCM token para: ${userId}`);
-    logger.info(`   Caminho: Users/${userId}/fcmToken`);
-    
     const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
-    
-    logger.info(`   Snapshot exists: ${tokenSnap.exists()}`);
-    
+
     if (!tokenSnap.exists()) {
-      logger.warn(`⚠️ Usuário ${userId} não tem FCM token no snapshot`);
-      
-      // Debug adicional - verifica se o nó Users existe
-      const userSnap = await admin.database().ref(`Users/${userId}`).once("value");
-      logger.info(`   Nó Users/${userId} existe: ${userSnap.exists()}`);
-      
-      if (userSnap.exists()) {
-        const userData = userSnap.val();
-        logger.info(`   Campos disponíveis: ${Object.keys(userData).join(', ')}`);
-      }
-      
+      logger.warn(`⚠️ Usuário ${userId} sem FCM token`);
       return;
     }
 
@@ -444,75 +428,17 @@ async function sendChatPushNotification(
 
     const message: admin.messaging.Message = {
       token,
+      notification: {
+        title: senderName,
+        body: displayText,
+      },
       data: {
         type: "chat",
         chatId,
         senderId,
         senderName,
         senderAvatar: senderAvatarUrl || "",
-        notificationTitle: senderName,
-        notificationBody: displayText,
-        notificationTag: chatId,
       },
-      android: {
-        priority: "high",
-        collapseKey: chatId,
-      },
-      apns: {
-        headers: {
-          "apns-thread-id": chatId,
-          "apns-collapse-id": chatId,
-        },
-        payload: {
-          aps: {
-            "content-available": 1,
-            sound: "default",
-            badge: 1,
-            "thread-id": chatId,
-          },
-        },
-      },
-    };
-
-    await admin.messaging().send(message);
-    logger.info(`✅ Push chat enviada para ${userId} [tag: ${chatId}]`);
-  } catch (error: any) {
-    logger.error(`❌ Erro completo ao enviar push:`, error);
-    
-    if (
-      error.code === "messaging/invalid-registration-token" ||
-      error.code === "messaging/registration-token-not-registered"
-    ) {
-      logger.warn(`🗑️ Removendo token inválido de ${userId}`);
-      await admin.database().ref(`Users/${userId}/fcmToken`).remove();
-    }
-  }
-}
-
-async function sendPushNotification(
-  userId: string,
-  title: string,
-  body: string,
-  data: Record<string, string>,
-  imageUrl?: string
-) {
-  try {
-    const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
-    if (!tokenSnap.exists()) {
-      logger.info(`Usuário ${userId} não tem FCM token`);
-      return;
-    }
-
-    const token = tokenSnap.val() as string;
-
-    const message: admin.messaging.Message = {
-      token,
-      notification: {
-        title,
-        body,
-        imageUrl: imageUrl || undefined,
-      },
-      data,
       android: {
         priority: "high",
         notification: {
@@ -525,28 +451,98 @@ async function sendPushNotification(
         },
       },
       apns: {
+        headers: {
+          "apns-priority": "10",
+          "apns-push-type": "alert",
+        },
         payload: {
           aps: {
+            alert: {
+              title: senderName,
+              body: displayText,
+            },
             sound: "default",
             badge: 1,
+            "mutable-content": 1,
+            "thread-id": chatId,
           },
-        },
-        fcmOptions: {
-          imageUrl: imageUrl || undefined,
         },
       },
     };
 
-    await admin.messaging().send(message);
-    logger.info(`Push notification enviada para ${userId}`);
+    const response = await admin.messaging().send(message);
+    logger.info(`✅ Push chat enviada para ${userId}! MessageID: ${response}`);
   } catch (error: any) {
+    logger.error(`❌ Erro ao enviar push de chat:`, error);
     if (
       error.code === "messaging/invalid-registration-token" ||
       error.code === "messaging/registration-token-not-registered"
     ) {
       await admin.database().ref(`Users/${userId}/fcmToken`).remove();
-    } else {
-      logger.error("Erro ao enviar push", { error });
+    }
+  }
+}
+
+// Notificação genérica (solicitações, chat aceito, expiração, etc.)
+async function sendPushNotification(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, string>,
+  avatarUrl?: string
+) {
+  try {
+    const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
+
+    if (!tokenSnap.exists()) {
+      logger.warn(`⚠️ Usuário ${userId} sem FCM token`);
+      return;
+    }
+
+    const token = tokenSnap.val() as string;
+
+    const message: admin.messaging.Message = {
+      token,
+      notification: { title, body },
+      data: {
+        ...data,
+        senderAvatar: avatarUrl || "",
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "default",
+          priority: "high",
+          sound: "default",
+          icon: "ic_notification",
+          color: "#6B21A8",
+          clickAction: "FLUTTER_NOTIFICATION_CLICK",
+        },
+      },
+      apns: {
+        headers: {
+          "apns-priority": "10",
+          "apns-push-type": "alert",
+        },
+        payload: {
+          aps: {
+            alert: { title, body },
+            sound: "default",
+            badge: 1,
+          },
+        },
+      },
+    };
+
+    const response = await admin.messaging().send(message);
+    logger.info(`✅ Push enviada para ${userId}! MessageID: ${response}`);
+  } catch (error: any) {
+    logger.error(`❌ Erro ao enviar push para ${userId}:`, error);
+    if (
+      error.code === "messaging/invalid-registration-token" ||
+      error.code === "messaging/registration-token-not-registered"
+    ) {
+      await admin.database().ref(`Users/${userId}/fcmToken`).remove();
     }
   }
 }
@@ -700,9 +696,6 @@ export const onChatMessageCreated = onValueCreated(
 
 // ============================================================
 // FUNCTION - CHAT REQUEST NOTIFICATION (PROFESSIONAL)
-// ✅ Única função para o path /professionals/.../request_views/...
-//    A antiga onWorkerRequestCreated foi REMOVIDA pois escutava
-//    o mesmo path e causava duplo incremento no badge.
 // ============================================================
 
 export const onProfessionalChatRequestCreated = onValueCreated(
@@ -769,9 +762,6 @@ export const onProfessionalChatRequestCreated = onValueCreated(
 
 // ============================================================
 // FUNCTION - CHAT REQUEST NOTIFICATION (VACANCY)
-// ✅ Única função para o path /vacancy/.../request_views/...
-//    A antiga onVacancyRequestCreated foi REMOVIDA pois escutava
-//    o mesmo path e causava duplo incremento no badge.
 // ============================================================
 
 export const onVacancyChatRequestCreated = onValueCreated(
@@ -839,6 +829,8 @@ export const onVacancyChatRequestCreated = onValueCreated(
 
 // ============================================================
 // FUNCTION - CHAT CREATED
+// ✅ Notifica APENAS o employee (quem enviou a solicitação).
+//    O contractor já sabe que aceitou — não faz sentido notificá-lo.
 // ============================================================
 
 export const onChatCreated = onValueCreated(
@@ -855,41 +847,25 @@ export const onChatCreated = onValueCreated(
     try {
       const { employee, contractor } = chatData;
 
-      const [employeeInfo, contractorInfo] = await Promise.all([
-        getSenderInfo(employee),
-        getSenderInfo(contractor),
-      ]);
+      // Busca info do contractor para montar a mensagem para o employee
+      const contractorInfo = await getSenderInfo(contractor);
 
-      await Promise.all([
-        sendPushNotification(
-          employee,
-          "Solicitação Aceita! 🎉",
-          `${contractorInfo.name} aceitou sua solicitação de chat`,
-          {
-            type: "chat_accepted",
-            chatId,
-            senderId: contractor,
-            senderName: contractorInfo.name,
-            senderAvatar: contractorInfo.avatar || "",
-          },
-          contractorInfo.avatar
-        ),
-        sendPushNotification(
-          contractor,
-          "Solicitação Aceita! 🎉",
-          `${employeeInfo.name} aceitou sua solicitação de chat`,
-          {
-            type: "chat_accepted",
-            chatId,
-            senderId: employee,
-            senderName: employeeInfo.name,
-            senderAvatar: employeeInfo.avatar || "",
-          },
-          employeeInfo.avatar
-        ),
-      ]);
+      // ✅ Só notifica o employee — ele não sabia que foi aceito
+      await sendPushNotification(
+        employee,
+        "Solicitação Aceita! 🎉",
+        `${contractorInfo.name} aceitou sua solicitação de chat`,
+        {
+          type: "chat_accepted",
+          chatId,
+          senderId: contractor,
+          senderName: contractorInfo.name,
+          senderAvatar: contractorInfo.avatar || "",
+        },
+        contractorInfo.avatar
+      );
 
-      logger.info(`Notificações enviadas: ${chatId}`);
+      logger.info(`✅ Notificação de chat aceito enviada para employee: ${employee}`);
     } catch (err) {
       logger.error("Erro em onChatCreated", { error: err });
     }
@@ -1020,8 +996,16 @@ export const checkExpiringProfessionals = onSchedule(
                 },
               },
               apns: {
+                headers: {
+                  "apns-priority": "10",
+                  "apns-push-type": "alert",
+                },
                 payload: {
                   aps: {
+                    alert: {
+                      title: "⏰ Seu perfil está expirando!",
+                      body: `Seu perfil profissional expira em ${timeMessage}. Renove agora para continuar visível!`,
+                    },
                     sound: "default",
                     badge: 1,
                   },

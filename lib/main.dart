@@ -172,85 +172,13 @@ class _MyAppState extends State<MyApp> {
 
   // 🚀 DEBUG FCM TOKEN + ALERT VISUAL
   Future<void> _initializeNotifications() async {
-  print('🚀 INÍCIO _initializeNotifications');
-  
-  final userId = await _getCurrentUserId();
-  print('👤 UserId obtido: $userId');
-  
-  if (userId == null) {
-    print('❌ UserId é NULL - abortando');
-    return;
+    final userId = await _getCurrentUserId();
+    if (userId == null) return;
+
+    final service = NotificationService();
+    await service.initialize(userId);
+
   }
-
-  print('🔔 Inicializando NotificationService...');
-  final service = NotificationService();
-  await service.initialize(userId);
-  print('✅ NotificationService inicializado');
-
-  print('🎧 Configurando listener onMessage...');
-  // ✅ APENAS UM LISTENER - remove os outros
-  FirebaseMessaging.onMessage.listen((message) {
-    print('🔔 NOTIFICAÇÃO RECEBIDA (foreground)!');
-    print('   Data: ${message.data}');
-    print('   Notification: ${message.notification?.title}');
-    
-    // Mostra snackbar visual
-    try {
-      final context = navigatorKey.currentContext;
-      if (context != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🔔 Push: ${message.data['senderName'] ?? 'Chat'}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      print('⚠️ Erro ao mostrar snackbar: $e');
-    }
-    
-    service.handleForegroundMessage(message);
-  });
-
-  print('🎧 Configurando listener onMessageOpenedApp...');
-  FirebaseMessaging.onMessageOpenedApp.listen((message) {
-    print('👆 App aberto via notificação');
-    service.handleNotificationTap(message.data);
-  });
-
-  print('🔍 Verificando initial message...');
-  final initial = await FirebaseMessaging.instance.getInitialMessage();
-  if (initial != null) {
-    print('🔔 App iniciado via notificação');
-    service.handleNotificationTap(initial.data);
-  }
-
-  print('📱 Buscando FCM token...');
-  try {
-    final token = await FirebaseMessaging.instance.getToken();
-    print('✅ Token obtido: ${token?.substring(0, 30) ?? "NULL"}');
-    
-    final settings = await FirebaseMessaging.instance.getNotificationSettings();
-    print('🔐 Permissões: ${settings.authorizationStatus}');
-    print('========================');
-
-    print('🎨 Agendando AlertDialog...');
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      print('✅ PostFrameCallback executando, mounted = $mounted');
-      if (mounted) {
-        _showDebugAlert(token, settings.authorizationStatus.toString(), userId);
-        print('✅ _showDebugAlert chamado');
-      } else {
-        print('❌ Widget não está mounted');
-      }
-    });
-  } catch (e) {
-    print('❌ Token error: $e');
-  }
-
-  print('✅ _initializeNotifications COMPLETO');
-}
 
   // 🎨 ALERT BONITO COM TOKEN
   void _showDebugAlert(String? token, String permissions, String userId) {

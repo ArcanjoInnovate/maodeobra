@@ -215,13 +215,13 @@ class NotificationService {
   // ============================================================
 
   void _setupMessageHandlers() {
-    // App em FOREGROUND
+    // ✅ ÚNICO lugar onde onMessage é registrado
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('📬 Mensagem recebida (foreground): ${message.data}');
       _showLocalNotification(message);
     });
 
-    // App em BACKGROUND — usuário clica na notificação
+    // ✅ onMessageOpenedApp fica SÓ aqui — main.dart não deve registrar também
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('🔔 Notificação clicada (background)');
       final chatId = message.data['chatId'] ?? message.data['notificationTag'];
@@ -231,7 +231,6 @@ class NotificationService {
       _handleNotificationClick(message.data);
     });
 
-    // App estava FECHADO — usuário clica na notificação
     _checkInitialMessage();
   }
 
