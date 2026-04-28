@@ -22,11 +22,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
-// ============================================================
-// ✅ BACKGROUND HANDLER GLOBAL
-//    Usa APENAS o handler do notification_service.dart.
-//    NÃO declare outro handler aqui — duplicaria as notificações.
-// ============================================================
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<String?> _getCurrentUserId() async {
@@ -62,20 +57,15 @@ void main() async {
   Intl.defaultLocale = 'pt_BR';
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // ✅ Usa APENAS o handler definido em notification_service.dart
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  // ✅ CORRIGIDO: alert:false evita que o iOS exiba o banner automaticamente
-  //    em foreground via aps.alert, o que causava notificação duplicada.
-  //    O NotificationService exibe via flutter_local_notifications no onMessage.
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
     alert: false,
     badge: false,
     sound: false,
   );
 
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,
-      overlays: []);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky, overlays: []);
   ExpirationService().debugTestDate();
 
   runApp(const MyApp());
@@ -87,30 +77,18 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-// ✅ ADICIONADO: WidgetsBindingObserver para detectar quando o app volta
-//    ao foreground e zerar o badge do ícone automaticamente.
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  // ============================================================
-  // ✅ CHAVE GLOBAL DE NAVEGAÇÃO — permite navegar de qualquer
-  //    lugar do app sem precisar de um BuildContext de widget
-  // ============================================================
-   static final GlobalKey<NavigatorState> navigatorKey =
-      GlobalKey<NavigatorState>();
-
-  // ============================================================
-  // ✅ LISTENER DE MANUTENÇÃO EM TEMPO REAL
-  // ============================================================
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  
   late final DatabaseReference _adminRef;
-
   bool _isInMaintenance = false;
-
-  // ✅ Guard para garantir que initialize() seja chamado apenas uma vez
   bool _notificationsInitialized = false;
+  String? _currentUserId;
+  String? _currentUserRole;
 
   @override
   void initState() {
     super.initState();
-    // ✅ Registra o observer para receber eventos de ciclo de vida do app
     WidgetsBinding.instance.addObserver(this);
     _initializeNotifications();
     _listenToMaintenance();
@@ -118,16 +96,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    // ✅ Remove o observer ao destruir o widget para evitar memory leak
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  // ============================================================
-  // ✅ CICLO DE VIDA DO APP
-  //    Zera o badge do ícone toda vez que o usuário abre/retorna
-  //    ao app — independente de ter tocado nas notificações.
-  // ============================================================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -136,27 +108,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  // ============================================================
-  // 🔑 LISTENER EM TEMPO REAL DE MANUTENÇÃO
-  // ============================================================
   void _listenToMaintenance() {
     _adminRef = FirebaseDatabase.instance.ref('Administrative');
 
     _adminRef.onValue.listen((event) {
       final data = event.snapshot.value as Map<dynamic, dynamic>?;
-
       final isUpdating = data?['isUpdating'] == true;
-      final testers = (data?['testers'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [];
+      final testers = (data?['testers'] as List?)?.map((e) => e.toString()).toList() ?? [];
       final userId = FirebaseAuth.instance.currentUser?.uid;
       final isTester = userId != null && testers.contains(userId);
-
       final shouldShowMaintenance = isUpdating && !isTester;
 
-      print(
-          '🔧 [Realtime] Maintenance: $isUpdating | Tester: $isTester | User: $userId');
+      print('🔧 Maintenance: $isUpdating | Tester: $isTester | User: $userId');
 
       if (shouldShowMaintenance == _isInMaintenance) return;
 
@@ -166,87 +129,96 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (navigator == null) return;
 
       if (shouldShowMaintenance) {
-        print('🚧 Manutenção ativada — redirecionando...');
+        print('🚧 Manutenção ativada');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
           (route) => false,
         );
       } else {
-        print('✅ Manutenção desativada — voltando ao fluxo normal...');
+        print('✅ Manutenção desativada');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const SplashPage()),
           (route) => false,
         );
       }
     }, onError: (error) {
-      print('❌ Erro no listener de manutenção: $error');
+      print('❌ Erro listener manutenção: $error');
     });
   }
 
-  // ============================================================
-  // 🔔 INICIALIZAÇÃO DAS NOTIFICAÇÕES
-  //    ✅ Guard _notificationsInitialized evita chamadas duplas.
-  //    O NotificationService também tem seu próprio guard interno,
-  //    mas esta camada extra garante que nem chegamos lá duas vezes.
-  // ============================================================
-  // Substitua _initializeNotifications() por esta versão completa
+  Future<void> _initializeNotifications() async {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
 
-Future<void> _initializeNotifications() async {
-  if (_notificationsInitialized) return;
-  _notificationsInitialized = true;
+    _currentUserId = await _getCurrentUserId();
+    if (_currentUserId == null) {
+      print('⚠️ userId nulo — callbacks pendentes');
+      return;
+    }
 
-  final userId = await _getCurrentUserId();
-  if (userId == null) {
-    print('⚠️ userId nulo — callbacks não configurados ainda');
-    return;
-  }
+    _currentUserRole = await _getUserRole(_currentUserId!);
 
-  final service = NotificationService();
-    await service.initialize(userId);
+    final service = NotificationService();
+    await service.initialize(_currentUserId!);
 
-    // ✅ Busca o role do usuário uma vez
-    final userRole = await _getUserRole(userId);
-
-    // ✅ Configura callbacks usando navigatorKey (não precisa de BuildContext direto)
     service.updateCallbacks(
       onChatTap: (chatId, senderId) async {
-        final context = navigatorKey.currentContext;
-        if (context == null) return;
+        print('🔔 onChatTap: $chatId');
+        await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
+      },
+    );
 
+    print('✅ Callbacks configurados: ${_currentUserId} | ${_currentUserRole}');
+  }
+
+  Future<void> _safeNavigateChat(String chatId, String userId, String userRole) async {
+    for (int i = 0; i < 5; i++) { // ✅ 5 tentativas
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        print('📱 Navegando para chat: $chatId');
         await NotificationNavigationService().navigateToChat(
           context: context,
           chatId: chatId,
           userId: userId,
           userRole: userRole,
         );
-      },
-      onRequestTap: (requestType, profileId, vacancyId) async {
-        final context = navigatorKey.currentContext;
-        if (context == null) return;
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    print('⚠️ FALHOU navegar chat - sem context após 5 tentativas');
+  }
 
+  Future<void> _safeNavigateRequest(String userId, String userRole, String requestType, String? profileId, String? vacancyId) async {
+    for (int i = 0; i < 5; i++) {
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        print('📱 Navegando para request: $requestType');
         await NotificationNavigationService().navigateToRequest(
           context: context,
           userId: userId,
           userRole: userRole,
-          requestType: requestType ?? '',
+          requestType: requestType,
           profileId: profileId,
           vacancyId: vacancyId,
         );
-      },
-    );
-
-    print('✅ Callbacks de notificação configurados para userId: $userId | role: $userRole');
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    print('⚠️ FALHOU navegar request - sem context após 5 tentativas');
   }
 
-  // ✅ Busca o role do usuário no Firebase
   Future<String> _getUserRole(String userId) async {
     try {
-      final snapshot = await FirebaseDatabase.instance
-          .ref('Users/$userId/userRole')
-          .get();
+      final snapshot = await FirebaseDatabase.instance.ref('Users/$userId/userRole').get();
       return snapshot.value?.toString() ?? 'employee';
     } catch (e) {
-      print('❌ Erro ao buscar userRole: $e');
+      print('❌ Erro userRole: $e');
       return 'employee';
     }
   }
@@ -254,21 +226,17 @@ Future<void> _initializeNotifications() async {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => FeedController(), lazy: true)],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-      
         title: 'Mão de Obra',
         navigatorKey: navigatorKey,
-        
         theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         routes: {
           '/LoginScreen': (context) => const LoginScreen(),
           '/onboarding_first': (context) => const OnboardingFirst(),
         },
-        home: const SplashPage(),
+        home: _isInMaintenance ? const MaintenanceScreen() : const SplashPage(),
       ),
     );
   }

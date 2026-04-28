@@ -775,12 +775,11 @@ export const onProfessionalChatRequestCreated = onValueCreated(
         "Nova Solicitação de Chat 💬",
         `${requesterName} quer conversar com você sobre seu perfil profissional`,
         {
-          type: "chat_request",
-          requestType: "professional",
-          professionalId,
-          requesterId,
-          requesterName,
-          requesterAvatar,
+          type: "request",                    // ✅ Padronizado
+          requestType: "professional",        // ✅ OK
+          profileId: professionalId,          // ✅ Navigation espera profileId
+          vacancyId: "",                      // ✅ Para professional
+          userRole: professionalData.role || "worker",  // ✅ Para mapear depois
         },
         requesterAvatar
       );
@@ -839,17 +838,17 @@ export const onVacancyChatRequestCreated = onValueCreated(
 
       await sendPushNotification(
         ownerId,
-        "Nova Candidatura! 🎯",
-        `${requesterName} se candidatou para ${vacancyTitle}`,
-        {
-          type: "chat_request",
-          requestType: "vacancy",
-          vacancyId,
-          requesterId,
-          requesterName,
-          requesterAvatar,
-        },
+        "Nova Solicitação de Chat 💬",
+        `${requesterName} quer conversar com você sobre seu perfil profissional`,
+       {
+        type: "request",
+        requestType: "vacancy",
+        profileId: "",
+        vacancyId: vacancyId,
+        userRole: vacancyData.role || "contractor",
+      },
         requesterAvatar
+
       );
 
       logger.info(`✅ Notificação de candidatura enviada!`);

@@ -405,36 +405,38 @@ class NotificationService {
   }
 
   void _handleNotificationClick(Map<String, dynamic> data) {
-    final type = data['type'];
-    debugPrint('📱 Tipo de notificação: $type | Data: $data');
+  final type = data['type'];
+  debugPrint('🚀 _handleNotificationClick: type=$type | data=$data');
 
-    if (type == 'chat') {
-      final chatId = data['chatId'];
-      final senderId = data['senderId'];
-
-      if (chatId != null && onNotificationTap != null) {
-        debugPrint('✅ Abrindo chat: $chatId');
-        onNotificationTap!(chatId, senderId ?? '');
-      } else {
-        debugPrint('⚠️ Callback de navegação não configurado');
-      }
-    } else if (type == 'request' || type == 'chat_request') {
-      final requestType = data['requestType'];
-      final profileId = data['profileId'];
-      final vacancyId = data['vacancyId'];
-
-      debugPrint(
-          '📩 Solicitação | tipo: $requestType | profile: $profileId | vacancy: $vacancyId');
-
-      if (onRequestNotificationTap != null) {
-        debugPrint('✅ Abrindo tela de solicitações');
-        // ✅ PASSA OS IDS PARA O CALLBACK
-        onRequestNotificationTap!(requestType, profileId, vacancyId);
-      } else {
-        debugPrint('⚠️ Callback de requests não configurado');
-      }
+  if (type == 'chat') {
+    final chatId = data['chatId'] ?? data['notificationTag'];
+    final senderId = data['senderId'] ?? '';
+    
+    debugPrint('✅ CHAT CALLBACK | chatId: $chatId | senderId: $senderId');
+    
+    if (chatId != null && onNotificationTap != null) {
+      onNotificationTap!(chatId, senderId);
+    } else {
+      debugPrint('❌ CHAT: callback nulo ou chatId vazio');
     }
+  } 
+  else if (type == 'request' || type == 'chat_request') {
+    final requestType = data['requestType'] ?? '';
+    final profileId = data['profileId'];
+    final vacancyId = data['vacancyId'];
+    
+    debugPrint('✅ REQUEST CALLBACK | type: $requestType | profile: $profileId | vacancy: $vacancyId');
+    
+    if (onRequestNotificationTap != null) {
+      onRequestNotificationTap!(requestType, profileId, vacancyId);
+    } else {
+      debugPrint('❌ REQUEST: callback nulo');
+    }
+  } 
+  else {
+    debugPrint('⚠️ Tipo desconhecido: $type');
   }
+}
 
   // ============================================================
   // HELPERS DE PAYLOAD
