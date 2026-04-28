@@ -23,13 +23,9 @@ import 'firebase_options.dart';
 
 // ============================================================
 // ✅ BACKGROUND HANDLER GLOBAL
+//    Usa APENAS o handler do notification_service.dart.
+//    NÃO declare outro handler aqui — duplicaria as notificações.
 // ============================================================
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  print("🔥 Background message: ${message.data}");
-  NotificationService().handleBackgroundMessage(message);
-}
 
 Future<String?> _getCurrentUserId() async {
   try {
@@ -64,6 +60,8 @@ void main() async {
   Intl.defaultLocale = 'pt_BR';
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // ✅ Usa APENAS o handler definido em notification_service.dart
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
@@ -95,32 +93,28 @@ class _MyAppState extends State<MyApp> {
 
   // ============================================================
   // ✅ LISTENER DE MANUTENÇÃO EM TEMPO REAL
-  //    Guarda a subscription para cancelar no dispose()
   // ============================================================
   late final DatabaseReference _adminRef;
-  late final Stream<DatabaseEvent> _adminStream;
 
   bool _isInMaintenance = false;
+
+  // ✅ Guard para garantir que initialize() seja chamado apenas uma vez
+  bool _notificationsInitialized = false;
 
   @override
   void initState() {
     super.initState();
     _initializeNotifications();
-    _listenToMaintenance(); // 🔑 inicia o listener global
+    _listenToMaintenance();
   }
 
   @override
   void dispose() {
-    // O StreamBuilder cuida do cancelamento, mas se você trocar para
-    // StreamSubscription manual, cancele aqui.
     super.dispose();
   }
 
   // ============================================================
   // 🔑 LISTENER EM TEMPO REAL DE MANUTENÇÃO
-  //    Roda independente da tela atual. Se o admin ligar o modo
-  //    manutenção, o usuário é redirecionado IMEDIATAMENTE, não
-  //    importa em qual rota ele estiver.
   // ============================================================
   void _listenToMaintenance() {
     _adminRef = FirebaseDatabase.instance.ref('Administrative');
@@ -141,7 +135,6 @@ class _MyAppState extends State<MyApp> {
       print(
           '🔧 [Realtime] Maintenance: $isUpdating | Tester: $isTester | User: $userId');
 
-      // Só age se o estado mudou para evitar navegação redundante
       if (shouldShowMaintenance == _isInMaintenance) return;
 
       setState(() => _isInMaintenance = shouldShowMaintenance);
@@ -150,15 +143,12 @@ class _MyAppState extends State<MyApp> {
       if (navigator == null) return;
 
       if (shouldShowMaintenance) {
-        // 🔴 Manutenção LIGADA → leva o usuário para a tela de manutenção
-        //    pushAndRemoveUntil garante que ele não consiga voltar
         print('🚧 Manutenção ativada — redirecionando...');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
-          (route) => false, // remove todas as rotas anteriores
+          (route) => false,
         );
       } else {
-        // 🟢 Manutenção DESLIGADA → volta para o Splash (que decide o fluxo)
         print('✅ Manutenção desativada — voltando ao fluxo normal...');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const SplashPage()),
@@ -170,78 +160,24 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  // 🚀 DEBUG FCM TOKEN + ALERT VISUAL
+  // ============================================================
+  // 🔔 INICIALIZAÇÃO DAS NOTIFICAÇÕES
+  //    ✅ Guard _notificationsInitialized evita chamadas duplas.
+  //    O NotificationService também tem seu próprio guard interno,
+  //    mas esta camada extra garante que nem chegamos lá duas vezes.
+  // ============================================================
   Future<void> _initializeNotifications() async {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
+
     final userId = await _getCurrentUserId();
-    if (userId == null) return;
+    if (userId == null) {
+      print('⚠️ userId nulo — handlers de notificação não configurados ainda');
+      return;
+    }
 
     final service = NotificationService();
     await service.initialize(userId);
-
-  }
-
-  // 🎨 ALERT BONITO COM TOKEN
-  void _showDebugAlert(String? token, String permissions, String userId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Row(
-          children: [
-            Icon(Icons.verified, color: Colors.green, size: 28),
-            SizedBox(width: 12),
-            Text('FCM iOS DEBUG', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: Container(
-          constraints: const BoxConstraints(maxHeight: 300),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('✅ TOKEN GERADO!',
-                    style: TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 12),
-                const Text('Token (copie):',
-                    style: TextStyle(fontWeight: FontWeight.w500)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[800],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    token ?? 'ERRO: TOKEN NULL',
-                    style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
-                        color: Colors.white),
-                    maxLines: 4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('Permissions: $permissions',
-                    style: const TextStyle(fontSize: 13, color: Colors.cyan)),
-                Text('UserID: $userId',
-                    style: const TextStyle(fontSize: 13, color: Colors.cyan)),
-                const SizedBox(height: 8),
-                const Text('Envie este token pro dev!',
-                    style: TextStyle(fontSize: 12, color: Colors.orange)),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('FECHAR'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -253,14 +189,12 @@ class _MyAppState extends State<MyApp> {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Mão de Obra',
-        // ✅ navigatorKey conecta o listener ao Navigator do app
         navigatorKey: navigatorKey,
         theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         routes: {
           '/LoginScreen': (context) => const LoginScreen(),
           '/onboarding_first': (context) => const OnboardingFirst(),
         },
-        // ✅ home inicial simples — o listener cuida dos redirecionamentos
         home: const SplashPage(),
       ),
     );

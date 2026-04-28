@@ -1,4 +1,4 @@
-// lib/services/notification_service.dart
+// lib/services/notifications/notification_service.dart
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 /// Handler GLOBAL para notificações em background.
 /// IMPORTANTE: Deve estar fora da classe, no top-level.
+/// IMPORTANTE: Registrado APENAS aqui — main.dart NÃO deve declarar outro.
 ///
 /// Como o backend envia mensagens DATA-ONLY (sem bloco "notification"),
 /// o Android não exibe nada automaticamente. Este handler recebe os dados
@@ -79,10 +80,17 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
+  // ============================================================
   // Singleton
+  // ============================================================
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
+
+  /// ✅ Guard: evita registrar onMessage/onMessageOpenedApp mais de uma vez.
+  /// Sem isso, cada chamada a initialize() adicionaria um novo listener,
+  /// resultando em notificações duplicadas.
+  bool _handlersSetup = false;
 
   /// Callback para navegação de chat (configurado externamente)
   Function(String chatId, String senderId)? onNotificationTap;
@@ -98,11 +106,12 @@ class NotificationService {
   Future<void> initialize(String userId) async {
     try {
       debugPrint('🔔 Inicializando handlers...');
-      
-      // ✅ APENAS setup dos handlers (token já salvo no AuthService)
-      _setupLocalNotifications();
+
+      // ✅ Notificações locais podem ser re-inicializadas sem problema,
+      //    mas os message handlers têm guard próprio em _setupMessageHandlers.
+      await _setupLocalNotifications();
       _setupMessageHandlers();
-      
+
       debugPrint('✅ Handlers configurados');
     } catch (e) {
       debugPrint('❌ Erro init: $e');
@@ -121,6 +130,7 @@ class NotificationService {
     if (onRequestTap != null) onRequestNotificationTap = onRequestTap;
     debugPrint('🔄 Callbacks de notificação atualizados');
   }
+
   Future<NotificationSettings> _requestPermission() async {
     return await _fcm.requestPermission(
       alert: true,
@@ -143,11 +153,11 @@ class NotificationService {
   // ============================================================
 
   Future<void> _getAndSaveToken(String userId) async {
-    final token = await _fcm.getToken(); // ✅ Pega token iOS também
-    
+    final token = await _fcm.getToken();
+
     if (token != null) {
       await FirebaseDatabase.instance
-          .ref('Users/$userId/fcmToken')  // ✅ Salva iOS também!
+          .ref('Users/$userId/fcmToken')
           .set(token);
     }
   }
@@ -212,9 +222,18 @@ class NotificationService {
 
   // ============================================================
   // HANDLERS DE MENSAGENS
+  // ✅ Guard _handlersSetup garante registro único dos listeners.
+  //    Sem isso, cada initialize() adicionaria um novo onMessage,
+  //    e o usuário receberia N notificações para cada mensagem.
   // ============================================================
 
   void _setupMessageHandlers() {
+    if (_handlersSetup) {
+      debugPrint('⚠️ Handlers já registrados — ignorando chamada duplicada');
+      return;
+    }
+    _handlersSetup = true;
+
     // ✅ ÚNICO lugar onde onMessage é registrado
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('📬 Mensagem recebida (foreground): ${message.data}');
@@ -232,6 +251,8 @@ class NotificationService {
     });
 
     _checkInitialMessage();
+
+    debugPrint('✅ Message handlers registrados');
   }
 
   Future<void> _checkInitialMessage() async {
@@ -256,7 +277,6 @@ class NotificationService {
     try {
       final data = message.data;
 
-      // ✅ Lê do data primeiro — mensagens de chat são data-only
       final title = data['notificationTitle'] ??
           data['senderName'] ??
           message.notification?.title ??
@@ -453,7 +473,7 @@ class NotificationService {
   Future<void> clearBadge() async => setBadgeCount(0);
 
   // ============================================================
-  // ✅ FUNÇÕES QUE FALTAVAM - ADICIONE NO FINAL DA CLASSE
+  // FUNÇÕES PÚBLICAS PARA USO EXTERNO
   // ============================================================
 
   /// Para background messages (chamado pelo firebaseMessagingBackgroundHandler)
@@ -462,23 +482,24 @@ class NotificationService {
     await _showLocalNotification(message);
   }
 
-  /// Para foreground messages (main.dart chama)
+  /// Para foreground messages
   Future<void> handleForegroundMessage(RemoteMessage message) async {
     debugPrint('📱 Foreground handler: ${message.data}');
     await _showLocalNotification(message);
   }
 
-  /// Para tap na notificação (main.dart chama)
+  /// Para tap na notificação
   Future<void> handleNotificationTap(Map<String, dynamic> data) async {
     debugPrint('👆 Notificação clicada: $data');
-    
+
     final chatId = data['chatId'] ?? data['notificationTag'];
     if (chatId != null) {
       await dismissChatNotifications(chatId);
     }
-    
+
     _handleNotificationClick(data);
   }
+
   // ============================================================
   // LIMPEZA
   // ============================================================
