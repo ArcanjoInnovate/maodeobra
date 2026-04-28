@@ -1244,4 +1244,3 @@ export const checkExpiringProfessionals = onSchedule(
     }
   }
 );
-
