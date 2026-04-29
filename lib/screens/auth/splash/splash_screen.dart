@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-
 class SplashPage extends StatefulWidget {
   const SplashPage({Key? key}) : super(key: key);
 
@@ -39,58 +38,61 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _requestPermissions();
     _initApp();
   }
- Future<void> _requestPermissions() async {
-  try {
-    if (Platform.isIOS) {
-      final iosInfo = await DeviceInfoPlugin().iosInfo;
-      debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
-      
-      // ✅ 1. NOTIFICAÇÕES (Firebase - iOS obrigatório)
-      final NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
-      debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
-      
-      // ✅ 2. CÂMERA + FOTOS juntas
-      final statuses = await [
-        Permission.camera,
-        Permission.photos,
-      ].request();
-      
-      statuses.forEach((permission, status) {
-        debugPrint('🔐 iOS $permission → $status');
-      });
-      
-    } else if (Platform.isAndroid) {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      debugPrint('🤖 Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
-      
-      // ✅ 1. NOTIFICAÇÕES (Android 13+)
-      if (androidInfo.version.sdkInt >= 33) {
-        final notifStatus = await Permission.notification.request();
-        debugPrint('🔔 Android Notificações: $notifStatus');
+
+  Future<void> _requestPermissions() async {
+    try {
+      if (Platform.isIOS) {
+        final iosInfo = await DeviceInfoPlugin().iosInfo;
+        debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
+
+        // ✅ 1. NOTIFICAÇÕES (Firebase - iOS obrigatório)
+        final NotificationSettings settings =
+            await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
+        debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
+
+        // ✅ 2. CÂMERA + FOTOS juntas
+        final statuses = await [
+          Permission.camera,
+          Permission.photos,
+        ].request();
+
+        statuses.forEach((permission, status) {
+          debugPrint('🔐 iOS $permission → $status');
+        });
+      } else if (Platform.isAndroid) {
+        final androidInfo = await DeviceInfoPlugin().androidInfo;
+        debugPrint(
+            '🤖 Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
+
+        // ✅ 1. NOTIFICAÇÕES (Android 13+)
+        if (androidInfo.version.sdkInt >= 33) {
+          final notifStatus = await Permission.notification.request();
+          debugPrint('🔔 Android Notificações: $notifStatus');
+        }
+
+        // ✅ 2. CÂMERA
+        final cameraStatus = await Permission.camera.request();
+        debugPrint('📸 Android Câmera: $cameraStatus');
+
+        // ✅ 3. FOTOS (Android 13+) ou STORAGE (Android < 13)
+        if (androidInfo.version.sdkInt >= 33) {
+          final photosStatus = await Permission.photos.request();
+          debugPrint('🖼️ Android Fotos: $photosStatus');
+        } else {
+          final storageStatus = await Permission.storage.request();
+          debugPrint('💾 Android Storage: $storageStatus');
+        }
       }
-      
-      // ✅ 2. CÂMERA
-      final cameraStatus = await Permission.camera.request();
-      debugPrint('📸 Android Câmera: $cameraStatus');
-      
-      // ✅ 3. FOTOS (Android 13+) ou STORAGE (Android < 13)
-      if (androidInfo.version.sdkInt >= 33) {
-        final photosStatus = await Permission.photos.request();
-        debugPrint('🖼️ Android Fotos: $photosStatus');
-      } else {
-        final storageStatus = await Permission.storage.request();
-        debugPrint('💾 Android Storage: $storageStatus');
-      }
+    } catch (e) {
+      debugPrint('⚠️ Erro ao solicitar permissões: $e');
     }
-  } catch (e) {
-    debugPrint('⚠️ Erro ao solicitar permissões: $e');
   }
-}
+
   @override
   void dispose() {
     _logoController.dispose();
@@ -129,42 +131,45 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
 
   // ── Inicialização ──────────────────────────────────────────────────────────
 
- Future<void> _initApp() async {
-  try {
-    await Future.delayed(const Duration(milliseconds: 1500));
+  Future<void> _initApp() async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 1500));
 
-    final User? currentUser = _auth.currentUser;
+      final User? currentUser = _auth.currentUser;
 
-    if (currentUser == null) {
+      if (currentUser == null) {
+        _goToLogin();
+        return;
+      }
+
+      final user = await _repo.fetchUser(currentUser.uid);
+
+      if (user == null) {
+        await _auth.signOut();
+        _goToLogin();
+        return;
+      }
+
+      // ✅ ADICIONE AQUI — usuário confirmado, configura notificações
+      await _refreshNotificationCallbacks(currentUser.uid, user.activeMode);
+
+      if (!mounted) return;
+      await _loginCtrl.navigateToNextScreen(context, user);
+    } catch (e) {
+      print('❌ Erro: $e');
       _goToLogin();
-      return;
     }
-
-    final user = await _repo.fetchUser(currentUser.uid);
-
-    if (user == null) {
-      await _auth.signOut();
-      _goToLogin();
-      return;
-    }
-
-    // ✅ ADICIONE AQUI — usuário confirmado, configura notificações
-    await _refreshNotificationCallbacks(currentUser.uid, user.activeMode);
-
-    if (!mounted) return;
-    await _loginCtrl.navigateToNextScreen(context, user);
-  } catch (e) {
-    print('❌ Erro: $e');
-    _goToLogin();
   }
-}
 
 // ✅ ADICIONE ESTE MÉTODO no _SplashPageState
-  Future<void> _refreshNotificationCallbacks(String userId, String userRole) async {
+  Future<void> _refreshNotificationCallbacks(
+      String userId, String userRole) async {
     final service = NotificationService();
 
-    await service.initialize(userId);
+    // ❌ REMOVA ESSA LINHA
+    // await service.initialize(userId);
 
+    // ✅ Só atualiza os callbacks, sem reinicializar
     service.updateCallbacks(
       onChatTap: (chatId, senderId) async {
         final context = MyApp.navigatorKey.currentContext;
@@ -192,7 +197,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       },
     );
 
-    print('✅ Callbacks configurados | user: $userId | role: $userRole');
+    print('✅ Callbacks atualizados | user: $userId | role: $userRole');
   }
 
   void _goToLogin() {

@@ -11,7 +11,6 @@ class NotificationNavigationService {
       NotificationNavigationService._internal();
   factory NotificationNavigationService() => _instance;
   NotificationNavigationService._internal();
-  final homeState = homeScreenKey.currentState;
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
   // ══════════════════════════════════════════════════════════════════════════
