@@ -28,6 +28,7 @@ import 'firebase_options.dart';
 // a da classe, mas `_safeNavigate*` usava a do topo (sempre null).
 // Isso fazia o foreground nunca navegar.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<_MyAppState> appStateKey = GlobalKey<_MyAppState>();
 
 Future<String?> _getCurrentUserId() async {
   try {
@@ -70,10 +71,11 @@ void main() async {
     sound: false,
   );
 
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky, overlays: []);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky,
+      overlays: []);
   ExpirationService().debugTestDate();
 
-  runApp(const MyApp());
+  runApp(MyApp(key: appStateKey));
 }
 
 class MyApp extends StatefulWidget {
@@ -83,21 +85,32 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  // ✅ REMOVIDA a declaração duplicada `static final GlobalKey<NavigatorState> navigatorKey`
-  // que estava aqui antes. Agora usamos apenas o `navigatorKey` global do topo do arquivo.
-
   late final DatabaseReference _adminRef;
   bool _isInMaintenance = false;
   bool _notificationsInitialized = false;
   String? _currentUserId;
   String? _currentUserRole;
 
+  // ✅ ADICIONAR: Armazena a notificação inicial
+  RemoteMessage? _initialMessage;
+  bool _initialMessageProcessed = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _clearBadgeOnStart();
     _initializeNotifications();
     _listenToMaintenance();
+  }
+
+  Future<void> _clearBadgeOnStart() async {
+    try {
+      await NotificationService().clearBadge();
+      debugPrint('🧹 Badge limpo ao iniciar app');
+    } catch (e) {
+      debugPrint('❌ Erro ao limpar badge: $e');
+    }
   }
 
   @override
@@ -132,7 +145,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
       setState(() => _isInMaintenance = shouldShowMaintenance);
 
-      // ✅ Usa o navigatorKey global — mesmo objeto do MaterialApp
       final navigator = navigatorKey.currentState;
       if (navigator == null) return;
 
@@ -169,6 +181,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final service = NotificationService();
     await service.initialize(_currentUserId!);
 
+    // ✅ MODIFICAR: Guardar initial message sem processar ainda
+    _initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (_initialMessage != null) {
+      print(
+          '🚀 [TERMINATED] App abriu por notificação: ${_initialMessage!.data}');
+      print('⏳ Aguardando HomeScreen montar para processar...');
+    }
+
     service.updateCallbacks(
       onChatTap: (chatId, senderId) async {
         print('🔔 onChatTap: $chatId');
@@ -176,21 +196,73 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       },
       onRequestTap: (requestType, profileId, vacancyId) async {
         print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
-        await _safeNavigateRequest(
-            _currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+            requestType, profileId, vacancyId);
       },
     );
 
     print('✅ Callbacks configurados: ${_currentUserId} | ${_currentUserRole}');
   }
 
+  // ✅ NOVA FUNÇÃO: Processar notificação inicial
+  Future<void> processInitialMessage() async {
+    if (_initialMessageProcessed || _initialMessage == null) return;
+
+    _initialMessageProcessed = true;
+
+    print('🎯 Processando notificação inicial agora que o app está pronto');
+
+    final data = _initialMessage!.data;
+    final type = data['type']?.toString() ?? '';
+
+    // Espera um frame para garantir que o contexto está pronto
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    switch (type) {
+      case 'chat':
+      case 'chat_accepted':
+        final chatId = data['chatId']?.toString() ?? '';
+        final senderId = data['senderId']?.toString() ?? '';
+        if (chatId.isNotEmpty) {
+          await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
+        }
+        break;
+
+      case 'request':
+        final requestType = data['requestType']?.toString() ?? 'professional';
+        final profileId = data['profileId']?.toString() ?? '';
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+        await _safeNavigateRequest(
+          _currentUserId!,
+          _currentUserRole!,
+          requestType,
+          profileId,
+          vacancyId,
+        );
+        break;
+
+      case 'vacancy_request':
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+        if (vacancyId.isNotEmpty) {
+          await _safeNavigateRequest(
+            _currentUserId!,
+            _currentUserRole!,
+            'vacancy_request',
+            '',
+            vacancyId,
+          );
+        }
+        break;
+
+      default:
+        print('⚠️ Tipo desconhecido: $type');
+        break;
+    }
+  }
+
   Future<void> _safeNavigateChat(
       String chatId, String userId, String userRole) async {
-    // ✅ Tenta até 10x com 200ms de intervalo.
-    // No foreground o context já está disponível na 1ª tentativa;
-    // no terminated/background pode demorar alguns frames a mais.
     for (int i = 0; i < 10; i++) {
-      // ✅ navigatorKey global — sempre o mesmo objeto do MaterialApp
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
         print('📱 [tentativa ${i + 1}] Navegando para chat: $chatId');
@@ -253,7 +325,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Mão de Obra',
-        // ✅ navigatorKey global — o mesmo objeto usado nos safe navigates
         navigatorKey: navigatorKey,
         theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         routes: {

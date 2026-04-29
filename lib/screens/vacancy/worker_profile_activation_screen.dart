@@ -14,6 +14,8 @@ import 'dart:ui';
 
 import 'package:dartobra_new/services/badge/badge_service.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
+import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
+import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:dartobra_new/widgets/professional_control.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -131,6 +133,7 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     _currentIsActive = widget.isActive;
     initDeletedUserDetector();
     _checkExistingProfile();
+    _setupNotificationHandlers();
   }
 
   @override
@@ -138,7 +141,41 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     disposeDeletedUserDetector();
     super.dispose();
   }
+  //────────────────────────────────────────────────────────────────────────────
+  // Configurando routes das notificações para work profile
+  //────────────────────────────────────────────────────────────────────────────
+  void _setupNotificationHandlers() {
+    final service = NotificationService();
 
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        service.dismissChatNotifications(chatId);
+
+        if (!mounted) return;
+
+        await NotificationNavigationService().navigateToChat(
+          context: context,
+          chatId: chatId,
+          userId: widget.localId,
+          userRole: 'employee', // Worker sempre é employee
+        );
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        if (!mounted) return;
+
+        await NotificationNavigationService().navigateToRequest(
+          context: context,
+          userId: widget.localId,
+          userRole: 'employee', // Worker sempre é employee
+          requestType: requestType ?? '',
+          profileId: profileId,
+          vacancyId: vacancyId,
+        );
+      },
+    );
+
+    debugPrint('✅ [WorkerProfileActivation] Callbacks configurados');
+  }
   Future<void> _checkExistingProfile() async {
     try {
       final snapshot = await _database
@@ -1122,37 +1159,80 @@ class _RequestsTabState extends State<_RequestsTab>
     }
   }
 
+    Future<void> decrementRequestBadge(String userId) async {
+  try {
+    final badgeRef = _database.child('badges/$userId/unread_requests');
+    final snap = await badgeRef.once();
+    
+    int current = 0;
+    if (snap.snapshot.exists && snap.snapshot.value != null) {
+      current = (snap.snapshot.value as num).toInt();
+    }
+    
+    final newValue = (current - 1).clamp(0, 9999);
+    debugPrint('🔔 Badge: $current → $newValue');
+    
+    await badgeRef.set(newValue);
+    debugPrint('✅ Badge decrementado com sucesso');
+  } catch (e) {
+    debugPrint('❌ Erro ao decrementar badge: $e');
+  }
+}
   Future<void> _rejectRequest(String requestLocalId) async {
-    if (_myProfileKey == null) return;
-    try {
-      await _removeRequestFromList(requestLocalId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(children: [
-            Icon(Icons.block_rounded, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Text('Solicitação recusada'),
-          ]),
-          backgroundColor: _kOrange,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erro ao recusar solicitação: $e'),
-          backgroundColor: _kRed,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-        ));
-      }
+  if (_myProfileKey == null) return;
+  try {
+    // ✅ 1. Buscar estado atual antes de remover
+    final requestViewSnap = await _database
+        .child('professionals/$_myProfileKey/views/request_views/$requestLocalId')
+        .once();
+    
+    bool wasUnviewed = false;
+    if (requestViewSnap.snapshot.exists && requestViewSnap.snapshot.value != null) {
+      final viewData = Map<String, dynamic>.from(requestViewSnap.snapshot.value as Map);
+      wasUnviewed = viewData['viewed_by_owner'] == false;
+    }
+
+    // ✅ 2. Remover da lista de requests
+    await _removeRequestFromList(requestLocalId);
+    
+    // ✅ 3. Decrementar badge SOMENTE se não foi visualizado
+    if (wasUnviewed) {
+      debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
+      await decrementRequestBadge(widget.localId);
+    } else {
+      debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
+    }
+
+
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Row(children: [
+          Icon(Icons.block_rounded, color: Colors.white, size: 18),
+          SizedBox(width: 10),
+          Text('Solicitação recusada'),
+        ]),
+        backgroundColor: _kOrange,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+    }
+  } catch (e) {
+    debugPrint('❌ Erro ao recusar solicitação: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erro ao recusar solicitação: $e'),
+        backgroundColor: _kRed,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
     }
   }
+}
 
   Future<bool> _checkUserStillExists(String uid) async {
     final snapshot = await _database.child('Users/$uid').get();

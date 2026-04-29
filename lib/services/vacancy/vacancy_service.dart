@@ -500,7 +500,7 @@ class VacancyService {
   }
 
   Map<String, int> getCacheStats() => {
-        'vacancies_cached': _vacancyCache.length,
+        'v_rejectRequest acancies_cached': _vacancyCache.length,
         'user_lists_cached': _userVacanciesCache.length,
         'candidates_cached': _candidateCache.length,
         'active_listeners': _activeListeners.length,

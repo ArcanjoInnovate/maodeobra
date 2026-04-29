@@ -4,6 +4,7 @@ import 'package:dartobra_new/controllers/search_controller.dart' as search;
 import 'package:dartobra_new/screens/complaints/complaint_user_search_screen.dart';
 import 'package:dartobra_new/screens/search/search_page.dart';
 import 'package:dartobra_new/screens/feed/feed_screen.dart';
+import 'package:dartobra_new/main.dart' as main_app;
 import 'package:dartobra_new/services/notifications/badge_init.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
@@ -81,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   // ==================key navegação de notificação ====================
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  
   // ==================== LISTENERS ====================
   StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
@@ -99,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   
   @override
+
   void initState() {
     super.initState();
     _initializeVariables();
@@ -107,14 +110,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadUserData();
     _setupBadgeListener();
     
-    // ✅ ADICIONE AQUI
-    _setupNotificationHandlers();
 
+    _setupNotificationHandlers();
+     _processInitialNotification();
+    _clearAppBadge();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkProfileCompletion();
     });
   }
 
+  Future<void> _processInitialNotification() async {
+    // Acessa a instância do _MyAppState através de uma chave global
+    final appState = main_app.appStateKey.currentState;
+    if (appState != null) {
+      await appState.processInitialMessage();
+    }
+  }
+  
   @override
   void dispose() {
     _userDataSubscription?.cancel();
@@ -122,6 +134,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  Future<void> _clearAppBadge() async {
+    try {
+      await NotificationService().clearBadge();
+      debugPrint('🧹 Badge do app limpo');
+    } catch (e) {
+      debugPrint('❌ Erro ao limpar badge: $e');
+    }
+  }
   // ==================== NOTIFICAÇÕES ====================
   void _setupNotificationHandlers() {
   final service = NotificationService();
