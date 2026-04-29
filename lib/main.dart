@@ -6,6 +6,7 @@ import 'package:dartobra_new/controllers/feed_controller.dart';
 import 'package:dartobra_new/screens/auth/login/login_screen.dart';
 import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
+import 'package:dartobra_new/screens/home/home_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:flutter_app_badger/flutter_app_badger.dart';
@@ -96,7 +97,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   String? _currentUserId;
   String? _currentUserRole;
   final FlutterLocalNotificationsPlugin _localNotifications =
-    FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
 
   // ✅ ADICIONAR: Armazena a notificação inicial
   RemoteMessage? _initialMessage;
@@ -183,98 +184,118 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   Future<void> _initializeNotifications() async {
-  if (_notificationsInitialized) return;
-  _notificationsInitialized = true;
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
 
-  _currentUserId = await _getCurrentUserId();
-  if (_currentUserId == null) {
-    print('⚠️ userId nulo — não é possível inicializar notificações agora');
-    return;
-  }
-
-  _currentUserRole = await _getUserRole(_currentUserId!);
-
-  final service = NotificationService();
-  await service.initialize(_currentUserId!);
-
-  // ✅ Captura AQUI, uma única vez, antes de qualquer callback
-  // O NotificationService.initialize() NÃO chama getInitialMessage() mais
-  _initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-  if (_initialMessage != null) {
-    print('🚀 [TERMINATED] Notificação inicial capturada: ${_initialMessage!.data}');
-  }
-
-  // ✅ Registra callbacks com userId/role garantidamente não-nulos
-  service.updateCallbacks(
-    onChatTap: (chatId, senderId) async {
-      print('🔔 onChatTap: $chatId');
-      await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
-    },
-    onRequestTap: (requestType, profileId, vacancyId) async {
-      print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
-      await _safeNavigateRequest(
-          _currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
-    },
-  );
-
-  print('✅ Callbacks configurados: $_currentUserId | $_currentUserRole');
-}
-
-  // ✅ NOVA FUNÇÃO: Processar notificação inicial
- Future<void> processInitialMessage() async {
-  if (_initialMessageProcessed) return;
-  if (_initialMessage == null) return;
-
-  // ✅ Se userId ainda não foi carregado, tenta buscar agora
-  if (_currentUserId == null) {
     _currentUserId = await _getCurrentUserId();
     if (_currentUserId == null) {
-      print('⚠️ processInitialMessage: userId nulo, abortando');
+      print('⚠️ userId nulo — não é possível inicializar notificações agora');
       return;
     }
-  }
 
-  if (_currentUserRole == null) {
     _currentUserRole = await _getUserRole(_currentUserId!);
-  }
 
-  _initialMessageProcessed = true;
-  print('🎯 Processando notificação inicial...');
+    final service = NotificationService();
+    await service.initialize(_currentUserId!);
 
-  final data = _initialMessage!.data;
-  final type = data['type']?.toString() ?? '';
+    // ✅ Captura AQUI, uma única vez, antes de qualquer callback
+    // O NotificationService.initialize() NÃO chama getInitialMessage() mais
+    _initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (_initialMessage != null) {
+      print(
+          '🚀 [TERMINATED] Notificação inicial capturada: ${_initialMessage!.data}');
+    }
 
-  await Future.delayed(const Duration(milliseconds: 800));
-
-  switch (type) {
-    case 'chat':
-    case 'chat_accepted':
-      final chatId = data['chatId']?.toString() ?? '';
-      if (chatId.isNotEmpty) {
+    // ✅ Registra callbacks com userId/role garantidamente não-nulos
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        print('🔔 onChatTap: $chatId');
         await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
-      }
-      break;
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+            requestType, profileId, vacancyId);
+      },
+    );
 
-    case 'request':
-      final requestType = data['requestType']?.toString() ?? 'professional';
-      final profileId = data['profileId']?.toString() ?? '';
-      final vacancyId = data['vacancyId']?.toString() ?? '';
-      await _safeNavigateRequest(
-        _currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
-      break;
-
-    case 'vacancy_request':
-      final vacancyId = data['vacancyId']?.toString() ?? '';
-      if (vacancyId.isNotEmpty) {
-        await _safeNavigateRequest(
-          _currentUserId!, _currentUserRole!, 'vacancy_request', '', vacancyId);
-      }
-      break;
-
-    default:
-      print('⚠️ Tipo desconhecido na notificação inicial: $type');
+    print('✅ Callbacks configurados: $_currentUserId | $_currentUserRole');
   }
-}
+
+  // ✅ NOVA FUNÇÃO: Processar notificação inicial
+  Future<void> processInitialMessage() async {
+    if (_initialMessageProcessed) return;
+    if (_initialMessage == null) return;
+
+    if (_currentUserId == null) {
+      _currentUserId = await _getCurrentUserId();
+      if (_currentUserId == null) {
+        print('⚠️ processInitialMessage: userId nulo, abortando');
+        return;
+      }
+    }
+
+    if (_currentUserRole == null) {
+      _currentUserRole = await _getUserRole(_currentUserId!);
+    }
+
+    _initialMessageProcessed = true;
+    print('🎯 Processando notificação inicial...');
+
+    final data = _initialMessage!.data;
+    final type = data['type']?.toString() ?? '';
+
+    // ✅ Aguarda a HomeScreen estar de fato montada via homeScreenKey
+    // antes de tentar navegar — sem isso o context pode ser da SplashPage
+    print('⏳ Aguardando HomeScreen montar...');
+    bool homeReady = false;
+    for (int i = 0; i < 30; i++) {
+      final state = homeScreenKey.currentState;
+      if (state != null && state.mounted) {
+        homeReady = true;
+        print('✅ HomeScreen montada na tentativa ${i + 1}');
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    if (!homeReady) {
+      print('⚠️ HomeScreen não montou em 9 segundos, abortando navegação');
+      return;
+    }
+
+    // ✅ Mais 300ms para garantir que o build terminou
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    switch (type) {
+      case 'chat':
+      case 'chat_accepted':
+        final chatId = data['chatId']?.toString() ?? '';
+        if (chatId.isNotEmpty) {
+          await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
+        }
+        break;
+
+      case 'request':
+        final requestType = data['requestType']?.toString() ?? 'professional';
+        final profileId = data['profileId']?.toString() ?? '';
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+            requestType, profileId, vacancyId);
+        break;
+
+      case 'vacancy_request':
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+        if (vacancyId.isNotEmpty) {
+          await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+              'vacancy_request', '', vacancyId);
+        }
+        break;
+
+      default:
+        print('⚠️ Tipo desconhecido: $type');
+    }
+  }
 
   Future<void> _safeNavigateChat(
       String chatId, String userId, String userRole) async {
