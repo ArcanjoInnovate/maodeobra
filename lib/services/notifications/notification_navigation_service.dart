@@ -1,5 +1,3 @@
-// lib/services/notifications/notification_navigation_service.dart
-
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
@@ -8,23 +6,21 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-/// Serviço centralizado para navegação via notificações.
-/// Garante que todas as notificações naveguem corretamente independente
-/// do estado do app (foreground/background/terminated).
 class NotificationNavigationService {
   static final NotificationNavigationService _instance =
       NotificationNavigationService._internal();
   factory NotificationNavigationService() => _instance;
   NotificationNavigationService._internal();
-
+ 
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
-
-  /// Navega para um chat específico
-  /// 
-  /// [context] - BuildContext para navegação
-  /// [chatId] - ID do chat
-  /// [userId] - ID do usuário atual
-  /// [userRole] - Role do usuário (contractor/employee)
+ 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 1️⃣  NAVEGAR PARA CHAT
+  //
+  //  Busca os dados do Chat (contractor, employee) e do outro usuário
+  //  no Firebase, depois abre ChatRoomScreen com tudo preenchido.
+  // ══════════════════════════════════════════════════════════════════════════
+ 
   Future<void> navigateToChat({
     required BuildContext context,
     required String chatId,
@@ -32,75 +28,89 @@ class NotificationNavigationService {
     required String userRole,
   }) async {
     try {
-      debugPrint('📍 Navegando para chat: $chatId | user: $userId | role: $userRole');
-
-      // Busca dados do chat
-      final chatSnapshot = await _database.child('Chats/$chatId').get();
-
-      if (!chatSnapshot.exists) {
-        debugPrint('❌ Chat não encontrado: $chatId');
-        _showErrorSnackBar(context, 'Chat não encontrado');
+      print('🔔 navigateToChat | chatId=$chatId | userId=$userId | role=$userRole');
+ 
+      // 1. Buscar dados do chat
+      final chatSnap = await _database.child('Chats/$chatId').get();
+      if (!chatSnap.exists || chatSnap.value == null) {
+        print('⚠️ Chat $chatId não encontrado');
+        _showSnack(context, 'Chat não encontrado');
         return;
       }
-
-      final chatData = Map<String, dynamic>.from(chatSnapshot.value as Map);
+ 
+      final chatData = Map<String, dynamic>.from(chatSnap.value as Map);
       final contractorId = chatData['contractor']?.toString() ?? '';
       final employeeId = chatData['employee']?.toString() ?? '';
-
-      // Determina qual é o outro usuário
-      final isContractor = userRole == 'contractor';
-      final otherUserId = isContractor ? employeeId : contractorId;
-
-      debugPrint('👥 Outro usuário: $otherUserId');
-
-      // Busca dados do outro usuário
-      final userSnapshot = await _database.child('Users/$otherUserId').get();
-
-      if (!userSnapshot.exists) {
-        debugPrint('❌ Usuário não encontrado: $otherUserId');
-        _showErrorSnackBar(context, 'Usuário não encontrado');
+ 
+      if (contractorId.isEmpty || employeeId.isEmpty) {
+        print('⚠️ Chat $chatId sem contractor/employee');
+        _showSnack(context, 'Dados do chat incompletos');
         return;
       }
-
-      final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-      final otherUserName = userData['Name']?.toString() ?? 'Usuário';
-      final otherUserAvatar = userData['avatar']?.toString();
-
-      debugPrint('✅ Navegando para ChatRoomScreen');
-
-      // Navega para ChatRoomScreen
-      await Navigator.push(
+ 
+      // 2. Determinar o papel correto do usuário neste chat
+      String resolvedRole;
+      if (userId == contractorId) {
+        resolvedRole = 'contractor';
+      } else if (userId == employeeId) {
+        resolvedRole = 'employee';
+      } else {
+        resolvedRole = userRole;
+      }
+ 
+      // 3. Determinar o outro usuário
+      final otherUserId =
+          resolvedRole == 'contractor' ? employeeId : contractorId;
+ 
+      // 4. Buscar nome e avatar do outro usuário
+      String otherUserName = 'Usuário';
+      String? otherUserAvatar;
+ 
+      final otherUserSnap = await _database.child('Users/$otherUserId').get();
+      if (otherUserSnap.exists && otherUserSnap.value != null) {
+        final otherUserData =
+            Map<String, dynamic>.from(otherUserSnap.value as Map);
+        otherUserName = otherUserData['Name']?.toString() ?? 'Usuário';
+        otherUserAvatar = otherUserData['avatar']?.toString();
+      }
+ 
+      // 5. Navegar para ChatRoomScreen
+      if (!context.mounted) return;
+ 
+      Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => ChangeNotifierProvider(
+          builder: (_) => ChangeNotifierProvider(
             create: (_) => ChatControllerFinal(),
             child: ChatRoomScreen(
               chatId: chatId,
               contractorId: contractorId,
               employeeId: employeeId,
-              userRole: userRole,
               userId: userId,
+              userRole: resolvedRole,
               otherUserName: otherUserName,
               otherUserAvatar: otherUserAvatar,
             ),
           ),
         ),
       );
-    } catch (e, stack) {
-      debugPrint('❌ Erro ao navegar para chat: $e');
-      debugPrint('Stack: $stack');
-      _showErrorSnackBar(context, 'Erro ao abrir chat');
+ 
+      print('✅ Navegou para ChatRoomScreen: $chatId');
+    } catch (e) {
+      print('❌ Erro navigateToChat: $e');
+      if (context.mounted) {
+        _showSnack(context, 'Erro ao abrir chat');
+      }
     }
   }
-
-  /// Navega para a tela de solicitações baseado no role do usuário
-  /// 
-  /// [context] - BuildContext para navegação
-  /// [userId] - ID do usuário atual
-  /// [userRole] - Role do usuário (contractor/employee)
-  /// [requestType] - Tipo da solicitação (professional/vacancy)
-  /// [profileId] - ID do perfil profissional (para worker)
-  /// [vacancyId] - ID da vaga (para contractor)
+ 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 2️⃣  NAVEGAR PARA REQUEST
+  //
+  //  • Contractor recebe candidatura na vaga → abre InfoVacancy (tab 1)
+  //  • Worker recebe solicitação de chat   → abre WorkerProfileActivation
+  // ══════════════════════════════════════════════════════════════════════════
+ 
   Future<void> navigateToRequest({
     required BuildContext context,
     required String userId,
@@ -110,79 +120,86 @@ class NotificationNavigationService {
     String? vacancyId,
   }) async {
     try {
-      debugPrint('📍 Navegando para solicitação:');
-      debugPrint('   userId: $userId');
-      debugPrint('   userRole: $userRole');
-      debugPrint('   requestType: $requestType');
-      debugPrint('   profileId: $profileId');
-      debugPrint('   vacancyId: $vacancyId');
-
-      if (userRole == 'contractor') {
-        await _navigateToVacancyCandidates(
-          context: context,
-          userId: userId,
-          vacancyId: vacancyId,
-        );
+      print('🔔 navigateToRequest | type=$requestType | profileId=$profileId | vacancyId=$vacancyId | role=$userRole');
+ 
+      if (requestType == 'vacancy_request' && vacancyId != null && vacancyId.isNotEmpty) {
+        // ── CONTRACTOR: abrir InfoVacancy na tab Candidatos ──────────────
+        await _navigateToInfoVacancy(context, vacancyId, userId);
+      } else if (requestType == 'professional' && profileId != null && profileId.isNotEmpty) {
+        // ── WORKER: abrir WorkerProfileActivation ────────────────────────
+        await _navigateToWorkerProfile(context, userId);
       } else {
-        await _navigateToProfessionalRequests(
-          context: context,
-          userId: userId,
-          profileId: profileId,
-        );
+        print('⚠️ requestType desconhecido ou faltando IDs: $requestType');
+        _showSnack(context, 'Não foi possível abrir a solicitação');
       }
-    } catch (e, stack) {
-      debugPrint('❌ Erro ao navegar para solicitação: $e');
-      debugPrint('Stack: $stack');
-      _showErrorSnackBar(context, 'Erro ao abrir solicitação');
+    } catch (e) {
+      print('❌ Erro navigateToRequest: $e');
+      if (context.mounted) {
+        _showSnack(context, 'Erro ao abrir solicitação');
+      }
     }
   }
-
-  /// Navega para InfoVacancy na tab de candidatos (CONTRACTOR)
-  Future<void> _navigateToVacancyCandidates({
-    required BuildContext context,
-    required String userId,
-    String? vacancyId,
-  }) async {
-    if (vacancyId == null || vacancyId.isEmpty) {
-      debugPrint('⚠️ vacancyId nulo ou vazio');
-      _showErrorSnackBar(context, 'Vaga não especificada');
+ 
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER — InfoVacancy (Contractor)
+  // ══════════════════════════════════════════════════════════════════════════
+ 
+  Future<void> _navigateToInfoVacancy(
+    BuildContext context,
+    String vacancyId,
+    String userId,
+  ) async {
+    // 1. Buscar dados da vaga
+    final vacancySnap = await _database.child('vacancy/$vacancyId').get();
+    if (!vacancySnap.exists || vacancySnap.value == null) {
+      print('⚠️ Vaga $vacancyId não encontrada');
+      if (context.mounted) _showSnack(context, 'Vaga não encontrada');
       return;
     }
-
-    debugPrint('📦 Carregando vaga: $vacancyId');
-
-    final vacancySnapshot = await _database.child('vacancy/$vacancyId').get();
-
-    if (!vacancySnapshot.exists) {
-      debugPrint('❌ Vaga não encontrada: $vacancyId');
-      _showErrorSnackBar(context, 'Vaga não encontrada');
-      return;
+ 
+    final vacancyData = Map<String, dynamic>.from(vacancySnap.value as Map);
+    final localId = vacancyData['local_id']?.toString() ?? userId;
+ 
+    // 2. Buscar dados do dono da vaga para legalType e companyName
+    String legalType = 'PF';
+    String companyName = '';
+    final ownerSnap = await _database.child('Users/$localId').get();
+    if (ownerSnap.exists && ownerSnap.value != null) {
+      final ownerData = Map<String, dynamic>.from(ownerSnap.value as Map);
+      legalType = ownerData['legalType']?.toString() ?? 'PF';
+      if (ownerData['data_contractor'] != null) {
+        final contractorData =
+            Map<String, dynamic>.from(ownerData['data_contractor'] as Map);
+        companyName = contractorData['company']?.toString() ?? '';
+      }
     }
-
-    final vacancyData = Map<String, dynamic>.from(vacancySnapshot.value as Map);
-
-    // Busca dados do usuário
-    final userSnapshot = await _database.child('Users/$userId').get();
-
-    if (!userSnapshot.exists) {
-      debugPrint('❌ Dados do usuário não encontrados');
-      _showErrorSnackBar(context, 'Erro ao carregar dados');
-      return;
+ 
+    // 3. Preparar requests como List<dynamic>
+    List<dynamic>? requests;
+    final rawRequests = vacancyData['requests'];
+    if (rawRequests is List) {
+      requests = rawRequests;
+    } else if (rawRequests is Map) {
+      requests = rawRequests.values.toList();
     }
-
-    final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-
-    debugPrint('✅ Navegando para InfoVacancy (tab candidatos)');
-
-    // Navega para InfoVacancy na tab de candidatos (index 1)
-    await Navigator.push(
+ 
+    // 4. Preparar media
+    Map<dynamic, dynamic>? media;
+    if (vacancyData['midia'] != null) {
+      media = Map<dynamic, dynamic>.from(vacancyData['midia'] as Map);
+    }
+ 
+    if (!context.mounted) return;
+ 
+    // 5. Navegar para InfoVacancy com initialTabIndex = 1 (Candidatos)
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => InfoVacancy(
-          userPhone: userData['telefone']?.toString() ?? '',
-          userEmail: userData['email']?.toString() ?? '',
-          legalType: userData['legalType']?.toString() ?? 'PF',
-          companyName: vacancyData['company_name']?.toString() ?? '',
+        builder: (_) => InfoVacancy(
+          userPhone: vacancyData['phone_contact']?.toString() ?? '',
+          userEmail: vacancyData['email_contact']?.toString() ?? '',
+          legalType: legalType,
+          companyName: companyName,
           description: vacancyData['description']?.toString() ?? '',
           state: vacancyData['state']?.toString() ?? '',
           city: vacancyData['city']?.toString() ?? '',
@@ -191,75 +208,81 @@ class NotificationNavigationService {
           title: vacancyData['title']?.toString() ?? '',
           salary: vacancyData['salary']?.toString() ?? '',
           salaryType: vacancyData['salary_type']?.toString() ?? '',
-          media: vacancyData['midia'] as Map<dynamic, dynamic>?,
-          requests: vacancyData['requests'] as List<dynamic>?,
+          media: media,
+          requests: requests,
           vacancyId: vacancyId,
-          localId: userId,
-          initialTabIndex: 1, // ✅ Tab de candidatos
+          localId: localId,
+          initialTabIndex: 1, // ✅ Abre direto na tab de Candidatos
         ),
       ),
     );
+ 
+    print('✅ Navegou para InfoVacancy: $vacancyId (tab Candidatos)');
   }
-
-  /// Navega para WorkerProfileActivation na tab de solicitações (EMPLOYEE)
-  Future<void> _navigateToProfessionalRequests({
-    required BuildContext context,
-    required String userId,
-    String? profileId,
-  }) async {
-    debugPrint('👷 Carregando perfil worker: $userId');
-
-    final userSnapshot = await _database.child('Users/$userId').get();
-
-    if (!userSnapshot.exists) {
-      debugPrint('❌ Dados do usuário não encontrados');
-      _showErrorSnackBar(context, 'Erro ao carregar perfil');
+ 
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER — WorkerProfileActivation (Worker/Employee)
+  // ══════════════════════════════════════════════════════════════════════════
+ 
+  Future<void> _navigateToWorkerProfile(
+    BuildContext context,
+    String userId,
+  ) async {
+    // 1. Buscar dados do usuário
+    final userSnap = await _database.child('Users/$userId').get();
+    if (!userSnap.exists || userSnap.value == null) {
+      print('⚠️ Usuário $userId não encontrado');
+      if (context.mounted) _showSnack(context, 'Dados do perfil não encontrados');
       return;
     }
-
-    final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-    final dataWorker = userData['data_worker'] as Map<dynamic, dynamic>? ?? {};
-
-    debugPrint('✅ Navegando para WorkerProfileActivation (tab solicitações)');
-
-    // Navega para WorkerProfileActivation na tab de solicitações (index 0)
-    await Navigator.push(
+ 
+    final userData = Map<String, dynamic>.from(userSnap.value as Map);
+ 
+    // 2. Extrair data_worker
+    Map<String, dynamic> dataWorker = {};
+    if (userData['data_worker'] != null) {
+      dataWorker = Map<String, dynamic>.from(userData['data_worker'] as Map);
+    }
+ 
+    if (!context.mounted) return;
+ 
+    // 3. Navegar para WorkerProfileActivation (tab Solicitações = 0)
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WorkerProfileActivation(
-          userName: userData['Name']?.toString() ?? '',
+        builder: (_) => WorkerProfileActivation(
+          userName: userData['Name']?.toString() ?? 'Usuário',
           userAvatar: userData['avatar']?.toString() ?? '',
           userCity: userData['city']?.toString() ?? '',
           userState: userData['state']?.toString() ?? '',
+          userEmail: userData['email_contact']?.toString() ?? userData['email']?.toString() ?? '',
+          userTelefone: userData['telefone']?.toString() ?? '',
           legalType: userData['legalType']?.toString() ?? 'PF',
-          dataWorker: Map<String, dynamic>.from(dataWorker),
+          dataWorker: dataWorker,
           isActive: userData['isActive'] == true,
           localId: userId,
+          finished_basic: userData['finished_basic'] == true,
+          finished_contact: userData['finished_contact'] == true,
+          finished_professional: userData['finished_professional'] == true,
           onActivated: () {},
-          finished_basic: dataWorker['finished_basic'] == true,
-          finished_contact: dataWorker['finished_contact'] == true,
-          finished_professional: dataWorker['finished_professional'] == true,
-          userTelefone: userData['telefone']?.toString() ?? '',
-          userEmail: userData['email']?.toString() ?? '',
           onProfileIncomplete: () {},
-          initialTabIndex: 0, // ✅ Tab de solicitações
+          initialTabIndex: 0, // ✅ Tab Solicitações
         ),
       ),
     );
+ 
+    print('✅ Navegou para WorkerProfileActivation: $userId (tab Solicitações)');
   }
-
-  /// Exibe uma mensagem de erro
-  void _showErrorSnackBar(BuildContext context, String message) {
+ 
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER — SnackBar
+  // ══════════════════════════════════════════════════════════════════════════
+ 
+  void _showSnack(BuildContext context, String message) {
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor: Colors.red.shade700,
+        content: Text(message),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),

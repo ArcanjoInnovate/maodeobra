@@ -1,375 +1,279 @@
-// lib/services/notifications/notification_service.dart
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart' as local_notifications;
 
-/// Handler GLOBAL para notificações em background.
-/// IMPORTANTE: Deve estar fora da classe, no top-level.
-/// IMPORTANTE: Registrado APENAS aqui — main.dart NÃO deve declarar outro.
-///
-/// Como o backend envia mensagens DATA-ONLY (sem bloco "notification"),
-/// o Android não exibe nada automaticamente. Este handler recebe os dados
-/// e exibe via flutter_local_notifications com tag = chatId,
-/// permitindo cancelar todas as notificações de um chat de uma só vez.
+// ══════════════════════════════════════════════════════════════════════════════
+//  BACKGROUND HANDLER (top-level, obrigatório pelo Firebase)
+// ══════════════════════════════════════════════════════════════════════════════
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('📬 Mensagem em background: ${message.data}');
-
-  final data = message.data;
-  final type = data['type'];
-
-  // ✅ Trata mensagens de chat (data-only) e outros tipos com notification block
-  if (type == 'chat') {
-    final chatId = data['notificationTag'] ?? data['chatId'];
-    final title = data['notificationTitle'] ?? data['senderName'] ?? 'Nova mensagem';
-    final body = data['notificationBody'] ?? '';
-    final senderAvatar = data['senderAvatar'] ?? '';
-
-    if (chatId == null) return;
-
-    final FlutterLocalNotificationsPlugin localNotifications =
-        FlutterLocalNotificationsPlugin();
-
-    const initSettings = InitializationSettings(
-      android: AndroidInitializationSettings('@drawable/ic_notification'),
-      iOS: DarwinInitializationSettings(),
-    );
-    await localNotifications.initialize(initSettings);
-
-    final androidDetails = AndroidNotificationDetails(
-      'chat_messages',
-      'Mensagens de Chat',
-      channelDescription: 'Notificações de novas mensagens de chat',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-      icon: '@drawable/ic_notification',
-      color: const Color(0xFF6B21A8),
-      largeIcon: senderAvatar.isNotEmpty
-          ? FilePathAndroidBitmap(senderAvatar)
-          : null,
-      tag: chatId,
-      playSound: true,
-      enableVibration: true,
-    );
-
-    final iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      threadIdentifier: chatId,
-    );
-
-    await localNotifications.show(
-      chatId.hashCode,
-      title,
-      body,
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
-      payload:
-          'type:chat|chatId:$chatId|senderId:${data['senderId'] ?? ''}|notificationTag:$chatId',
-    );
-  }
-  // Outros tipos (chat_request, expiration_warning, etc.) têm bloco
-  // "notification" no payload, então o sistema exibe automaticamente.
+  print('📩 [BG] Mensagem recebida: ${message.data}');
+  // Não mostra notificação local aqui - o sistema já mostra via APNs/FCM
+  // Apenas loga para debugging
 }
 
-class NotificationService {
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
+// ══════════════════════════════════════════════════════════════════════════════
+//  CALLBACKS
+// ══════════════════════════════════════════════════════════════════════════════
 
-  // ============================================================
-  // Singleton
-  // ============================================================
+typedef OnChatTapCallback = Future<void> Function(
+    String chatId, String senderId);
+typedef OnRequestTapCallback = Future<void> Function(
+    String requestType, String? profileId, String? vacancyId);
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  NOTIFICATION SERVICE
+// ══════════════════════════════════════════════════════════════════════════════
+
+class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  /// ✅ Guard: evita registrar onMessage/onMessageOpenedApp mais de uma vez.
-  /// Sem isso, cada chamada a initialize() adicionaria um novo listener,
-  /// resultando em notificações duplicadas.
-  bool _handlersSetup = false;
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
-  /// Callback para navegação de chat (configurado externamente)
-  Function(String chatId, String senderId)? onNotificationTap;
+  String? _currentUserId;
+  OnChatTapCallback? _onChatTap;
+  OnRequestTapCallback? _onRequestTap;
 
-  /// Callback para navegação de solicitações (configurado externamente)
-  Function(String requestType, String? profileId, String? vacancyId)?
-      onRequestNotificationTap;
+  // Guarda o payload pendente (quando o app abre por notification tap)
+  Map<String, dynamic>? _pendingPayload;
 
-  // ============================================================
-  // INICIALIZAÇÃO PRINCIPAL
-  // ============================================================
+  // ── Canal Android para notificações locais ──────────────────────────────
+  static const AndroidNotificationChannel _chatChannel =
+      AndroidNotificationChannel(
+    'chat_channel',
+    'Mensagens de Chat',
+    description: 'Notificações de novas mensagens',
+    importance: Importance.high,
+    playSound: true,
+  );
+
+  static const AndroidNotificationChannel _requestChannel =
+      AndroidNotificationChannel(
+    'request_channel',
+    'Solicitações',
+    description: 'Notificações de solicitações de chat e candidaturas',
+    importance: Importance.high,
+    playSound: true,
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  INICIALIZAÇÃO
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> initialize(String userId) async {
-    try {
-      debugPrint('🔔 Inicializando handlers...');
+    _currentUserId = userId;
 
-      // ✅ Notificações locais podem ser re-inicializadas sem problema,
-      //    mas os message handlers têm guard próprio em _setupMessageHandlers.
-      await _setupLocalNotifications();
-      _setupMessageHandlers();
+    // 1. Permissões
+    await _requestPermissions();
 
-      debugPrint('✅ Handlers configurados');
-    } catch (e) {
-      debugPrint('❌ Erro init: $e');
+    // 2. Inicializar local notifications
+    await _initLocalNotifications();
+
+    // 3. Registrar/atualizar FCM token
+    await _registerToken(userId);
+
+    // 4. Listeners
+    _setupForegroundListener();
+    _setupBackgroundTapListener();
+    await _checkInitialMessage();
+
+    print('✅ NotificationService inicializado para: $userId');
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  ATUALIZAR CALLBACKS (chamado no main.dart)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void updateCallbacks({
+    OnChatTapCallback? onChatTap,
+    OnRequestTapCallback? onRequestTap,
+  }) {
+    _onChatTap = onChatTap;
+    _onRequestTap = onRequestTap;
+
+    // Se houver payload pendente (app abriu via notificação), processa agora
+    if (_pendingPayload != null) {
+      print('🔔 Processando payload pendente...');
+      _handleNotificationTap(_pendingPayload!);
+      _pendingPayload = null;
     }
   }
 
-  // ============================================================
-  // PERMISSÕES
-  // ============================================================
+  // ══════════════════════════════════════════════════════════════════════════
+  //  PERMISSÕES
+  // ══════════════════════════════════════════════════════════════════════════
 
-  void updateCallbacks({
-    Function(String chatId, String senderId)? onChatTap,
-    Function(String requestType, String? profileId, String? vacancyId)? onRequestTap,
-  }) {
-    if (onChatTap != null) onNotificationTap = onChatTap;
-    if (onRequestTap != null) onRequestNotificationTap = onRequestTap;
-    debugPrint('🔄 Callbacks de notificação atualizados');
-  }
-
-  Future<NotificationSettings> _requestPermission() async {
-    return await _fcm.requestPermission(
+  Future<void> _requestPermissions() async {
+    final settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
       provisional: false,
-      announcement: false,
-      carPlay: false,
-      criticalAlert: false,
     );
+    print('🔑 Permissão: ${settings.authorizationStatus}');
   }
 
-  Future<bool> hasPermission() async {
-    final settings = await _fcm.getNotificationSettings();
-    return settings.authorizationStatus == AuthorizationStatus.authorized;
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  //  LOCAL NOTIFICATIONS SETUP
+  // ══════════════════════════════════════════════════════════════════════════
 
-  // ============================================================
-  // TOKEN FCM
-  // ============================================================
-
-  Future<void> _getAndSaveToken(String userId) async {
-    final token = await _fcm.getToken();
-
-    if (token != null) {
-      await FirebaseDatabase.instance
-          .ref('Users/$userId/fcmToken')
-          .set(token);
-    }
-  }
-
-  void _setupTokenRefreshListener(String userId) {
-    _fcm.onTokenRefresh.listen((newToken) {
-      debugPrint('🔄 Token FCM atualizado');
-      FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(newToken);
-    });
-  }
-
-  /// Remove token do Firebase (chamar no logout)
-  Future<void> removeToken(String userId) async {
-    try {
-      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').remove();
-      debugPrint('🗑️ Token FCM removido');
-    } catch (e) {
-      debugPrint('❌ Erro ao remover token: $e');
-    }
-  }
-
-  // ============================================================
-  // NOTIFICAÇÕES LOCAIS
-  // ============================================================
-
-  Future<void> _setupLocalNotifications() async {
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'chat_messages',
-      'Mensagens de Chat',
-      description: 'Notificações de novas mensagens de chat',
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
-
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
-
-    const initializationSettingsAndroid =
-        AndroidInitializationSettings('@drawable/ic_notification');
-
-    const initializationSettingsIOS = DarwinInitializationSettings(
+  Future<void> _initLocalNotifications() async {
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
 
-    const initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
-    );
-
     await _localNotifications.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      ),
+      onDidReceiveNotificationResponse: _onLocalNotificationTap,
     );
 
-    debugPrint('✅ Notificações locais configuradas');
-  }
+    // Criar canais Android
+    if (Platform.isAndroid) {
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<local_notifications.AndroidFlutterLocalNotificationsPlugin>();
 
-  // ============================================================
-  // HANDLERS DE MENSAGENS
-  // ✅ Guard _handlersSetup garante registro único dos listeners.
-  //    Sem isso, cada initialize() adicionaria um novo onMessage,
-  //    e o usuário receberia N notificações para cada mensagem.
-  // ============================================================
-
-  void _setupMessageHandlers() {
-    if (_handlersSetup) {
-      debugPrint('⚠️ Handlers já registrados — ignorando chamada duplicada');
-      return;
-    }
-    _handlersSetup = true;
-
-    // ✅ ÚNICO lugar onde onMessage é registrado
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('📬 Mensagem recebida (foreground): ${message.data}');
-      _showLocalNotification(message);
-    });
-
-    // ✅ onMessageOpenedApp fica SÓ aqui — main.dart não deve registrar também
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint('🔔 Notificação clicada (background)');
-      final chatId = message.data['chatId'] ?? message.data['notificationTag'];
-      if (chatId != null) {
-        dismissChatNotifications(chatId);
+      if (androidPlugin != null) {
+        await androidPlugin.createNotificationChannel(_chatChannel);
+        await androidPlugin.createNotificationChannel(_requestChannel);
       }
-      _handleNotificationClick(message.data);
-    });
-
-    _checkInitialMessage();
-
-    debugPrint('✅ Message handlers registrados');
+    }
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  FCM TOKEN
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<void> _registerToken(String userId) async {
+    try {
+      final token = await _messaging.getToken();
+      if (token != null) {
+        await FirebaseDatabase.instance
+            .ref('Users/$userId/fcmToken')
+            .set(token);
+        print('✅ FCM token registrado: ${token.substring(0, 30)}...');
+      }
+
+      // Listener para refresh de token
+      _messaging.onTokenRefresh.listen((newToken) async {
+        await FirebaseDatabase.instance
+            .ref('Users/$userId/fcmToken')
+            .set(newToken);
+        print('🔄 FCM token atualizado');
+      });
+    } catch (e) {
+      print('❌ Erro ao registrar token: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  FOREGROUND LISTENER
+  //
+  //  Quando o app está aberto e recebe uma notificação, mostra
+  //  uma local notification para o usuário poder tocar.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void _setupForegroundListener() {
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('📩 [FG] Mensagem recebida: ${message.data}');
+
+      final data = message.data;
+      final type = data['type'] ?? '';
+
+      final title = data['notificationTitle'] ?? 'Nova notificação';
+      final body = data['notificationBody'] ?? '';
+      final tag = data['notificationTag'] ?? data['chatId'] ?? type;
+
+      _showLocalNotification(
+        title: title,
+        body: body,
+        payload: jsonEncode(data),
+        tag: tag,
+        channelId: type == 'chat' ? _chatChannel.id : _requestChannel.id,
+        channelName: type == 'chat' ? _chatChannel.name : _requestChannel.name,
+      );
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BACKGROUND TAP LISTENER
+  //
+  //  Quando o usuário toca em uma notificação com o app em background.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  void _setupBackgroundTapListener() {
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      print('🔔 [BG TAP] Notificação tocada: ${message.data}');
+      _handleNotificationTap(message.data);
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  INITIAL MESSAGE (app estava terminado)
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _checkInitialMessage() async {
-    final message = await _fcm.getInitialMessage();
-    if (message != null) {
-      debugPrint('🔔 App aberto por notificação');
-      final chatId = message.data['chatId'] ?? message.data['notificationTag'];
-      if (chatId != null) {
-        await dismissChatNotifications(chatId);
+    final initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) {
+      print(
+          '🚀 [TERMINATED] App abriu por notificação: ${initialMessage.data}');
+
+      // Se os callbacks já estão configurados, processa imediatamente
+      if (_onChatTap != null || _onRequestTap != null) {
+        _handleNotificationTap(initialMessage.data);
+      } else {
+        // Guarda para processar quando os callbacks forem registrados
+        _pendingPayload = initialMessage.data;
       }
-      _handleNotificationClick(message.data);
     }
   }
 
-  // ============================================================
-  // EXIBIR NOTIFICAÇÃO LOCAL (FOREGROUND)
-  // ✅ Lê do campo data primeiro (mensagens data-only de chat)
-  // ✅ Cai no notification block como fallback (outros tipos)
-  // ============================================================
+  // ══════════════════════════════════════════════════════════════════════════
+  //  LOCAL NOTIFICATION TAP
+  //
+  //  Quando o usuário toca na notificação local (foreground).
+  // ══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _showLocalNotification(RemoteMessage message) async {
+  void _onLocalNotificationTap(NotificationResponse response) {
+    print('🔔 [LOCAL TAP] payload: ${response.payload}');
+
+    if (response.payload == null || response.payload!.isEmpty) return;
+
     try {
-      final data = message.data;
-
-      final title = data['notificationTitle'] ??
-          data['senderName'] ??
-          message.notification?.title ??
-          'Nova mensagem';
-      final body = data['notificationBody'] ??
-          message.notification?.body ??
-          '';
-
-      final chatId = data['notificationTag'] ?? data['chatId'];
-      final senderAvatar = data['senderAvatar'] ?? '';
-
-      final notificationId =
-          chatId != null ? chatId.hashCode : message.hashCode;
-
-      final BigPictureStyleInformation? bigPictureStyle =
-          senderAvatar.isNotEmpty
-              ? BigPictureStyleInformation(
-                  FilePathAndroidBitmap(senderAvatar),
-                  largeIcon: FilePathAndroidBitmap(senderAvatar),
-                  contentTitle: title,
-                  summaryText: body,
-                  hideExpandedLargeIcon: false,
-                )
-              : null;
-
-      final MessagingStyleInformation? messagingStyle =
-          bigPictureStyle == null
-              ? MessagingStyleInformation(
-                  Person(name: title, important: true),
-                  groupConversation: false,
-                  messages: [
-                    Message(body, DateTime.now(), Person(name: title)),
-                  ],
-                )
-              : null;
-
-      final androidDetails = AndroidNotificationDetails(
-        'chat_messages',
-        'Mensagens de Chat',
-        channelDescription: 'Notificações de novas mensagens de chat',
-        importance: Importance.high,
-        priority: Priority.high,
-        showWhen: true,
-        icon: '@drawable/ic_notification',
-        color: const Color(0xFF6B21A8),
-        largeIcon: senderAvatar.isNotEmpty
-            ? FilePathAndroidBitmap(senderAvatar)
-            : null,
-        styleInformation: bigPictureStyle ?? messagingStyle,
-        tag: chatId,
-        playSound: true,
-        enableVibration: true,
-      );
-
-      final iosDetailsWithThread = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-        threadIdentifier: chatId ?? '',
-      );
-
-      final notificationDetails = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetailsWithThread,
-      );
-
-      await _localNotifications.show(
-        notificationId,
-        title,
-        body,
-        notificationDetails,
-        payload: _encodePayload(data),
-      );
+      final data = jsonDecode(response.payload!) as Map<String, dynamic>;
+      _handleNotificationTap(data);
     } catch (e) {
-      debugPrint('❌ Erro ao mostrar notificação local: $e');
+      print('❌ Erro ao parsear payload local: $e');
     }
   }
-
-  // ============================================================
-  // FECHAR NOTIFICAÇÕES DE UM CHAT ESPECÍFICO
-  // ============================================================
 
   Future<void> dismissChatNotifications(String chatId) async {
     try {
       debugPrint('🧹 Fechando notificações do chat: $chatId');
 
-      final androidPlugin = _localNotifications
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+      if (Platform.isAndroid) {
+        final androidPlugin = _localNotifications
+            .resolvePlatformSpecificImplementation<local_notifications.AndroidFlutterLocalNotificationsPlugin>();
 
-      if (androidPlugin != null) {
-        await androidPlugin.cancel(chatId.hashCode, tag: chatId);
+        if (androidPlugin != null) {
+          await androidPlugin.cancel(chatId.hashCode, tag: chatId);
+        }
       }
 
       await _localNotifications.cancel(chatId.hashCode);
@@ -380,145 +284,128 @@ class NotificationService {
     }
   }
 
-  /// Fecha TODAS as notificações do app (usar no logout ou clearAll)
-  Future<void> dismissAllNotifications() async {
-    await _localNotifications.cancelAll();
-    debugPrint('🧹 Todas as notificações removidas');
-  }
-
-  // ============================================================
-  // NAVEGAÇÃO AO CLICAR
-  // ============================================================
-
-  void _onNotificationTap(NotificationResponse response) {
-    debugPrint('👆 Notificação local clicada');
-    if (response.payload != null) {
-      final data = _decodePayload(response.payload!);
-
-      final chatId = data['chatId'] ?? data['notificationTag'];
-      if (chatId != null) {
-        dismissChatNotifications(chatId);
-      }
-
-      _handleNotificationClick(data);
-    }
-  }
-
-  void _handleNotificationClick(Map<String, dynamic> data) {
-  final type = data['type'];
-  debugPrint('🚀 _handleNotificationClick: type=$type | data=$data');
-
-  if (type == 'chat') {
-    final chatId = data['chatId'] ?? data['notificationTag'];
-    final senderId = data['senderId'] ?? '';
-    
-    debugPrint('✅ CHAT CALLBACK | chatId: $chatId | senderId: $senderId');
-    
-    if (chatId != null && onNotificationTap != null) {
-      onNotificationTap!(chatId, senderId);
-    } else {
-      debugPrint('❌ CHAT: callback nulo ou chatId vazio');
-    }
-  } 
-  else if (type == 'request' || type == 'chat_request') {
-    final requestType = data['requestType'] ?? '';
-    final profileId = data['profileId'];
-    final vacancyId = data['vacancyId'];
-    
-    debugPrint('✅ REQUEST CALLBACK | type: $requestType | profile: $profileId | vacancy: $vacancyId');
-    
-    if (onRequestNotificationTap != null) {
-      onRequestNotificationTap!(requestType, profileId, vacancyId);
-    } else {
-      debugPrint('❌ REQUEST: callback nulo');
-    }
-  } 
-  else {
-    debugPrint('⚠️ Tipo desconhecido: $type');
-  }
-}
-
-  // ============================================================
-  // HELPERS DE PAYLOAD
-  // ============================================================
-
-  String _encodePayload(Map<String, dynamic> data) {
-    return data.entries.map((e) => '${e.key}:${e.value}').join('|');
-  }
-
-  Map<String, dynamic> _decodePayload(String payload) {
-    final Map<String, dynamic> data = {};
-    for (final part in payload.split('|')) {
-      final idx = part.indexOf(':');
-      if (idx != -1) {
-        data[part.substring(0, idx)] = part.substring(idx + 1);
-      }
-    }
-    return data;
-  }
-
-  // ============================================================
-  // BADGE (iOS)
-  // ============================================================
-
-  Future<void> setBadgeCount(int count) async {
+  Future<void> removeToken(String userId) async {
     try {
-      await _fcm.setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      debugPrint('🔢 Badge count atualizado: $count');
+      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').remove();
+      debugPrint('🗑️ Token FCM removido');
     } catch (e) {
-      debugPrint('⚠️ Erro ao atualizar badge: $e');
+      debugPrint('❌ Erro ao remover token: $e');
     }
   }
+
+  void _handleNotificationTap(Map<String, dynamic> data) {
+    final type = data['type']?.toString() ?? '';
+
+    print('🎯 Roteando notificação | type=$type');
+
+    switch (type) {
+      case 'chat':
+      case 'chat_accepted':
+        final chatId = data['chatId']?.toString() ?? '';
+        final senderId = data['senderId']?.toString() ?? '';
+
+        if (chatId.isNotEmpty && _onChatTap != null) {
+          print('→ onChatTap($chatId, $senderId)');
+          _onChatTap!(chatId, senderId);
+        } else {
+          print('⚠️ chatId vazio ou callback não registrado');
+        }
+        break;
+
+      case 'request':
+        // Solicitação de chat em perfil profissional (worker recebe)
+        final requestType = data['requestType']?.toString() ?? 'professional';
+        final profileId = data['profileId']?.toString() ?? '';
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+
+        if (_onRequestTap != null) {
+          print('→ onRequestTap($requestType, $profileId, $vacancyId)');
+          _onRequestTap!(requestType, profileId, vacancyId);
+        }
+        break;
+
+      case 'vacancy_request':
+        // Candidatura em vaga (contractor recebe)
+        final vacancyId = data['vacancyId']?.toString() ?? '';
+
+        if (vacancyId.isNotEmpty && _onRequestTap != null) {
+          print('→ onRequestTap(vacancy_request, , $vacancyId)');
+          _onRequestTap!('vacancy_request', '', vacancyId);
+        } else {
+          print('⚠️ vacancyId vazio ou callback não registrado');
+        }
+        break;
+
+      case 'expiration_warning':
+        // Notificação de expiração — não navega, apenas abre o app
+        print('ℹ️ Notificação de expiração, sem navegação especial');
+        break;
+
+      default:
+        print('⚠️ Tipo de notificação desconhecido: $type');
+        break;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  MOSTRAR LOCAL NOTIFICATION
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<void> _showLocalNotification({
+    required String title,
+    required String body,
+    required String payload,
+    String? tag,
+    required String channelId,
+    required String channelName,
+  }) async {
+    try {
+      await _localNotifications.show(
+        tag?.hashCode ?? DateTime.now().millisecondsSinceEpoch,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            channelId,
+            channelName,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            tag: tag,
+            groupKey: channelId,
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
+        payload: payload,
+      );
+    } catch (e) {
+      print('❌ Erro ao mostrar notificação local: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BADGE
+  // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> clearBadge() async {
-  try {
-    final supported = await FlutterAppBadger.isAppBadgeSupported();
-    if (supported) {
-      await FlutterAppBadger.removeBadge();
-      debugPrint('🔢 Badge removido');
+    try {
+      // Limpa badge do iOS
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: false,
+        badge: false,
+        sound: false,
+      );
+
+      // Limpa notificações locais
+      await _localNotifications.cancelAll();
+
+      print('🧹 Badge limpo');
+    } catch (e) {
+      print('❌ Erro ao limpar badge: $e');
     }
-  } catch (e) {
-    debugPrint('⚠️ Erro ao remover badge: $e');
-  }
-}
-
-  // ============================================================
-  // FUNÇÕES PÚBLICAS PARA USO EXTERNO
-  // ============================================================
-
-  /// Para background messages (chamado pelo firebaseMessagingBackgroundHandler)
-  Future<void> handleBackgroundMessage(RemoteMessage message) async {
-    debugPrint('🔥 Background handler chamado: ${message.data}');
-    await _showLocalNotification(message);
-  }
-
-  /// Para foreground messages
-  Future<void> handleForegroundMessage(RemoteMessage message) async {
-    debugPrint('📱 Foreground handler: ${message.data}');
-    await _showLocalNotification(message);
-  }
-
-  /// Para tap na notificação
-  Future<void> handleNotificationTap(Map<String, dynamic> data) async {
-    debugPrint('👆 Notificação clicada: $data');
-
-    final chatId = data['chatId'] ?? data['notificationTag'];
-    if (chatId != null) {
-      await dismissChatNotifications(chatId);
-    }
-
-    _handleNotificationClick(data);
-  }
-
-  // ============================================================
-  // LIMPEZA
-  // ============================================================
-
-  void dispose() {
-    debugPrint('🧹 NotificationService disposed');
   }
 }
