@@ -206,7 +206,7 @@ class LoginController {
       context,
       MaterialPageRoute(
         builder: (_) => HomeScreen(
-          key: homeScreenKey.currentState,
+          key: homeScreenKey,
           local_id: user.localId,
           userName: user.userName,
           userEmail: user.email,

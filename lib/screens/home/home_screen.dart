@@ -40,24 +40,25 @@ class HomeScreen extends StatefulWidget {
   final Map<String, dynamic> dataContractor;
 
   HomeScreen({
-    required this.local_id,
-    required this.userName,
-    required this.userEmail,
-    required this.legalType,
-    required this.userPhone,
-    required this.userCity,
-    required this.contact_email,
-    required this.userState,
-    required this.age,
-    required this.userAvatar,
-    required this.finished_basic,
-    required this.finished_contact,
-    required this.finished_professional,
-    required this.isActive,
-    required this.activeMode,
-    required this.dataWorker,
-    required this.dataContractor, _HomeScreenState? key,
-  });
+  Key? key, // ✅ recebe Key corretamente
+  required this.local_id,
+  required this.userName,
+  required this.userEmail,
+  required this.legalType,
+  required this.userPhone,
+  required this.userCity,
+  required this.contact_email,
+  required this.userState,
+  required this.age,
+  required this.userAvatar,
+  required this.finished_basic,
+  required this.finished_contact,
+  required this.finished_professional,
+  required this.isActive,
+  required this.activeMode,
+  required this.dataWorker,
+  required this.dataContractor,
+}) : super(key: key); 
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
