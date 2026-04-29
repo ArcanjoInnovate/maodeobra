@@ -2,7 +2,7 @@ name: dartobra_new
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+95
+version: 1.0.0+97
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

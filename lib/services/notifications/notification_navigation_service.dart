@@ -1,9 +1,7 @@
 import 'package:dartobra_new/controllers/chat_controller.dart';
-import 'package:dartobra_new/main.dart' show navigatorKey;
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
+import 'package:dartobra_new/screens/home/home_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
-import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
-import 'package:dartobra_new/main.dart' as main_app;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -13,7 +11,7 @@ class NotificationNavigationService {
       NotificationNavigationService._internal();
   factory NotificationNavigationService() => _instance;
   NotificationNavigationService._internal();
-
+  final homeState = homeScreenKey.currentState;
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -44,7 +42,8 @@ class NotificationNavigationService {
     required String userRole,
   }) async {
     try {
-      print('🔔 navigateToChat | chatId=$chatId | userId=$userId | role=$userRole');
+      print(
+          '🔔 navigateToChat | chatId=$chatId | userId=$userId | role=$userRole');
 
       final chatSnap = await _database.child('Chats/$chatId').get();
       if (!chatSnap.exists || chatSnap.value == null) {
@@ -139,8 +138,7 @@ class NotificationNavigationService {
           profileId.isNotEmpty) {
         await _navigateToWorkerProfile(context, userId);
       } else {
-        print(
-            '⚠️ requestType desconhecido ou faltando IDs: $requestType');
+        print('⚠️ requestType desconhecido ou faltando IDs: $requestType');
         _showSnack(context, 'Não foi possível abrir a solicitação');
       }
     } catch (e) {
@@ -167,16 +165,14 @@ class NotificationNavigationService {
       return;
     }
 
-    final vacancyData =
-        Map<String, dynamic>.from(vacancySnap.value as Map);
+    final vacancyData = Map<String, dynamic>.from(vacancySnap.value as Map);
     final localId = vacancyData['local_id']?.toString() ?? userId;
 
     String legalType = 'PF';
     String companyName = '';
     final ownerSnap = await _database.child('Users/$localId').get();
     if (ownerSnap.exists && ownerSnap.value != null) {
-      final ownerData =
-          Map<String, dynamic>.from(ownerSnap.value as Map);
+      final ownerData = Map<String, dynamic>.from(ownerSnap.value as Map);
       legalType = ownerData['legalType']?.toString() ?? 'PF';
       if (ownerData['data_contractor'] != null) {
         final contractorData =
@@ -241,69 +237,36 @@ class NotificationNavigationService {
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _navigateToWorkerProfile(
-  BuildContext context,
-  String userId,
-) async {
-  final userSnap = await _database.child('Users/$userId').get();
-  if (!userSnap.exists || userSnap.value == null) {
-    print('⚠️ Usuário $userId não encontrado');
-    if (context.mounted) _showSnack(context, 'Dados do perfil não encontrados');
-    return;
+    BuildContext context,
+    String userId,
+  ) async {
+    print('🔔 _navigateToWorkerProfile: $userId');
+
+    // ✅ Usa a HomeScreen diretamente via sua GlobalKey
+    // Isso garante que todos os navigators, providers e estado
+    // da HomeScreen estão disponíveis
+    final homeState = homeScreenKey.currentState;
+
+    if (homeState != null && homeState.mounted) {
+      print('✅ HomeScreen encontrada via key — abrindo WorkerProfile');
+      homeState.openWorkerProfileTab();
+      return;
+    }
+
+    // Fallback: se HomeScreen não estiver montada ainda, aguarda
+    print('⏳ HomeScreen não montada, aguardando...');
+    for (int i = 0; i < 15; i++) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      final state = homeScreenKey.currentState;
+      if (state != null && state.mounted) {
+        print('✅ HomeScreen encontrada na tentativa ${i + 1}');
+        state.openWorkerProfileTab();
+        return;
+      }
+    }
+
+    print('⚠️ HomeScreen não encontrada após 15 tentativas');
   }
-
-  final userData = Map<String, dynamic>.from(userSnap.value as Map);
-
-  Map<String, dynamic> dataWorker = {};
-  if (userData['data_worker'] != null) {
-    dataWorker = Map<String, dynamic>.from(userData['data_worker'] as Map);
-  }
-
-  final bool finishedBasic = userData['finished_basic'] == true;
-  final bool finishedContact = userData['finished_contact'] == true;
-  final bool finishedProfessional = userData['finished_professional'] == true;
-  final bool isActive = userData['isActive'] == true;
-  final String userName = userData['Name']?.toString() ?? 'Usuário';
-  final String userAvatar = userData['avatar']?.toString() ?? '';
-  final String userCity = userData['city']?.toString() ?? '';
-  final String userState = userData['state']?.toString() ?? '';
-  final String userEmail = userData['email_contact']?.toString() ??
-      userData['email']?.toString() ?? '';
-  final String userTelefone = userData['telefone']?.toString() ?? '';
-  final String legalType = userData['legalType']?.toString() ?? 'PF';
-
-  // ✅ Usa navigatorKey.currentContext — garante que HomeScreen
-  // está na pilha e os navigators internos funcionam corretamente
-  final ctx = main_app.navigatorKey.currentContext;
-  if (ctx == null || !ctx.mounted) {
-    print('⚠️ navigatorKey sem context');
-    return;
-  }
-
-  Navigator.of(ctx).push(
-    MaterialPageRoute(
-      builder: (_) => WorkerProfileActivation(
-        userName: userName,
-        userAvatar: userAvatar,
-        userCity: userCity,
-        userState: userState,
-        userEmail: userEmail,
-        userTelefone: userTelefone,
-        legalType: legalType,
-        dataWorker: dataWorker,
-        isActive: isActive,
-        localId: userId,
-        finished_basic: finishedBasic,
-        finished_contact: finishedContact,
-        finished_professional: finishedProfessional,
-        onActivated: () {},
-        onProfileIncomplete: () {},
-        initialTabIndex: 0,
-      ),
-    ),
-  );
-
-  print('✅ Navegou para WorkerProfileActivation: $userId');
-}
 
   // ══════════════════════════════════════════════════════════════════════════
   // HELPER — SnackBar
@@ -315,8 +278,7 @@ class NotificationNavigationService {
       SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
       ),
     );

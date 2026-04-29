@@ -5,6 +5,7 @@ import 'package:dartobra_new/screens/complaints/complaint_user_search_screen.dar
 import 'package:dartobra_new/screens/search/search_page.dart';
 import 'package:dartobra_new/screens/feed/feed_screen.dart';
 import 'package:dartobra_new/main.dart' as main_app;
+import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
 import 'package:dartobra_new/services/notifications/badge_init.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 
@@ -15,6 +16,9 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:dartobra_new/screens/profile/edit_principal_profile_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_management_screen.dart';
 import 'package:provider/provider.dart';
+
+// No topo do arquivo, fora da classe
+final GlobalKey<_HomeScreenState> homeScreenKey = GlobalKey<_HomeScreenState>();
 
 class HomeScreen extends StatefulWidget {
   final String local_id;
@@ -52,7 +56,7 @@ class HomeScreen extends StatefulWidget {
     required this.isActive,
     required this.activeMode,
     required this.dataWorker,
-    required this.dataContractor,
+    required this.dataContractor, _HomeScreenState? key,
   });
 
   @override
@@ -83,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   // ==================key navegação de notificação ====================
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-  
+
   // ==================== LISTENERS ====================
   StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
@@ -96,31 +100,69 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Contadores vindos do backend agregado
   int _unreadChats = 0;
-  int _unreadRequests = 0; // worker = professional requests | contractor = vacancy requests
+  int _unreadRequests =
+      0; // worker = professional requests | contractor = vacancy requests
 
   // ==================== CICLO DE VIDA ====================
 
-  
   @override
+  @override
+  void initState() {
+    super.initState();
+    _initializeVariables();
+    _setupRealtimeListener();
+    BadgeInitializer.ensureBadgeExists(widget.local_id);
+    _loadUserData();
+    _setupBadgeListener();
+    _setupNotificationHandlers(); // ← primeiro registra callbacks locais
 
-  @override
-void initState() {
-  super.initState();
-  _initializeVariables();
-  _setupRealtimeListener();
-  BadgeInitializer.ensureBadgeExists(widget.local_id);
-  _loadUserData();
-  _setupBadgeListener();
-  _setupNotificationHandlers(); // ← primeiro registra callbacks locais
-  
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    _checkProfileCompletion();
-    // ✅ Processa notificação inicial após o frame estar renderizado
-    await _processInitialNotification();
-  });
-  
-  _clearAppBadge();
-}
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _checkProfileCompletion();
+      // ✅ Processa notificação inicial após o frame estar renderizado
+      await _processInitialNotification();
+    });
+
+    _clearAppBadge();
+  }
+
+  // Navegando para work profile pelas notificações
+  void openWorkerProfileTab() {
+    setState(() => _selectedIndex = 3); // aba Vagas
+    // Aguarda o frame e abre o WorkerProfileActivation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openWorkerProfileFromNotification();
+    });
+  }
+
+  Future<void> _openWorkerProfileFromNotification() async {
+    // VacancyManagement já monta o WorkerProfileActivation internamente
+    // Então só precisamos garantir que estamos na aba certa
+    // Se quiser navegar direto, faz assim:
+    if (!mounted) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WorkerProfileActivation(
+          userName: _userName,
+          userAvatar: _userAvatar,
+          userCity: _userCity,
+          userState: _userState,
+          userEmail: _contactEmail,
+          userTelefone: _userPhone,
+          legalType: _legalType,
+          dataWorker: _dataWorker,
+          isActive: widget.isActive,
+          localId: widget.local_id,
+          finished_basic: _finishedBasic,
+          finished_contact: _finishedContact,
+          finished_professional: _finishedProfessional,
+          onActivated: () => setState(() => _workerActivated = true),
+          onProfileIncomplete: () {},
+          initialTabIndex: 0,
+        ),
+      ),
+    );
+  }
 
   Future<void> _processInitialNotification() async {
     // Acessa a instância do _MyAppState através de uma chave global
@@ -129,7 +171,7 @@ void initState() {
       await appState.processInitialMessage();
     }
   }
-  
+
   @override
   void dispose() {
     _userDataSubscription?.cancel();
@@ -145,42 +187,43 @@ void initState() {
       debugPrint('❌ Erro ao limpar badge: $e');
     }
   }
+
   // ==================== NOTIFICAÇÕES ====================
   void _setupNotificationHandlers() {
-  final service = NotificationService();
+    final service = NotificationService();
 
-  // ✅ Role correto baseado no activeMode do usuário
-  final userRole = _activeMode == 'worker' ? 'employee' : 'contractor';
+    // ✅ Role correto baseado no activeMode do usuário
+    final userRole = _activeMode == 'worker' ? 'employee' : 'contractor';
 
-  service.updateCallbacks(
-    onChatTap: (chatId, senderId) async {
-      service.dismissChatNotifications(chatId);
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        service.dismissChatNotifications(chatId);
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      // ✅ Navega direto para o chat específico
-      await NotificationNavigationService().navigateToChat(
-        context: context,
-        chatId: chatId,
-        userId: widget.local_id,
-        userRole: userRole,
-      );
-    },
-    onRequestTap: (requestType, profileId, vacancyId) async {
-      if (!mounted) return;
+        // ✅ Navega direto para o chat específico
+        await NotificationNavigationService().navigateToChat(
+          context: context,
+          chatId: chatId,
+          userId: widget.local_id,
+          userRole: userRole,
+        );
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        if (!mounted) return;
 
-      // ✅ Navega para a tela certa baseado no role
-      await NotificationNavigationService().navigateToRequest(
-        context: context,
-        userId: widget.local_id,
-        userRole: userRole,
-        requestType: requestType ?? '',
-        profileId: profileId,
-        vacancyId: vacancyId,
-      );
-    },
-  );
-}
+        // ✅ Navega para a tela certa baseado no role
+        await NotificationNavigationService().navigateToRequest(
+          context: context,
+          userId: widget.local_id,
+          userRole: userRole,
+          requestType: requestType ?? '',
+          profileId: profileId,
+          vacancyId: vacancyId,
+        );
+      },
+    );
+  }
   // ==================== 🚀 BADGE OTIMIZADO (1 query) ====================
 
   /// Escuta apenas /badges/{userId}.
@@ -208,11 +251,12 @@ void initState() {
       );
 
       setState(() {
-        _unreadChats    = (data['unread_chats']    as int? ?? 0).clamp(0, 9);
+        _unreadChats = (data['unread_chats'] as int? ?? 0).clamp(0, 9);
         _unreadRequests = (data['unread_requests'] as int? ?? 0).clamp(0, 9);
       });
 
-      debugPrint('🔔 Badge atualizado — chats:$_unreadChats | requests:$_unreadRequests');
+      debugPrint(
+          '🔔 Badge atualizado — chats:$_unreadChats | requests:$_unreadRequests');
     }, onError: (error) {
       debugPrint('❌ Erro no listener de badge: $error');
     });
@@ -240,21 +284,18 @@ void initState() {
   }
 
   void _setupRealtimeListener() {
-    _userDataSubscription = _database
-        .child('Users')
-        .child(widget.local_id)
-        .onValue
-        .listen(
-          (DatabaseEvent event) {
-            if (event.snapshot.exists && mounted) {
-              final data = Map<String, dynamic>.from(
-                event.snapshot.value as Map<dynamic, dynamic>,
-              );
-              _updateAllData(data);
-            }
-          },
-          onError: (error) => debugPrint('❌ Erro no listener de usuário: $error'),
-        );
+    _userDataSubscription =
+        _database.child('Users').child(widget.local_id).onValue.listen(
+      (DatabaseEvent event) {
+        if (event.snapshot.exists && mounted) {
+          final data = Map<String, dynamic>.from(
+            event.snapshot.value as Map<dynamic, dynamic>,
+          );
+          _updateAllData(data);
+        }
+      },
+      onError: (error) => debugPrint('❌ Erro no listener de usuário: $error'),
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -263,10 +304,8 @@ void initState() {
     try {
       setState(() => _isLoading = true);
 
-      final snapshot = await _database
-          .child('Users')
-          .child(widget.local_id)
-          .get();
+      final snapshot =
+          await _database.child('Users').child(widget.local_id).get();
 
       if (snapshot.exists && mounted) {
         final data = Map<String, dynamic>.from(
@@ -285,16 +324,17 @@ void initState() {
     if (!mounted) return;
 
     setState(() {
-      _userName     = data['Name']          ?? data['userName']    ?? _userName;
-      _contactEmail = data['email_contact'] ?? data['contact_email'] ?? _contactEmail;
-      _userPhone    = data['telefone']      ?? data['userPhone']   ?? _userPhone;
-      _userCity     = data['city']          ?? data['userCity']    ?? _userCity;
-      _userState    = data['state']         ?? data['userState']   ?? _userState;
-      _userAvatar   = data['avatar']        ?? data['userAvatar']  ?? _userAvatar;
-      _legalType    = data['legalType']     ?? _legalType;
-      _activeMode   = data['activeMode']    ?? _activeMode;
-      _userEmail    = data['email']         ?? _userEmail;
-      _company      = data['company']       ?? _company;
+      _userName = data['Name'] ?? data['userName'] ?? _userName;
+      _contactEmail =
+          data['email_contact'] ?? data['contact_email'] ?? _contactEmail;
+      _userPhone = data['telefone'] ?? data['userPhone'] ?? _userPhone;
+      _userCity = data['city'] ?? data['userCity'] ?? _userCity;
+      _userState = data['state'] ?? data['userState'] ?? _userState;
+      _userAvatar = data['avatar'] ?? data['userAvatar'] ?? _userAvatar;
+      _legalType = data['legalType'] ?? _legalType;
+      _activeMode = data['activeMode'] ?? _activeMode;
+      _userEmail = data['email'] ?? _userEmail;
+      _company = data['company'] ?? _company;
 
       if (data['age'] != null) {
         _userAge = data['age'] is int
@@ -302,9 +342,10 @@ void initState() {
             : int.tryParse(data['age'].toString()) ?? _userAge;
       }
 
-      _finishedBasic         = data['finished_basic']         ?? _finishedBasic;
-      _finishedContact       = data['finished_contact']       ?? _finishedContact;
-      _finishedProfessional  = data['finished_professional']  ?? _finishedProfessional;
+      _finishedBasic = data['finished_basic'] ?? _finishedBasic;
+      _finishedContact = data['finished_contact'] ?? _finishedContact;
+      _finishedProfessional =
+          data['finished_professional'] ?? _finishedProfessional;
 
       if (data['data_worker'] != null) {
         _dataWorker = Map<String, dynamic>.from(data['data_worker'] as Map);
@@ -315,7 +356,8 @@ void initState() {
       }
 
       if (data['data_contractor'] != null) {
-        _dataContractor = Map<String, dynamic>.from(data['data_contractor'] as Map);
+        _dataContractor =
+            Map<String, dynamic>.from(data['data_contractor'] as Map);
       } else if (data['contractor'] != null) {
         _dataContractor = Map<String, dynamic>.from(data['contractor'] as Map);
       }
@@ -380,7 +422,8 @@ void initState() {
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
-              Text('Modo: ${newMode == 'worker' ? 'Prestador' : 'Contratante'}'),
+              Text(
+                  'Modo: ${newMode == 'worker' ? 'Prestador' : 'Contratante'}'),
             ],
           ),
           backgroundColor: Colors.green,
@@ -426,20 +469,26 @@ void initState() {
 
     if (result != null && mounted) {
       setState(() {
-        if (result['userName'] != null)            _userName = result['userName'];
-        if (result['userAge'] != null)             _userAge = result['userAge'];
-        if (result['userCity'] != null)            _userCity = result['userCity'];
-        if (result['userState'] != null)           _userState = result['userState'];
-        if (result['userAvatar'] != null)          _userAvatar = result['userAvatar'];
-        if (result['contact_email'] != null)       _contactEmail = result['contact_email'];
-        if (result['legalType'] != null)           _legalType = result['legalType'];
-        if (result['company'] != null)             _company = result['company'];
-        if (result['userPhone'] != null)           _userPhone = result['userPhone'];
-        if (result['finished_basic'] != null)      _finishedBasic = result['finished_basic'];
-        if (result['finished_contact'] != null)    _finishedContact = result['finished_contact'];
-        if (result['finished_professional'] != null) _finishedProfessional = result['finished_professional'];
-        if (result['dataWorker'] != null)          _dataWorker = Map<String, dynamic>.from(result['dataWorker']);
-        if (result['dataContractor'] != null)      _dataContractor = Map<String, dynamic>.from(result['dataContractor']);
+        if (result['userName'] != null) _userName = result['userName'];
+        if (result['userAge'] != null) _userAge = result['userAge'];
+        if (result['userCity'] != null) _userCity = result['userCity'];
+        if (result['userState'] != null) _userState = result['userState'];
+        if (result['userAvatar'] != null) _userAvatar = result['userAvatar'];
+        if (result['contact_email'] != null)
+          _contactEmail = result['contact_email'];
+        if (result['legalType'] != null) _legalType = result['legalType'];
+        if (result['company'] != null) _company = result['company'];
+        if (result['userPhone'] != null) _userPhone = result['userPhone'];
+        if (result['finished_basic'] != null)
+          _finishedBasic = result['finished_basic'];
+        if (result['finished_contact'] != null)
+          _finishedContact = result['finished_contact'];
+        if (result['finished_professional'] != null)
+          _finishedProfessional = result['finished_professional'];
+        if (result['dataWorker'] != null)
+          _dataWorker = Map<String, dynamic>.from(result['dataWorker']);
+        if (result['dataContractor'] != null)
+          _dataContractor = Map<String, dynamic>.from(result['dataContractor']);
       });
     }
 
@@ -450,57 +499,53 @@ void initState() {
   void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
   List<Widget> get _screens => [
-    FeedScreen(
-      userEmail: _userEmail,
-      localId: widget.local_id,
-      userPhone: _userPhone,
-      userName: _userName,
-      legalType: _legalType,
-      userCity: _userCity,
-      userState: _userState,
-      userAvatar: _userAvatar,
-      finished_basic: _finishedBasic,
-      finished_professional: _finishedProfessional,
-      finished_contact: _finishedContact,
-      isActive: widget.isActive,
-      activeMode: _activeMode,
-      dataWorker: _dataWorker,
-      dataContractor: _dataContractor,
-      onNavigateToVacancies: () => _onItemTapped(3),
-    ),
-
-    ChangeNotifierProvider(
-      create: (_) => search.SearchController(),
-      child: const SearchPage(),
-    ),
-
-    ChatListScreen(
-      userId: widget.local_id,
-      userRole: _activeMode == 'worker' ? 'employee' : 'contractor',
-    ),
-
-    VacancyManagement(
-      userEmail: _userEmail,
-      localId: widget.local_id,
-      userPhone: _userPhone,
-      userName: _userName,
-      legalType: _legalType,
-      userCity: _userCity,
-      userState: _userState,
-      userAvatar: _userAvatar,
-      finished_basic: _finishedBasic,
-      finished_professional: _finishedProfessional,
-      finished_contact: _finishedContact,
-      isActive: widget.isActive,
-      activeMode: _activeMode,
-      dataWorker: _dataWorker,
-      dataContractor: _dataContractor,
-      workerActivated: _workerActivated,
-      onWorkerActivated: () => setState(() => _workerActivated = true),
-    ),
-
-    _buildProfileScreen(),
-  ];
+        FeedScreen(
+          userEmail: _userEmail,
+          localId: widget.local_id,
+          userPhone: _userPhone,
+          userName: _userName,
+          legalType: _legalType,
+          userCity: _userCity,
+          userState: _userState,
+          userAvatar: _userAvatar,
+          finished_basic: _finishedBasic,
+          finished_professional: _finishedProfessional,
+          finished_contact: _finishedContact,
+          isActive: widget.isActive,
+          activeMode: _activeMode,
+          dataWorker: _dataWorker,
+          dataContractor: _dataContractor,
+          onNavigateToVacancies: () => _onItemTapped(3),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => search.SearchController(),
+          child: const SearchPage(),
+        ),
+        ChatListScreen(
+          userId: widget.local_id,
+          userRole: _activeMode == 'worker' ? 'employee' : 'contractor',
+        ),
+        VacancyManagement(
+          userEmail: _userEmail,
+          localId: widget.local_id,
+          userPhone: _userPhone,
+          userName: _userName,
+          legalType: _legalType,
+          userCity: _userCity,
+          userState: _userState,
+          userAvatar: _userAvatar,
+          finished_basic: _finishedBasic,
+          finished_professional: _finishedProfessional,
+          finished_contact: _finishedContact,
+          isActive: widget.isActive,
+          activeMode: _activeMode,
+          dataWorker: _dataWorker,
+          dataContractor: _dataContractor,
+          workerActivated: _workerActivated,
+          onWorkerActivated: () => setState(() => _workerActivated = true),
+        ),
+        _buildProfileScreen(),
+      ];
 
   // ==================== DIALOGS ====================
 
@@ -512,7 +557,8 @@ void initState() {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6B35), size: 26),
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFFF6B35), size: 26),
             SizedBox(width: 12),
             Text('Perfil Incompleto',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
@@ -524,7 +570,8 @@ void initState() {
           children: [
             Text(
               'Para aproveitar todos os recursos da plataforma, você precisa completar seu perfil.',
-              style: TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
+              style:
+                  TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
             ),
             SizedBox(height: 16),
             Container(
@@ -551,7 +598,8 @@ void initState() {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('Depois', style: TextStyle(color: Colors.grey[600], fontSize: 15)),
+            child: Text('Depois',
+                style: TextStyle(color: Colors.grey[600], fontSize: 15)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -562,7 +610,8 @@ void initState() {
               backgroundColor: Color(0xFFFF6B35),
               foregroundColor: Colors.white,
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               elevation: 0,
             ),
             child: Text('Completar Agora',
@@ -603,10 +652,12 @@ void initState() {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                Text(title,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                 SizedBox(height: 2),
                 Text(value,
-                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, color: Colors.black87)),
               ],
             ),
           ),
@@ -634,7 +685,8 @@ void initState() {
     final screenHeight = MediaQuery.of(context).size.height;
     final currentData = _activeMode == 'worker' ? _dataWorker : _dataContractor;
     final displayAge = _userAge > 0 ? _userAge : (currentData['age'] ?? 0);
-    final company = _company.isNotEmpty ? _company : (currentData['company'] ?? '');
+    final company =
+        _company.isNotEmpty ? _company : (currentData['company'] ?? '');
     final profession = currentData['profession'] ?? '';
     final summary = currentData['summary'] ?? '';
     final skills = currentData['skills'] != null
@@ -684,10 +736,13 @@ void initState() {
                         children: [
                           Text('Modo Ativo',
                               style: TextStyle(
-                                  color: Colors.white.withOpacity(0.9), fontSize: 14)),
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 14)),
                           SizedBox(height: 4),
                           Text(
-                            _activeMode == 'worker' ? '👷 Prestador' : '👔 Contratante',
+                            _activeMode == 'worker'
+                                ? '👷 Prestador'
+                                : '👔 Contratante',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 20,
@@ -700,7 +755,8 @@ void initState() {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           foregroundColor: Colors.blue,
-                          padding: EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 22, vertical: 12),
                           elevation: 2,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
@@ -778,7 +834,9 @@ void initState() {
                             child: _userAvatar.isEmpty
                                 ? Text(
                                     _userName.isNotEmpty
-                                        ? _userName.substring(0, 1).toUpperCase()
+                                        ? _userName
+                                            .substring(0, 1)
+                                            .toUpperCase()
                                         : '?',
                                     style: TextStyle(
                                         fontSize: 40,
@@ -798,10 +856,12 @@ void initState() {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                            Icon(Icons.location_on,
+                                size: 16, color: Colors.grey[600]),
                             SizedBox(width: 4),
                             Text('$_userCity, $_userState',
-                                style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+                                style: TextStyle(
+                                    color: Colors.grey[600], fontSize: 14)),
                           ],
                         ),
                         SizedBox(height: 20),
@@ -821,7 +881,8 @@ void initState() {
                                       children: [
                                         Text('Idade',
                                             style: TextStyle(
-                                                color: Colors.grey[600], fontSize: 12)),
+                                                color: Colors.grey[600],
+                                                fontSize: 12)),
                                         SizedBox(height: 4),
                                         Text('$displayAge anos',
                                             style: TextStyle(
@@ -844,15 +905,17 @@ void initState() {
                                     children: [
                                       Text('Tipo',
                                           style: TextStyle(
-                                              color: Colors.grey[600], fontSize: 12)),
+                                              color: Colors.grey[600],
+                                              fontSize: 12)),
                                       SizedBox(height: 4),
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                      
                                           Text(
-                                            (_legalType == 'NÃO DEFINIDO' || _legalType == '') 
-                                                ? 'Não definido' 
+                                            (_legalType == 'NÃO DEFINIDO' ||
+                                                    _legalType == '')
+                                                ? 'Não definido'
                                                 : _legalType,
                                             style: TextStyle(
                                               fontSize: 15,
@@ -896,11 +959,13 @@ void initState() {
                                   SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text('Empresa',
                                             style: TextStyle(
-                                                fontSize: 12, color: Colors.grey[600])),
+                                                fontSize: 12,
+                                                color: Colors.grey[600])),
                                         Text(company,
                                             style: TextStyle(
                                                 fontWeight: FontWeight.bold,
@@ -950,7 +1015,8 @@ void initState() {
                     iconColor: Colors.blue,
                     iconBgColor: Colors.blue[50]!,
                     title: 'Email',
-                    value: _contactEmail.isEmpty ? 'Não definido' : _contactEmail,
+                    value:
+                        _contactEmail.isEmpty ? 'Não definido' : _contactEmail,
                   ),
                   SizedBox(height: 12),
                   _buildContactItem(
@@ -997,7 +1063,9 @@ void initState() {
                     SizedBox(height: 12),
                     Text(summary,
                         style: TextStyle(
-                            color: Colors.grey[700], fontSize: 14, height: 1.5)),
+                            color: Colors.grey[700],
+                            fontSize: 14,
+                            height: 1.5)),
                   ],
                 ),
               ),
@@ -1045,8 +1113,8 @@ void initState() {
                                 color: Colors.blue,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child:
-                                  Icon(Icons.work, color: Colors.white, size: 22),
+                              child: Icon(Icons.work,
+                                  color: Colors.white, size: 22),
                             ),
                             SizedBox(width: 12),
                             Expanded(
@@ -1055,7 +1123,8 @@ void initState() {
                                 children: [
                                   Text('Profissão',
                                       style: TextStyle(
-                                          fontSize: 12, color: Colors.grey[600])),
+                                          fontSize: 12,
+                                          color: Colors.grey[600])),
                                   Text(profession,
                                       style: TextStyle(
                                           fontSize: 20,
@@ -1116,7 +1185,7 @@ void initState() {
                     onChatTap: null,
                     onRequestTap: null,
                   );
-                  
+
                   await FirebaseAuth.instance.signOut();
                   Navigator.pushReplacementNamed(context, '/LoginScreen');
                 },
@@ -1129,8 +1198,8 @@ void initState() {
                       borderRadius: BorderRadius.circular(16)),
                 ),
                 child: Text('Sair da Conta',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
             SizedBox(height: 20),
@@ -1144,125 +1213,124 @@ void initState() {
 
   @override
   @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: Color(0xFFFFF5F0),
-    appBar: _selectedIndex == 0
-        ? null
-        : AppBar(
-            backgroundColor: Colors.white,
-            elevation: 1,
-            automaticallyImplyLeading: false,
-            title: Text(
-              _selectedIndex == 4
-                  ? 'Meu Perfil'
-                  : _selectedIndex == 3
-                      ? 'Minhas Vagas'
-                      : _selectedIndex == 2
-                          ? 'Chats'
-                          : _selectedIndex == 1
-                              ? 'Oportunidades'
-                              : 'Buscar Vagas',
-              style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20),
-            ),
-            actions: [
-              // ✅ CORREÇÃO: Mostrar menu apenas na tela de perfil (índice 4)
-              if (_selectedIndex == 4) ...[
-                PopupMenuButton<String>(
-                  icon: Icon(Icons.more_vert, color: Colors.black87),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  offset: Offset(0, 50),
-                  onSelected: (value) {
-                    if (value == 'report_user') {
-                      String company = '';
-                      if (widget.activeMode == 'worker') {
-                        company = widget.dataWorker['company'] ?? '';
-                      } else if (widget.activeMode == 'contractor') {
-                        company = widget.dataContractor['company'] ?? '';
-                      }
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => SearchUserToComplaint(
-                            UserEmailContact: widget.contact_email,
-                            Company: company,
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFFFFF5F0),
+      appBar: _selectedIndex == 0
+          ? null
+          : AppBar(
+              backgroundColor: Colors.white,
+              elevation: 1,
+              automaticallyImplyLeading: false,
+              title: Text(
+                _selectedIndex == 4
+                    ? 'Meu Perfil'
+                    : _selectedIndex == 3
+                        ? 'Minhas Vagas'
+                        : _selectedIndex == 2
+                            ? 'Chats'
+                            : _selectedIndex == 1
+                                ? 'Oportunidades'
+                                : 'Buscar Vagas',
+                style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20),
+              ),
+              actions: [
+                // ✅ CORREÇÃO: Mostrar menu apenas na tela de perfil (índice 4)
+                if (_selectedIndex == 4) ...[
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: Colors.black87),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    offset: Offset(0, 50),
+                    onSelected: (value) {
+                      if (value == 'report_user') {
+                        String company = '';
+                        if (widget.activeMode == 'worker') {
+                          company = widget.dataWorker['company'] ?? '';
+                        } else if (widget.activeMode == 'contractor') {
+                          company = widget.dataContractor['company'] ?? '';
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SearchUserToComplaint(
+                              UserEmailContact: widget.contact_email,
+                              Company: company,
+                            ),
                           ),
+                        );
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      PopupMenuItem<String>(
+                        value: 'report_user',
+                        child: Row(
+                          children: [
+                            Icon(Icons.report_outlined,
+                                color: Colors.red, size: 20),
+                            SizedBox(width: 12),
+                            Text('Denunciar Usuário',
+                                style: TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.w500)),
+                          ],
                         ),
-                      );
-                    }
-                  },
-                  itemBuilder: (BuildContext context) => [
-                    PopupMenuItem<String>(
-                      value: 'report_user',
-                      child: Row(
-                        children: [
-                          Icon(Icons.report_outlined,
-                              color: Colors.red, size: 20),
-                          SizedBox(width: 12),
-                          Text('Denunciar Usuário',
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w500)),
-                        ],
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: ElevatedButton.icon(
+                      onPressed: editProfile,
+                      icon: Icon(Icons.edit, size: 18),
+                      label: Text('Editar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
-                    
-                  ],
-                ),
-                Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: ElevatedButton.icon(
-                    onPressed: editProfile,
-                    icon: Icon(Icons.edit, size: 18),
-                    label: Text('Editar'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+        items: [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'home',
           ),
-    body: IndexedStack(
-      index: _selectedIndex,
-      children: _screens,
-    ),
-    bottomNavigationBar: BottomNavigationBar(
-      currentIndex: _selectedIndex,
-      onTap: _onItemTapped,
-      type: BottomNavigationBarType.fixed,
-      selectedItemColor: Colors.blue,
-      unselectedItemColor: Colors.grey,
-      items: [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.home),
-          label: 'home',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.search),
-          label: 'buscar',
-        ),
-        BottomNavigationBarItem(
-          icon: _buildBadgeIcon(Icons.near_me_outlined, _unreadChats),
-          label: 'chats',
-        ),
-        BottomNavigationBarItem(
-          icon: _buildBadgeIcon(Icons.male, _unreadRequests),
-          label: 'vagas',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.person),
-          label: 'Perfil',
-        ),
-      ],
-    ),
-  );
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'buscar',
+          ),
+          BottomNavigationBarItem(
+            icon: _buildBadgeIcon(Icons.near_me_outlined, _unreadChats),
+            label: 'chats',
+          ),
+          BottomNavigationBarItem(
+            icon: _buildBadgeIcon(Icons.male, _unreadRequests),
+            label: 'vagas',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Perfil',
+          ),
+        ],
+      ),
+    );
   }
 }

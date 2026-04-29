@@ -72,20 +72,12 @@ class NotificationService {
 
   Future<void> initialize(String userId) async {
     _currentUserId = userId;
-
-    // 1. Permissões
     await _requestPermissions();
-
-    // 2. Inicializar local notifications
     await _initLocalNotifications();
-
-    // 3. Registrar/atualizar FCM token
     await _registerToken(userId);
-
-    // 4. Listeners
     _setupForegroundListener();
     _setupBackgroundTapListener();
-
+    // SEM _checkInitialMessage() aqui
     print('✅ NotificationService inicializado para: $userId');
   }
 
