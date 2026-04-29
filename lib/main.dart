@@ -221,12 +221,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 }
 
   // ✅ NOVA FUNÇÃO: Processar notificação inicial
-  Future<void> processInitialMessage() async {
+ Future<void> processInitialMessage() async {
   if (_initialMessageProcessed) return;
   if (_initialMessage == null) return;
-  if (_currentUserId == null || _currentUserRole == null) {
-    print('⚠️ processInitialMessage: userId ou role nulos, abortando');
-    return;
+
+  // ✅ Se userId ainda não foi carregado, tenta buscar agora
+  if (_currentUserId == null) {
+    _currentUserId = await _getCurrentUserId();
+    if (_currentUserId == null) {
+      print('⚠️ processInitialMessage: userId nulo, abortando');
+      return;
+    }
+  }
+
+  if (_currentUserRole == null) {
+    _currentUserRole = await _getUserRole(_currentUserId!);
   }
 
   _initialMessageProcessed = true;
@@ -235,7 +244,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final data = _initialMessage!.data;
   final type = data['type']?.toString() ?? '';
 
-  // ✅ Aguarda o context da HomeScreen estar montado e estável
   await Future.delayed(const Duration(milliseconds: 800));
 
   switch (type) {
@@ -316,7 +324,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Future<String> _getUserRole(String userId) async {
     try {
       final snapshot =
-          await FirebaseDatabase.instance.ref('Users/$userId/userRole').get();
+          await FirebaseDatabase.instance.ref('Users/$userId/activeMode').get();
       return snapshot.value?.toString() ?? 'employee';
     } catch (e) {
       print('❌ Erro userRole: $e');

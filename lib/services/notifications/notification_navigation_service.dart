@@ -3,6 +3,7 @@ import 'package:dartobra_new/main.dart' show navigatorKey;
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
 import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
+import 'package:dartobra_new/main.dart' as main_app;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -246,9 +247,7 @@ class NotificationNavigationService {
   final userSnap = await _database.child('Users/$userId').get();
   if (!userSnap.exists || userSnap.value == null) {
     print('⚠️ Usuário $userId não encontrado');
-    if (context.mounted) {
-      _showSnack(context, 'Dados do perfil não encontrados');
-    }
+    if (context.mounted) _showSnack(context, 'Dados do perfil não encontrados');
     return;
   }
 
@@ -268,18 +267,18 @@ class NotificationNavigationService {
   final String userCity = userData['city']?.toString() ?? '';
   final String userState = userData['state']?.toString() ?? '';
   final String userEmail = userData['email_contact']?.toString() ??
-      userData['email']?.toString() ??
-      '';
+      userData['email']?.toString() ?? '';
   final String userTelefone = userData['telefone']?.toString() ?? '';
   final String legalType = userData['legalType']?.toString() ?? 'PF';
 
-  // ✅ Usa navigatorKey.currentContext em vez do context local
-  // para garantir que a HomeScreen está na pilha
-  final ctx = navigatorKey.currentContext;
-  if (ctx == null || !ctx.mounted) return;
+  // ✅ Usa navigatorKey.currentContext — garante que HomeScreen
+  // está na pilha e os navigators internos funcionam corretamente
+  final ctx = main_app.navigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) {
+    print('⚠️ navigatorKey sem context');
+    return;
+  }
 
-  // ✅ NÃO faz popUntil — mantém HomeScreen na pilha
-  // para que os badges e NavigatorState funcionem corretamente
   Navigator.of(ctx).push(
     MaterialPageRoute(
       builder: (_) => WorkerProfileActivation(
@@ -303,7 +302,7 @@ class NotificationNavigationService {
     ),
   );
 
-  print('✅ Navegou para WorkerProfileActivation: $userId (tab Solicitações)');
+  print('✅ Navegou para WorkerProfileActivation: $userId');
 }
 
   // ══════════════════════════════════════════════════════════════════════════
