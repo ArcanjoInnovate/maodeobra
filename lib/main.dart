@@ -22,6 +22,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
+// ✅ UMA ÚNICA chave global — usada em todo o app.
+// O código anterior declarava DUAS: uma aqui no topo e outra
+// como `static` dentro de `_MyAppState`. O `MaterialApp` recebia
+// a da classe, mas `_safeNavigate*` usava a do topo (sempre null).
+// Isso fazia o foreground nunca navegar.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<String?> _getCurrentUserId() async {
@@ -78,8 +83,9 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-  
+  // ✅ REMOVIDA a declaração duplicada `static final GlobalKey<NavigatorState> navigatorKey`
+  // que estava aqui antes. Agora usamos apenas o `navigatorKey` global do topo do arquivo.
+
   late final DatabaseReference _adminRef;
   bool _isInMaintenance = false;
   bool _notificationsInitialized = false;
@@ -114,7 +120,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _adminRef.onValue.listen((event) {
       final data = event.snapshot.value as Map<dynamic, dynamic>?;
       final isUpdating = data?['isUpdating'] == true;
-      final testers = (data?['testers'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      final testers =
+          (data?['testers'] as List?)?.map((e) => e.toString()).toList() ?? [];
       final userId = FirebaseAuth.instance.currentUser?.uid;
       final isTester = userId != null && testers.contains(userId);
       final shouldShowMaintenance = isUpdating && !isTester;
@@ -125,6 +132,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
       setState(() => _isInMaintenance = shouldShowMaintenance);
 
+      // ✅ Usa o navigatorKey global — mesmo objeto do MaterialApp
       final navigator = navigatorKey.currentState;
       if (navigator == null) return;
 
@@ -168,18 +176,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       },
       onRequestTap: (requestType, profileId, vacancyId) async {
         print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
-        await _safeNavigateRequest(_currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
+        await _safeNavigateRequest(
+            _currentUserId!, _currentUserRole!, requestType, profileId, vacancyId);
       },
     );
 
     print('✅ Callbacks configurados: ${_currentUserId} | ${_currentUserRole}');
   }
 
-  Future<void> _safeNavigateChat(String chatId, String userId, String userRole) async {
-    for (int i = 0; i < 5; i++) { // ✅ 5 tentativas
+  Future<void> _safeNavigateChat(
+      String chatId, String userId, String userRole) async {
+    // ✅ Tenta até 10x com 200ms de intervalo.
+    // No foreground o context já está disponível na 1ª tentativa;
+    // no terminated/background pode demorar alguns frames a mais.
+    for (int i = 0; i < 10; i++) {
+      // ✅ navigatorKey global — sempre o mesmo objeto do MaterialApp
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
-        print('📱 Navegando para chat: $chatId');
+        print('📱 [tentativa ${i + 1}] Navegando para chat: $chatId');
         await NotificationNavigationService().navigateToChat(
           context: context,
           chatId: chatId,
@@ -188,16 +202,22 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
         return;
       }
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 200));
     }
-    print('⚠️ FALHOU navegar chat - sem context após 5 tentativas');
+    print('⚠️ FALHOU navegar chat - sem context após 10 tentativas');
   }
 
-  Future<void> _safeNavigateRequest(String userId, String userRole, String requestType, String? profileId, String? vacancyId) async {
-    for (int i = 0; i < 5; i++) {
+  Future<void> _safeNavigateRequest(
+    String userId,
+    String userRole,
+    String requestType,
+    String? profileId,
+    String? vacancyId,
+  ) async {
+    for (int i = 0; i < 10; i++) {
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
-        print('📱 Navegando para request: $requestType');
+        print('📱 [tentativa ${i + 1}] Navegando para request: $requestType');
         await NotificationNavigationService().navigateToRequest(
           context: context,
           userId: userId,
@@ -208,14 +228,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
         return;
       }
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 200));
     }
-    print('⚠️ FALHOU navegar request - sem context após 5 tentativas');
+    print('⚠️ FALHOU navegar request - sem context após 10 tentativas');
   }
 
   Future<String> _getUserRole(String userId) async {
     try {
-      final snapshot = await FirebaseDatabase.instance.ref('Users/$userId/userRole').get();
+      final snapshot =
+          await FirebaseDatabase.instance.ref('Users/$userId/userRole').get();
       return snapshot.value?.toString() ?? 'employee';
     } catch (e) {
       print('❌ Erro userRole: $e');
@@ -226,10 +247,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => FeedController(), lazy: true)],
+      providers: [
+        ChangeNotifierProvider(create: (_) => FeedController(), lazy: true)
+      ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Mão de Obra',
+        // ✅ navigatorKey global — o mesmo objeto usado nos safe navigates
         navigatorKey: navigatorKey,
         theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
         routes: {

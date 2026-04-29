@@ -1721,6 +1721,325 @@ class _RequestDetailsScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) =>
-      const SizedBox(); // Mantido igual ao original
+  Widget build(BuildContext context) {
+    final contractorData =
+        requestData['data_contractor'] as Map<String, dynamic>? ?? {};
+    final String avatar = requestData['avatar']?.toString() ?? '';
+
+    return Scaffold(
+      backgroundColor: _kSurface,
+      appBar: AppBar(
+        backgroundColor: _kCard,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _kBorder),
+            ),
+            child: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 16, color: _kText),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Detalhes da Solicitação',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: _kText,
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundImage:
+                  avatar.isNotEmpty ? NetworkImage(avatar) : null,
+              backgroundColor: _kBlueSoft,
+              child: avatar.isEmpty
+                  ? const Icon(Icons.business_rounded,
+                      size: 50, color: _kBlue)
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              requestData['name'] ?? 'Nome não informado',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: _kText,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (contractorData['profession']?.toString() != null &&
+                contractorData['profession'].toString() !=
+                    'Não definida') ...[
+              const SizedBox(height: 4),
+              Text(
+                contractorData['profession'],
+                style: const TextStyle(fontSize: 14, color: _kTextSub),
+              ),
+            ],
+            const SizedBox(height: 24),
+            _DetailSection(
+              title: 'Informações de Contato',
+              children: [
+                if (requestData['email']?.toString().isNotEmpty == true)
+                  _DetailRow(
+                    icon: Icons.email_outlined,
+                    label: 'E-mail',
+                    value: requestData['email'],
+                  ),
+                if (requestData['email_contact']
+                        ?.toString()
+                        .isNotEmpty ==
+                    true)
+                  _DetailRow(
+                    icon: Icons.alternate_email_rounded,
+                    label: 'E-mail de Contato',
+                    value: requestData['email_contact'],
+                  ),
+                if (requestData['telefone']?.toString().isNotEmpty ==
+                        true &&
+                    requestData['telefone'] != 'Não definido')
+                  _DetailRow(
+                    icon: Icons.phone_outlined,
+                    label: 'Telefone',
+                    value: requestData['telefone'],
+                  ),
+                _DetailRow(
+                  icon: Icons.location_on_outlined,
+                  label: 'Localização',
+                  value:
+                      '${requestData['city'] ?? ''}, ${requestData['state'] ?? ''}',
+                ),
+                if (requestData['age'] != null)
+                  _DetailRow(
+                    icon: Icons.cake_outlined,
+                    label: 'Idade',
+                    value: '${requestData['age']} anos',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _DetailSection(
+              title: 'Informações Profissionais',
+              children: [
+                if (contractorData['company']
+                        ?.toString()
+                        .trim()
+                        .isNotEmpty ==
+                    true)
+                  _DetailRow(
+                    icon: Icons.business_outlined,
+                    label: 'Empresa',
+                    value: contractorData['company'],
+                  ),
+                if (contractorData['profession']?.toString() != null &&
+                    contractorData['profession'].toString() !=
+                        'Não definida')
+                  _DetailRow(
+                    icon: Icons.work_outline_rounded,
+                    label: 'Profissão',
+                    value: contractorData['profession'],
+                  ),
+                _DetailRow(
+                  icon: Icons.badge_outlined,
+                  label: 'Tipo',
+                  value: requestData['legalType'] == 'PJ'
+                      ? 'Pessoa Jurídica'
+                      : requestData['legalType'] == 'PF'
+                          ? 'Pessoa Física'
+                          : 'Não definido',
+                ),
+                if (contractorData['summary']?.toString().isNotEmpty ==
+                        true &&
+                    contractorData['summary'] != 'Não definido') ...[
+                  const SizedBox(height: 4),
+                  const Divider(color: _kBorder),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Sobre',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _kTextSub),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    contractorData['summary'],
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: _kText,
+                      height: 1.55,
+                    ),
+                    textAlign: TextAlign.justify,
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        decoration: BoxDecoration(
+          color: _kCard,
+          border: Border(top: BorderSide(color: _kBorder)),
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReject,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    side: BorderSide(color: _kRed.withOpacity(0.4)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Recusar',
+                    style: TextStyle(
+                      color: _kRed,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: onAccept,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kGreen,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Aceitar',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailSection extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _DetailSection({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _kCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: _kText,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _kBorder),
+            ),
+            child: Icon(icon, size: 17, color: _kTextSub),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(fontSize: 11, color: _kTextSub)),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _kText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
