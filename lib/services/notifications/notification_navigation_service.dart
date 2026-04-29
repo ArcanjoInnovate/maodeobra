@@ -1,4 +1,5 @@
 import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/main.dart' show navigatorKey;
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
 import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
@@ -239,56 +240,49 @@ class NotificationNavigationService {
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _navigateToWorkerProfile(
-    BuildContext context,
-    String userId,
-  ) async {
-    final userSnap = await _database.child('Users/$userId').get();
-    if (!userSnap.exists || userSnap.value == null) {
-      print('⚠️ Usuário $userId não encontrado');
-      if (context.mounted) {
-        _showSnack(context, 'Dados do perfil não encontrados');
-      }
-      return;
+  BuildContext context,
+  String userId,
+) async {
+  final userSnap = await _database.child('Users/$userId').get();
+  if (!userSnap.exists || userSnap.value == null) {
+    print('⚠️ Usuário $userId não encontrado');
+    if (context.mounted) {
+      _showSnack(context, 'Dados do perfil não encontrados');
     }
+    return;
+  }
 
-    final userData = Map<String, dynamic>.from(userSnap.value as Map);
+  final userData = Map<String, dynamic>.from(userSnap.value as Map);
 
-    Map<String, dynamic> dataWorker = {};
-    if (userData['data_worker'] != null) {
-      dataWorker =
-          Map<String, dynamic>.from(userData['data_worker'] as Map);
-    }
+  Map<String, dynamic> dataWorker = {};
+  if (userData['data_worker'] != null) {
+    dataWorker = Map<String, dynamic>.from(userData['data_worker'] as Map);
+  }
 
-    // Extrai campos adicionais que WorkerProfileActivation precisa
-    final bool finishedBasic =
-        userData['finished_basic'] == true;
-    final bool finishedContact =
-        userData['finished_contact'] == true;
-    final bool finishedProfessional =
-        userData['finished_professional'] == true;
-    final bool isActive = userData['isActive'] == true;
-    final String userName =
-        userData['Name']?.toString() ?? 'Usuário';
-    final String userAvatar =
-        userData['avatar']?.toString() ?? '';
-    final String userCity =
-        userData['city']?.toString() ?? '';
-    final String userState =
-        userData['state']?.toString() ?? '';
-    final String userEmail = userData['email_contact']?.toString() ??
-        userData['email']?.toString() ??
-        '';
-    final String userTelefone =
-        userData['telefone']?.toString() ?? '';
-    final String legalType =
-        userData['legalType']?.toString() ?? 'PF';
+  final bool finishedBasic = userData['finished_basic'] == true;
+  final bool finishedContact = userData['finished_contact'] == true;
+  final bool finishedProfessional = userData['finished_professional'] == true;
+  final bool isActive = userData['isActive'] == true;
+  final String userName = userData['Name']?.toString() ?? 'Usuário';
+  final String userAvatar = userData['avatar']?.toString() ?? '';
+  final String userCity = userData['city']?.toString() ?? '';
+  final String userState = userData['state']?.toString() ?? '';
+  final String userEmail = userData['email_contact']?.toString() ??
+      userData['email']?.toString() ??
+      '';
+  final String userTelefone = userData['telefone']?.toString() ?? '';
+  final String legalType = userData['legalType']?.toString() ?? 'PF';
 
-    if (!context.mounted) return;
+  // ✅ Usa navigatorKey.currentContext em vez do context local
+  // para garantir que a HomeScreen está na pilha
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) return;
 
-    // ✅ FIX: popUntil + push — pilha limpa E a tela abre standalone
-    _pushClean(
-      context,
-      (_) => WorkerProfileActivation(
+  // ✅ NÃO faz popUntil — mantém HomeScreen na pilha
+  // para que os badges e NavigatorState funcionem corretamente
+  Navigator.of(ctx).push(
+    MaterialPageRoute(
+      builder: (_) => WorkerProfileActivation(
         userName: userName,
         userAvatar: userAvatar,
         userCity: userCity,
@@ -302,17 +296,15 @@ class NotificationNavigationService {
         finished_basic: finishedBasic,
         finished_contact: finishedContact,
         finished_professional: finishedProfessional,
-        // Callbacks vazios: o usuário veio de notificação,
-        // não há tela pai para propagar o evento.
         onActivated: () {},
         onProfileIncomplete: () {},
-        initialTabIndex: 0, // Tab Solicitações
+        initialTabIndex: 0,
       ),
-    );
+    ),
+  );
 
-    print(
-        '✅ Navegou para WorkerProfileActivation standalone: $userId (tab Solicitações)');
-  }
+  print('✅ Navegou para WorkerProfileActivation: $userId (tab Solicitações)');
+}
 
   // ══════════════════════════════════════════════════════════════════════════
   // HELPER — SnackBar

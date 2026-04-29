@@ -7,6 +7,7 @@ import 'package:dartobra_new/screens/feed/feed_screen.dart';
 import 'package:dartobra_new/main.dart' as main_app;
 import 'package:dartobra_new/services/notifications/badge_init.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
+
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -102,22 +103,24 @@ class _HomeScreenState extends State<HomeScreen> {
   
   @override
 
-  void initState() {
-    super.initState();
-    _initializeVariables();
-    _setupRealtimeListener();
-    BadgeInitializer.ensureBadgeExists(widget.local_id);
-    _loadUserData();
-    _setupBadgeListener();
-    
-
-    _setupNotificationHandlers();
-     _processInitialNotification();
-    _clearAppBadge();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkProfileCompletion();
-    });
-  }
+  @override
+void initState() {
+  super.initState();
+  _initializeVariables();
+  _setupRealtimeListener();
+  BadgeInitializer.ensureBadgeExists(widget.local_id);
+  _loadUserData();
+  _setupBadgeListener();
+  _setupNotificationHandlers(); // ← primeiro registra callbacks locais
+  
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    _checkProfileCompletion();
+    // ✅ Processa notificação inicial após o frame estar renderizado
+    await _processInitialNotification();
+  });
+  
+  _clearAppBadge();
+}
 
   Future<void> _processInitialNotification() async {
     // Acessa a instância do _MyAppState através de uma chave global

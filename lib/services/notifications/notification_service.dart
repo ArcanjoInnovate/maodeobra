@@ -85,7 +85,6 @@ class NotificationService {
     // 4. Listeners
     _setupForegroundListener();
     _setupBackgroundTapListener();
-    await _checkInitialMessage();
 
     print('✅ NotificationService inicializado para: $userId');
   }

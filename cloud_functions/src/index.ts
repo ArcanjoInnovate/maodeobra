@@ -4,11 +4,11 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
-const serviceAccount = require('../serviceAccountKey.json');
+const serviceAccount = require("../serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://obra-7ebd9-default-rtdb.firebaseio.com"
+  databaseURL: "https://obra-7ebd9-default-rtdb.firebaseio.com",
 });
 
 interface BadgeData {
@@ -44,8 +44,10 @@ function _normalizeRequests(requests: any): string[] {
   if (!requests) return [];
   if (Array.isArray(requests)) return requests;
   // Se for Map/Object, pegar apenas os valores que são strings
-  if (typeof requests === 'object') {
-    return Object.values(requests).filter(v => typeof v === 'string') as string[];
+  if (typeof requests === "object") {
+    return Object.values(requests).filter(
+      (v) => typeof v === "string",
+    ) as string[];
   }
   return [];
 }
@@ -56,7 +58,7 @@ function _normalizeRequests(requests: any): string[] {
 
 async function verifyAndFixBadge(
   userId: string,
-  userRole: "worker" | "contractor"
+  userRole: "worker" | "contractor",
 ): Promise<VerificationResult> {
   const result: VerificationResult = {
     userId,
@@ -71,7 +73,10 @@ async function verifyAndFixBadge(
   try {
     logger.info(`\n🔍 Verificando badge: ${userId} (${userRole})`);
 
-    const badgeSnap = await admin.database().ref(`badges/${userId}`).once("value");
+    const badgeSnap = await admin
+      .database()
+      .ref(`badges/${userId}`)
+      .once("value");
     result.readsUsed++;
 
     if (badgeSnap.exists()) {
@@ -141,7 +146,8 @@ async function verifyAndFixBadge(
           const requestViews = profile.views?.request_views;
           if (requestViews) {
             for (const reqId in requestViews) {
-              if (requestViews[reqId].viewed_by_owner === false) unreadRequests++;
+              if (requestViews[reqId].viewed_by_owner === false)
+                unreadRequests++;
             }
           }
         }
@@ -162,7 +168,8 @@ async function verifyAndFixBadge(
           const requestViews = vacancy.views?.request_views;
           if (requestViews) {
             for (const reqId in requestViews) {
-              if (requestViews[reqId].viewed_by_owner === false) unreadRequests++;
+              if (requestViews[reqId].viewed_by_owner === false)
+                unreadRequests++;
             }
           }
         }
@@ -172,11 +179,16 @@ async function verifyAndFixBadge(
     unreadRequests = Math.min(unreadRequests, 9);
     logger.info(`  Requests não lidos: ${unreadRequests}`);
 
-    result.calculatedBadge = { unread_chats: unreadChats, unread_requests: unreadRequests };
+    result.calculatedBadge = {
+      unread_chats: unreadChats,
+      unread_requests: unreadRequests,
+    };
 
     const needsCorrection =
-      result.currentBadge.unread_chats !== result.calculatedBadge.unread_chats ||
-      result.currentBadge.unread_requests !== result.calculatedBadge.unread_requests;
+      result.currentBadge.unread_chats !==
+        result.calculatedBadge.unread_chats ||
+      result.currentBadge.unread_requests !==
+        result.calculatedBadge.unread_requests;
 
     if (needsCorrection) {
       logger.info(`  ⚠️ Badge incorreto! Corrigindo...`);
@@ -209,7 +221,7 @@ async function verifyAndFixBadge(
 // ============================================================
 
 async function verifyMultipleUsers(
-  userRoles: Record<string, "worker" | "contractor">
+  userRoles: Record<string, "worker" | "contractor">,
 ): Promise<BatchResult> {
   const batchResult: BatchResult = {
     totalProcessed: 0,
@@ -221,7 +233,9 @@ async function verifyMultipleUsers(
   };
 
   logger.info(`\n╔═══════════════════════════════════════╗`);
-  logger.info(`║  VERIFICAÇÃO EM BATCH - ${Object.keys(userRoles).length} USUÁRIOS  ║`);
+  logger.info(
+    `║  VERIFICAÇÃO EM BATCH - ${Object.keys(userRoles).length} USUÁRIOS  ║`,
+  );
   logger.info(`╚═══════════════════════════════════════╝\n`);
 
   for (const [userId, role] of Object.entries(userRoles)) {
@@ -253,7 +267,7 @@ async function verifyMultipleUsers(
   logger.info(`   Leituras: ${batchResult.totalReads}`);
   logger.info(`   Escritas: ${batchResult.totalWrites}`);
   logger.info(
-    `   Média leituras/usuário: ${(batchResult.totalReads / batchResult.totalProcessed).toFixed(1)}`
+    `   Média leituras/usuário: ${(batchResult.totalReads / batchResult.totalProcessed).toFixed(1)}`,
   );
   logger.info(`═══════════════════════════════════════\n`);
 
@@ -287,7 +301,10 @@ async function verifyAllBadges(): Promise<BatchResult> {
   const userRoles: Record<string, "worker" | "contractor"> = {};
 
   for (const userId of Object.keys(badges)) {
-    const userSnap = await admin.database().ref(`Users/${userId}`).once("value");
+    const userSnap = await admin
+      .database()
+      .ref(`Users/${userId}`)
+      .once("value");
 
     if (userSnap.exists()) {
       const userData = userSnap.val() as Record<string, any>;
@@ -331,7 +348,7 @@ export const weeklyBadgeCleanup = onSchedule(
       logger.error("\n❌❌❌ ERRO CRÍTICO NA MANUTENÇÃO ❌❌❌");
       logger.error("Erro:", error);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -355,7 +372,7 @@ export const manualBadgeCleanup = onSchedule(
     } catch (error) {
       logger.error("❌ Erro na limpeza manual:", error);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -379,7 +396,7 @@ export const verifyUserBadge = onRequest(
     } catch (error) {
       response.status(500).send({ success: false, error: String(error) });
     }
-  }
+  },
 );
 
 // ============================================================
@@ -388,7 +405,10 @@ export const verifyUserBadge = onRequest(
 
 async function getSenderInfo(userId: string) {
   try {
-    const userSnap = await admin.database().ref(`Users/${userId}`).once("value");
+    const userSnap = await admin
+      .database()
+      .ref(`Users/${userId}`)
+      .once("value");
     if (!userSnap.exists()) return { name: "Usuário", avatar: "" };
     const userData = userSnap.val() as Record<string, any>;
     return {
@@ -402,7 +422,7 @@ async function getSenderInfo(userId: string) {
 
 async function isUserOnlineInChat(
   chatId: string,
-  userRole: "employee" | "contractor"
+  userRole: "employee" | "contractor",
 ): Promise<boolean> {
   try {
     const statusSnap = await admin
@@ -421,10 +441,13 @@ async function sendChatPushNotification(
   messageText: string,
   chatId: string,
   senderId: string,
-  senderAvatarUrl?: string
+  senderAvatarUrl?: string,
 ) {
   try {
-    const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
+    const tokenSnap = await admin
+      .database()
+      .ref(`Users/${userId}/fcmToken`)
+      .once("value");
 
     if (!tokenSnap.exists()) {
       logger.warn(`⚠️ Usuário ${userId} sem FCM token`);
@@ -492,10 +515,13 @@ async function sendPushNotification(
   title: string,
   body: string,
   data: Record<string, string>,
-  avatarUrl?: string
+  avatarUrl?: string,
 ) {
   try {
-    const tokenSnap = await admin.database().ref(`Users/${userId}/fcmToken`).once("value");
+    const tokenSnap = await admin
+      .database()
+      .ref(`Users/${userId}/fcmToken`)
+      .once("value");
 
     if (!tokenSnap.exists()) {
       logger.warn(`⚠️ Usuário ${userId} sem FCM token`);
@@ -579,14 +605,22 @@ async function recalculateChatBadge(userId: string) {
 
     totalUnread = Math.min(totalUnread, 9);
 
-    const badgeSnap = await admin.database().ref(`badges/${userId}`).once("value");
-    const currentBadge = badgeSnap.exists() ? badgeSnap.val() : { unread_requests: 0 };
+    const badgeSnap = await admin
+      .database()
+      .ref(`badges/${userId}`)
+      .once("value");
+    const currentBadge = badgeSnap.exists()
+      ? badgeSnap.val()
+      : { unread_requests: 0 };
 
-    await admin.database().ref(`badges/${userId}`).set({
-      unread_chats: totalUnread,
-      unread_requests: currentBadge.unread_requests || 0,
-      updated_at: Date.now(),
-    });
+    await admin
+      .database()
+      .ref(`badges/${userId}`)
+      .set({
+        unread_chats: totalUnread,
+        unread_requests: currentBadge.unread_requests || 0,
+        updated_at: Date.now(),
+      });
 
     logger.info(`✅ Badge recalculado: ${totalUnread} chats não lidos`);
   } catch (error) {
@@ -600,19 +634,22 @@ async function incrementRequestBadge(userId: string) {
     const recentSnap = await admin
       .database()
       .ref(`badges/${userId}/last_increment`)
-      .once('value');
-    
+      .once("value");
+
     const lastIncrement = recentSnap.val() as number | null;
     const now = Date.now();
-    
-    if (lastIncrement && now - lastIncrement < 2000) { // 2 segundos
+
+    if (lastIncrement && now - lastIncrement < 2000) {
+      // 2 segundos
       logger.warn(`⚠️ incrementRequestBadge bloqueado (duplicata): ${userId}`);
       return;
     }
 
     const badgeRef = admin.database().ref(`badges/${userId}`);
     const snap = await badgeRef.once("value");
-    const current = snap.exists() ? snap.val() : { unread_chats: 0, unread_requests: 0 };
+    const current = snap.exists()
+      ? snap.val()
+      : { unread_chats: 0, unread_requests: 0 };
 
     await badgeRef.set({
       unread_chats: current.unread_chats || 0,
@@ -620,8 +657,10 @@ async function incrementRequestBadge(userId: string) {
       updated_at: now,
       last_increment: now, // ✅ Marca timestamp
     });
-    
-    logger.info(`✅ Badge incrementado: ${userId} → ${current.unread_requests + 1}`);
+
+    logger.info(
+      `✅ Badge incrementado: ${userId} → ${current.unread_requests + 1}`,
+    );
   } catch (error) {
     logger.error("Erro ao incrementar badge:", error);
   }
@@ -630,16 +669,20 @@ async function incrementRequestBadge(userId: string) {
 async function decrementRequestBadge(userId: string) {
   try {
     const badgeRef = admin.database().ref(`badges/${userId}`);
-    const snap = await badgeRef.once('value');
-    const current = snap.exists() ? snap.val() : { unread_chats: 0, unread_requests: 0 };
+    const snap = await badgeRef.once("value");
+    const current = snap.exists()
+      ? snap.val()
+      : { unread_chats: 0, unread_requests: 0 };
 
     await badgeRef.set({
       unread_chats: current.unread_chats || 0,
       unread_requests: Math.max((current.unread_requests || 0) - 1, 0),
       updated_at: Date.now(),
     });
-    
-    logger.info(`✅ Badge decrementado: ${userId} → ${current.unread_requests - 1}`);
+
+    logger.info(
+      `✅ Badge decrementado: ${userId} → ${current.unread_requests - 1}`,
+    );
   } catch (error) {
     logger.error(`❌ Erro ao decrementar badge:`, error);
   }
@@ -651,23 +694,23 @@ async function decrementRequestBadge(userId: string) {
 
 async function cleanupCandidaturesBadges(userId: string, userRole: string) {
   const database = admin.database();
-  
+
   logger.info(`\n🗑️ Limpando candidaturas de ${userId} (${userRole})`);
-  
-  if (userRole === 'worker') {
+
+  if (userRole === "worker") {
     // Buscar vagas onde o worker se candidatou
-    const vacanciesSnap = await database.ref('vacancy').once('value');
-    
+    const vacanciesSnap = await database.ref("vacancy").once("value");
+
     if (vacanciesSnap.exists()) {
       const vacancies = vacanciesSnap.val() as Record<string, any>;
-      
+
       for (const [vacancyId, vacancyData] of Object.entries(vacancies)) {
         // ✅ Normalizar requests (pode ser Map ou Array)
         const requests = _normalizeRequests(vacancyData.requests);
-        
+
         if (requests.includes(userId)) {
           logger.info(`  📌 Removendo de vacancy/${vacancyId}`);
-          
+
           // Verificar se não foi visualizado
           const requestViews = vacancyData.views?.request_views || {};
           if (requestViews[userId]?.viewed_by_owner === false) {
@@ -675,43 +718,59 @@ async function cleanupCandidaturesBadges(userId: string, userRole: string) {
             logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
             await decrementRequestBadge(ownerId);
           }
-          
+
           // Remover das listas
-          const filteredRequests = requests.filter((id: string) => id !== userId);
-          await database.ref(`vacancy/${vacancyId}/requests`).set(filteredRequests);
-          await database.ref(`vacancy/${vacancyId}/views/request_views/${userId}`).remove();
+          const filteredRequests = requests.filter(
+            (id: string) => id !== userId,
+          );
+          await database
+            .ref(`vacancy/${vacancyId}/requests`)
+            .set(filteredRequests);
+          await database
+            .ref(`vacancy/${vacancyId}/views/request_views/${userId}`)
+            .remove();
         }
       }
     }
   } else {
     // Buscar professionals onde o contractor se candidatou
-    const professionalsSnap = await database.ref('professionals').once('value');
-    
+    const professionalsSnap = await database.ref("professionals").once("value");
+
     if (professionalsSnap.exists()) {
       const professionals = professionalsSnap.val() as Record<string, any>;
-      
-      for (const [professionalId, professionalData] of Object.entries(professionals)) {
+
+      for (const [professionalId, professionalData] of Object.entries(
+        professionals,
+      )) {
         // ✅ Normalizar requests
         const requests = _normalizeRequests(professionalData.requests);
-        
+
         if (requests.includes(userId)) {
           logger.info(`  📌 Removendo de professionals/${professionalId}`);
-          
+
           const requestViews = professionalData.views?.request_views || {};
           if (requestViews[userId]?.viewed_by_owner === false) {
             const ownerId = professionalData.local_id;
             logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
             await decrementRequestBadge(ownerId);
           }
-          
-          const filteredRequests = requests.filter((id: string) => id !== userId);
-          await database.ref(`professionals/${professionalId}/requests`).set(filteredRequests);
-          await database.ref(`professionals/${professionalId}/views/request_views/${userId}`).remove();
+
+          const filteredRequests = requests.filter(
+            (id: string) => id !== userId,
+          );
+          await database
+            .ref(`professionals/${professionalId}/requests`)
+            .set(filteredRequests);
+          await database
+            .ref(
+              `professionals/${professionalId}/views/request_views/${userId}`,
+            )
+            .remove();
         }
       }
     }
   }
-  
+
   logger.info(`✅ Limpeza de candidaturas concluída\n`);
 }
 
@@ -738,27 +797,29 @@ export const onUserDeleted = onValueDeleted(
       // ✅ Pegar role ANTES de deletar (do snapshot antes da exclusão)
       const beforeData = event.data.val() as any;
       const userRole = beforeData?.role || "worker";
-      
+
       logger.info(`👤 Role detectado: ${userRole}`);
 
       // ✅ Limpar candidaturas e ajustar badges dos outros
       await cleanupCandidaturesBadges(userId, userRole);
 
       // ✅ Marcar como deletado (expira em 24h) + SALVAR ROLE
-      const expiresAt = Date.now() + (24 * 60 * 60 * 1000);
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
       await admin.database().ref(`deleted_users/${userId}`).set({
         expires_at: expiresAt,
-        role: userRole,  // ✅ Salvar role para referência futura
+        role: userRole, // ✅ Salvar role para referência futura
         deleted_at: Date.now(),
       });
 
-      logger.info(`\n✅ Marcado como deletado até ${new Date(expiresAt).toISOString()}`);
+      logger.info(
+        `\n✅ Marcado como deletado até ${new Date(expiresAt).toISOString()}`,
+      );
       logger.info(`═══════════════════════════════════════════\n`);
     } catch (error) {
       logger.error(`\n❌❌❌ ERRO AO PROCESSAR EXCLUSÃO ❌❌❌`);
       logger.error(`Erro:`, error);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -774,33 +835,36 @@ export const cleanupDeletedUsers = onSchedule(
   async (_event) => {
     try {
       logger.info("\n🧹 Limpando usuários deletados antigos...");
-      
+
       const now = Date.now();
-      const deletedUsersSnap = await admin.database().ref('deleted_users').once('value');
-      
+      const deletedUsersSnap = await admin
+        .database()
+        .ref("deleted_users")
+        .once("value");
+
       if (!deletedUsersSnap.exists()) {
         logger.info("ℹ️ Nenhum usuário deletado encontrado");
         return;
       }
-      
+
       const deletedUsers = deletedUsersSnap.val() as Record<string, any>;
       let cleaned = 0;
-      
+
       for (const [userId, data] of Object.entries(deletedUsers)) {
         const expiresAt = data?.expires_at || data; // Compatibilidade com formato antigo
-        
+
         if (now > expiresAt) {
           await admin.database().ref(`deleted_users/${userId}`).remove();
           cleaned++;
           logger.info(`  🗑️ Removido: ${userId}`);
         }
       }
-      
+
       logger.info(`✅ Limpeza concluída: ${cleaned} registros removidos\n`);
     } catch (error) {
       logger.error(`❌ Erro na limpeza:`, error);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -823,7 +887,10 @@ export const onChatMessageCreated = onValueCreated(
       logger.info(`📨 NOVA MENSAGEM: ${chatId}`);
       logger.info(`════════════════════════════════════════`);
 
-      const chatSnap = await admin.database().ref(`Chats/${chatId}`).once("value");
+      const chatSnap = await admin
+        .database()
+        .ref(`Chats/${chatId}`)
+        .once("value");
       if (!chatSnap.exists()) {
         logger.warn(`⚠️ Chat ${chatId} não existe`);
         return;
@@ -840,17 +907,19 @@ export const onChatMessageCreated = onValueCreated(
       const senderRole = messageData.sender as "employee" | "contractor";
       const sender = senderRole === "employee" ? employee : contractor;
       const receiver = senderRole === "employee" ? contractor : employee;
-      const receiverRole = senderRole === "employee" ? "contractor" : "employee";
+      const receiverRole =
+        senderRole === "employee" ? "contractor" : "employee";
 
       logger.info(`👤 Sender: ${sender} (${senderRole})`);
       logger.info(`👤 Receiver: ${receiver} (${receiverRole})`);
 
       // ✅ VERIFICA SE É A PRIMEIRA MENSAGEM DO CHAT
-      const isFirstMessage = !metadata?.last_message || metadata.last_message === '';
-      
+      const isFirstMessage =
+        !metadata?.last_message || metadata.last_message === "";
+
       if (isFirstMessage) {
         logger.info(`🔕 Primeira mensagem do chat - pulando notificação`);
-        
+
         await admin
           .database()
           .ref(`Chats/${chatId}/unreadCount/${receiverRole}`)
@@ -885,7 +954,7 @@ export const onChatMessageCreated = onValueCreated(
           messageData.text || "Nova mensagem",
           chatId,
           sender,
-          senderInfo.avatar || undefined
+          senderInfo.avatar || undefined,
         );
       }
 
@@ -895,7 +964,7 @@ export const onChatMessageCreated = onValueCreated(
       logger.error(`\n❌❌❌ ERRO CRÍTICO ❌❌❌`);
       logger.error(`Erro:`, err);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -950,7 +1019,7 @@ export const onProfessionalChatRequestCreated = onValueCreated(
           vacancyId: "",
           userRole: professionalData.role || "worker",
         },
-        requesterAvatar
+        requesterAvatar,
       );
 
       logger.info(`✅ Notificação de chat request enviada!`);
@@ -959,7 +1028,7 @@ export const onProfessionalChatRequestCreated = onValueCreated(
       logger.error(`❌❌❌ ERRO AO PROCESSAR CHAT REQUEST ❌❌❌`);
       logger.error(`Erro:`, err);
     }
-  }
+  },
 );
 
 // ============================================================
@@ -981,8 +1050,8 @@ export const onVacancyChatRequestCreated = onValueCreated(
       const existingSnap = await admin
         .database()
         .ref(`vacancy/${vacancyId}/views/request_views/${requesterId}`)
-        .once('value');
-      
+        .once("value");
+
       if (!existingSnap.exists() || existingSnap.val() === null) {
         logger.info(`⚠️ Nó removido durante processamento, ignorando`);
         return;
@@ -1014,7 +1083,7 @@ export const onVacancyChatRequestCreated = onValueCreated(
       await sendPushNotification(
         ownerId,
         "🎯 Nova Candidatura!",
-        `${candidateName} se candidatou à sua vaga "${vacancyData.title || 'Vaga'}"`,
+        `${candidateName} se candidatou à sua vaga "${vacancyData.title || "Vaga"}"`,
         {
           type: "vacancy_request",
           vacancyId,
@@ -1022,16 +1091,15 @@ export const onVacancyChatRequestCreated = onValueCreated(
           candidateName,
           candidateAvatar,
         },
-        candidateAvatar
+        candidateAvatar,
       );
 
       logger.info(`✅ Badge + Push enviados para: ${ownerId}`);
       logger.info(`\n✅ PROCESSADO SEM DUPLICATA`);
-
     } catch (err: any) {
       logger.error(`❌ ERRO NA CANDIDATURA:`, err);
     }
-  }
+  },
 );
 // ============================================================
 // FUNCTION - CHAT CREATED
@@ -1064,14 +1132,16 @@ export const onChatCreated = onValueCreated(
           senderName: contractorInfo.name,
           senderAvatar: contractorInfo.avatar || "",
         },
-        contractorInfo.avatar
+        contractorInfo.avatar,
       );
 
-      logger.info(`✅ Notificação de chat aceito enviada para employee: ${employee}`);
+      logger.info(
+        `✅ Notificação de chat aceito enviada para employee: ${employee}`,
+      );
     } catch (err) {
       logger.error("Erro em onChatCreated", { error: err });
     }
-  }
+  },
 );
 
 // ============================================================
@@ -1119,7 +1189,9 @@ export const checkExpiringProfessionals = onSchedule(
       let errors = 0;
       let skipped = 0;
 
-      for (const [professionalId, professionalData] of Object.entries(professionals)) {
+      for (const [professionalId, professionalData] of Object.entries(
+        professionals,
+      )) {
         try {
           const expiresAt = professionalData.expires_at;
 
@@ -1130,7 +1202,10 @@ export const checkExpiringProfessionals = onSchedule(
 
           const expirationTimestamp = new Date(expiresAt).getTime();
 
-          if (expirationTimestamp >= minTime && expirationTimestamp <= maxTime) {
+          if (
+            expirationTimestamp >= minTime &&
+            expirationTimestamp <= maxTime
+          ) {
             const localId = professionalData.local_id;
 
             if (!localId) {
@@ -1140,7 +1215,9 @@ export const checkExpiringProfessionals = onSchedule(
 
             const lastNotifiedSnap = await admin
               .database()
-              .ref(`professionals/${professionalId}/last_expiration_notification`)
+              .ref(
+                `professionals/${professionalId}/last_expiration_notification`,
+              )
               .once("value");
 
             const lastNotified = lastNotifiedSnap.val();
@@ -1169,9 +1246,13 @@ export const checkExpiringProfessionals = onSchedule(
 
             const timeLeft = expirationTimestamp - now;
             const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
-            const minutesLeft = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+            const minutesLeft = Math.floor(
+              (timeLeft % (60 * 60 * 1000)) / (60 * 1000),
+            );
             const timeMessage =
-              hoursLeft > 0 ? `${hoursLeft}h ${minutesLeft}min` : `${minutesLeft} minutos`;
+              hoursLeft > 0
+                ? `${hoursLeft}h ${minutesLeft}min`
+                : `${minutesLeft} minutos`;
 
             const message: admin.messaging.Message = {
               token: fcmToken,
@@ -1209,11 +1290,15 @@ export const checkExpiringProfessionals = onSchedule(
 
             await admin
               .database()
-              .ref(`professionals/${professionalId}/last_expiration_notification`)
+              .ref(
+                `professionals/${professionalId}/last_expiration_notification`,
+              )
               .set(now);
 
             notificationsSent++;
-            logger.info(`✅ Notificação de expiração enviada: ${professionalId}`);
+            logger.info(
+              `✅ Notificação de expiração enviada: ${professionalId}`,
+            );
           }
         } catch (error: any) {
           errors++;
@@ -1242,5 +1327,5 @@ export const checkExpiringProfessionals = onSchedule(
       logger.error("\n❌❌❌ ERRO CRÍTICO NA VERIFICAÇÃO ❌❌❌");
       logger.error("Erro:", error);
     }
-  }
+  },
 );
