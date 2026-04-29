@@ -128,42 +128,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Navegando para work profile pelas notificações
   void openWorkerProfileTab() {
-    setState(() => _selectedIndex = 3); // aba Vagas
-    // Aguarda o frame e abre o WorkerProfileActivation
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _openWorkerProfileFromNotification();
-    });
+    // ✅ Só muda a aba — o VacancyManagement já renderiza
+    // o WorkerProfileActivation internamente quando activeMode == worker
+    setState(() => _selectedIndex = 3);
   }
 
-  Future<void> _openWorkerProfileFromNotification() async {
-    // VacancyManagement já monta o WorkerProfileActivation internamente
-    // Então só precisamos garantir que estamos na aba certa
-    // Se quiser navegar direto, faz assim:
-    if (!mounted) return;
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => WorkerProfileActivation(
-          userName: _userName,
-          userAvatar: _userAvatar,
-          userCity: _userCity,
-          userState: _userState,
-          userEmail: _contactEmail,
-          userTelefone: _userPhone,
-          legalType: _legalType,
-          dataWorker: _dataWorker,
-          isActive: widget.isActive,
-          localId: widget.local_id,
-          finished_basic: _finishedBasic,
-          finished_contact: _finishedContact,
-          finished_professional: _finishedProfessional,
-          onActivated: () => setState(() => _workerActivated = true),
-          onProfileIncomplete: () {},
-          initialTabIndex: 0,
-        ),
-      ),
-    );
-  }
 
   Future<void> _processInitialNotification() async {
     // Acessa a instância do _MyAppState através de uma chave global
