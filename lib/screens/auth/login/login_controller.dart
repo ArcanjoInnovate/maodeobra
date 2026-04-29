@@ -196,10 +196,6 @@ class LoginController {
 
     // 4 – Home (fluxo normal)
     debugPrint('🏠 Navegando para HomeScreen');
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser != null) {
-      await NotificationService().initialize(firebaseUser.uid);
-    }
 
     if (!context.mounted) return;
     Navigator.pushReplacement(
