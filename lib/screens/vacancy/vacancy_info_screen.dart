@@ -1,14 +1,10 @@
 // ============================================================
-// PATCH — info_vacancy.dart
+// FIXED — info_vacancy.dart
 // Alterações aplicadas:
-//   1. _loadCandidates passa a usar onValue (stream) em vez de get(),
-//      então a lista reage em tempo real quando requests mudam no DB.
-//   2. DeletedUserDetector já estava presente — mantido e integrado
-//      ao listener para filtrar cards de usuários deletados.
-//   3. dispose() cancela o listener corretamente.
-//   4. ✅ NOVA: Verificação de existência do usuário ANTES de aprovar
-//      candidato, evitando race conditions quando internet está instável.
-//   5. ✅ NOVA: Dialog informativo quando usuário não existe mais.
+//   1. ✅ Removido snackbar quando usuário deletado é detectado ao aprovar
+//   2. ✅ Removido DeletedUserDetector e todos os streams relacionados
+//   3. ✅ Mantida apenas verificação no momento de aprovar candidato
+//   4. ✅ Candidatos removidos silenciosamente quando detectada exclusão
 // ============================================================
 
 // ignore_for_file: unused_import
@@ -26,40 +22,6 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
-mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
-  StreamSubscription? _deletedUsersSubscription;
-  final Set<String> _deletedUsers = {};
-  VoidCallback? _onDeletedUsersChanged;
-
-  void initDeletedUserDetector({VoidCallback? onChange}) {
-    _onDeletedUsersChanged = onChange;
-    _deletedUsersSubscription = FirebaseDatabase.instance
-        .ref('deleted_users')
-        .onValue
-        .listen((event) {
-      if (event.snapshot.exists) {
-        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-        if (mounted) {
-          setState(() {
-            _deletedUsers.clear();
-            _deletedUsers.addAll(data.keys);
-          });
-        }
-      } else {
-        if (mounted) setState(() => _deletedUsers.clear());
-      }
-      
-      // ✅ Callback dispara refiltro
-      _onDeletedUsersChanged?.call();
-    });
-  }
-
-  bool isUserDeleted(String uid) => _deletedUsers.contains(uid);
-
-  void disposeDeletedUserDetector() {
-    _deletedUsersSubscription?.cancel();
-  }
-}
 class InfoVacancy extends StatefulWidget {
   final String userPhone;
   final String userEmail;
@@ -105,7 +67,7 @@ class InfoVacancy extends StatefulWidget {
 }
 
 class _InfoVacancyState extends State<InfoVacancy>
-    with SingleTickerProviderStateMixin, DeletedUserDetector {
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final VacancyService _vacancyService = VacancyService();
@@ -153,11 +115,8 @@ class _InfoVacancyState extends State<InfoVacancy>
     _currentSalaryType = widget.salaryType;
     _currentMedia = widget.media;
 
-    initDeletedUserDetector(
-      onChange: _refilterCandidates, // ← ESTAVA FALTANDO!
-    );
     _loadMedia();
-    _subscribeToRequests(); // ← stream em vez de get()
+    _subscribeToRequests();
     _loadExpirationInfo();
   }
 
@@ -165,21 +124,9 @@ class _InfoVacancyState extends State<InfoVacancy>
   void dispose() {
     _tabController.dispose();
     _requestsSubscription?.cancel();
-    disposeDeletedUserDetector();
     super.dispose();
   }
 
-  void _refilterCandidates() {
-    if (!mounted) return;
-    
-    setState(() {
-      _candidates = _candidates
-          .where((c) => !isUserDeleted(c['uid'] ?? ''))
-          .toList();
-    });
-    
-    debugPrint('🔄 Refiltrados candidatos. Restam: ${_candidates.length}');
-  }
   // ══════════════════════════════════════════════════════════════════════════
   // HELPER — normaliza requests (Map ou List → List<String>)
   // ══════════════════════════════════════════════════════════════════════════
@@ -240,15 +187,13 @@ class _InfoVacancyState extends State<InfoVacancy>
         return;
       }
 
-      // Carrega dados dos candidatos que ainda estão na lista
+      // Carrega dados dos candidatos
       final candidates =
           await _vacancyService.getCandidates(widget.vacancyId, requestIds);
 
       if (mounted) {
         setState(() {
-          // Filtra imediatamente os deletados conhecidos
-          _candidates =
-              candidates.where((c) => !isUserDeleted(c['uid'] ?? '')).toList();
+          _candidates = candidates;
           _isLoadingCandidates = false;
         });
       }
@@ -276,9 +221,7 @@ class _InfoVacancyState extends State<InfoVacancy>
       currentRequests.remove(uid);
 
       if (currentRequests.isEmpty) {
-        await _database
-            .child('vacancy/${widget.vacancyId}/requests')
-            .remove();
+        await _database.child('vacancy/${widget.vacancyId}/requests').remove();
       } else {
         await _database
             .child('vacancy/${widget.vacancyId}/requests')
@@ -298,11 +241,34 @@ class _InfoVacancyState extends State<InfoVacancy>
   Future<void> _rejectCandidate(String uid) async {
     try {
       debugPrint('❌ Recusando candidato: $uid');
+
+      // ✅ Busca estado atual ANTES de remover
+      final requestViewSnap = await _database
+          .child('vacancy/${widget.vacancyId}/views/request_views/$uid')
+          .get();
+
+      bool wasUnviewed = false;
+      if (requestViewSnap.exists && requestViewSnap.value != null) {
+        if (requestViewSnap.exists && requestViewSnap.value != null) {
+          final viewData =
+              Map<String, dynamic>.from(requestViewSnap.value as Map);
+
+          wasUnviewed = viewData['viewed_by_owner'] == false;
+        }
+      }
+
       await remove_request(uid);
       await _database
           .child('vacancy/${widget.vacancyId}/views/request_views/$uid')
           .remove();
-      await BadgeHelper.decrementRequestBadge(widget.localId);
+
+      // ✅ Decrementa badge SOMENTE se não foi visualizado
+      if (wasUnviewed) {
+        debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
+        await BadgeHelper.decrementRequestBadge(widget.localId);
+      } else {
+        debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -324,88 +290,6 @@ class _InfoVacancyState extends State<InfoVacancy>
     return snapshot.exists;
   }
 
-  void _showUserNotFoundDialog({required String userName}) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: const Color(0xFF64748B).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.person_off_rounded,
-                color: Color(0xFF64748B), size: 22),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Usuário indisponível',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-          ),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Não foi possível aprovar $userName.',
-              style: const TextStyle(
-                  fontSize: 14, color: Color(0xFF0F172A), height: 1.5),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded,
-                      size: 16, color: Color(0xFF64748B)),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Este usuário pode ter encerrado sua conta ou está temporariamente indisponível.',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF64748B),
-                          height: 1.45),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 13),
-              ),
-              child: const Text('Entendido',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ══════════════════════════════════════════════════════════════════════════
   // APROVAR CANDIDATO
   // ══════════════════════════════════════════════════════════════════════════
@@ -414,24 +298,22 @@ class _InfoVacancyState extends State<InfoVacancy>
     try {
       // ✅ PRIMEIRA VERIFICAÇÃO: usuário ainda existe?
       final exists = await _checkUserStillExists(employeeUid);
-      
+
       if (!exists) {
-        // Remove da lista e mostra dialog informativo
-        await _rejectCandidate(employeeUid);
-        if (mounted) {
-          _showUserNotFoundDialog(
-            userName: _candidates
-                .firstWhere(
-                  (c) => c['uid'] == employeeUid,
-                  orElse: () => {'name': 'este usuário'},
-                )['name'] ?? 'este usuário',
-          );
-        }
+        // ✅ Remove da lista SILENCIOSAMENTE (sem mostrar snackbar)
+        await remove_request(employeeUid);
+        await _database
+            .child(
+                'vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
+            .remove();
+
+        debugPrint(
+            '⚠️ Usuário $employeeUid não existe mais, removido silenciosamente');
         return;
       }
 
       final chatsSnapshot = await _database.child('Chats').get();
-      
+
       if (chatsSnapshot.exists && chatsSnapshot.value != null) {
         final chatsData = chatsSnapshot.value as Map<dynamic, dynamic>;
         bool chatExists = false;
@@ -487,27 +369,46 @@ class _InfoVacancyState extends State<InfoVacancy>
         'unreadCount': {'contractor': 0, 'employee': 0},
       });
 
-      await _database
-          .child(
-              'vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
-          .remove();
+      // ✅ Busca estado ANTES de remover
+      final requestViewSnap = await _database
+          .child('vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
+          .get();
 
-      await remove_request(employeeUid);
-      await BadgeHelper.decrementRequestBadge(widget.localId);
+      bool wasUnviewed = false;
+      if (requestViewSnap.exists && requestViewSnap.value != null) {
+        final viewData =
+            Map<String, dynamic>.from(requestViewSnap.value as Map);
+        wasUnviewed = viewData['viewed_by_owner'] == false;
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Row(children: const [
-            Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Text('Chat iniciado com sucesso!'),
-          ]),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-        ));
+        await _database
+            .child(
+                'vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
+            .remove();
+
+        await remove_request(employeeUid);
+
+        // ✅ Decrementa badge SOMENTE se não foi visualizado
+        if (wasUnviewed) {
+          debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
+          await BadgeHelper.decrementRequestBadge(widget.localId);
+        } else {
+          debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: const [
+              Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 10),
+              Text('Chat iniciado com sucesso!'),
+            ]),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ));
+        }
       }
     } catch (e) {
       debugPrint('❌ Erro ao aprovar: $e');
@@ -559,8 +460,7 @@ class _InfoVacancyState extends State<InfoVacancy>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
           Container(
             width: 36,
@@ -574,8 +474,7 @@ class _InfoVacancyState extends State<InfoVacancy>
           ),
           const SizedBox(width: 12),
           const Text('Renovar Vaga',
-              style:
-                  TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ]),
         content: const Text(
           'Deseja renovar esta vaga por mais 2 dias?\nEla continuará visível para candidatos.',
@@ -584,8 +483,8 @@ class _InfoVacancyState extends State<InfoVacancy>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar',
-                style: TextStyle(color: Colors.grey.shade600)),
+            child:
+                Text('Cancelar', style: TextStyle(color: Colors.grey.shade600)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -621,8 +520,8 @@ class _InfoVacancyState extends State<InfoVacancy>
           ]),
           backgroundColor: const Color(0xFF16A34A),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       } else {
@@ -634,8 +533,8 @@ class _InfoVacancyState extends State<InfoVacancy>
           ]),
           backgroundColor: const Color(0xFFDC2626),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -660,8 +559,7 @@ class _InfoVacancyState extends State<InfoVacancy>
           _currentMedia = data['midia'];
           _expiresAt = data['expires_at']?.toString();
           _isExpired = _expirationService.isExpired(_expiresAt);
-          _isNearExpiration =
-              _expirationService.isNearExpiration(_expiresAt);
+          _isNearExpiration = _expirationService.isNearExpiration(_expiresAt);
           _daysLeft = _expirationService.daysUntilExpiration(_expiresAt);
           _images.clear();
           _videos.clear();
@@ -692,8 +590,8 @@ class _InfoVacancyState extends State<InfoVacancy>
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(children: [
             Container(
               width: 36,
@@ -708,8 +606,8 @@ class _InfoVacancyState extends State<InfoVacancy>
             const SizedBox(width: 12),
             const Expanded(
                 child: Text('Vaga expirada',
-                    style: TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.bold))),
+                    style:
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
           ]),
           content: const Text(
             'Esta vaga está expirada e não pode ser pausada ou reativada.\n\n'
@@ -743,16 +641,15 @@ class _InfoVacancyState extends State<InfoVacancy>
       return;
     }
     try {
-      final newStatus =
-          _currentStatus == 'Pausada' ? 'Aberta' : 'Pausada';
-      await _vacancyService.updateVacancy(widget.vacancyId, {'status': newStatus});
+      final newStatus = _currentStatus == 'Pausada' ? 'Aberta' : 'Pausada';
+      await _vacancyService
+          .updateVacancy(widget.vacancyId, {'status': newStatus});
       setState(() => _currentStatus = newStatus);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(newStatus == 'Pausada'
             ? 'Vaga pausada com sucesso'
             : 'Vaga reativada com sucesso'),
-        backgroundColor:
-            newStatus == 'Pausada' ? Colors.orange : Colors.green,
+        backgroundColor: newStatus == 'Pausada' ? Colors.orange : Colors.green,
       ));
     } catch (e) {
       debugPrint('Erro ao atualizar status: $e');
@@ -776,11 +673,10 @@ class _InfoVacancyState extends State<InfoVacancy>
             .child('vacancy/${widget.vacancyId}/views/request_views')
             .get();
         if (requestViewsSnap.exists) {
-          final views = Map<String, dynamic>.from(
-              requestViewsSnap.value as Map);
+          final views =
+              Map<String, dynamic>.from(requestViewsSnap.value as Map);
           for (final entry in views.values) {
-            final viewData =
-                Map<String, dynamic>.from(entry as Map);
+            final viewData = Map<String, dynamic>.from(entry as Map);
             if (viewData['viewed_by_owner'] == false) {
               unreadCandidates++;
             }
@@ -821,19 +717,15 @@ class _InfoVacancyState extends State<InfoVacancy>
       final segments = uri.pathSegments;
       final uploadIndex = segments.indexOf('upload');
       if (uploadIndex == -1 || uploadIndex + 2 >= segments.length) return;
-      final publicIdWithExtension =
-          segments.sublist(uploadIndex + 2).join('/');
+      final publicIdWithExtension = segments.sublist(uploadIndex + 2).join('/');
       final publicId = publicIdWithExtension.substring(
           0, publicIdWithExtension.lastIndexOf('.'));
       const cloudName = 'dsmgwupky';
       const apiKey = '256987432736353';
       const apiSecret = 'K8oSFMvqA6N2eU4zLTnLTVuArMU';
-      final timestamp =
-          (DateTime.now().millisecondsSinceEpoch / 1000).round();
-      final toSign =
-          'public_id=$publicId&timestamp=$timestamp$apiSecret';
-      final signature =
-          sha1.convert(utf8.encode(toSign)).toString();
+      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).round();
+      final toSign = 'public_id=$publicId&timestamp=$timestamp$apiSecret';
+      final signature = sha1.convert(utf8.encode(toSign)).toString();
       await http.post(
         Uri.parse(
             'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy'),
@@ -856,11 +748,9 @@ class _InfoVacancyState extends State<InfoVacancy>
         builder: (context) => Scaffold(
           backgroundColor: Colors.black,
           appBar: AppBar(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white),
-          body: Center(
-              child: InteractiveViewer(
-                  child: Image.network(imageUrl))),
+              backgroundColor: Colors.black, foregroundColor: Colors.white),
+          body:
+              Center(child: InteractiveViewer(child: Image.network(imageUrl))),
         ),
       ),
     );
@@ -880,11 +770,6 @@ class _InfoVacancyState extends State<InfoVacancy>
 
   @override
   Widget build(BuildContext context) {
-    // Filtra em tempo real os candidatos de usuários deletados
-    final visibleCandidates = _candidates
-        .where((c) => !isUserDeleted(c['uid'] ?? ''))
-        .toList();
-
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -917,11 +802,10 @@ class _InfoVacancyState extends State<InfoVacancy>
                         children: const [
                           Icon(Icons.people_outline, size: 20),
                           SizedBox(height: 4),
-                          Text('Candidatos',
-                              style: TextStyle(fontSize: 14)),
+                          Text('Candidatos', style: TextStyle(fontSize: 14)),
                         ],
                       ),
-                      if (visibleCandidates.isNotEmpty)
+                      if (_candidates.isNotEmpty)
                         Positioned(
                           top: -2,
                           right: -12,
@@ -930,16 +814,13 @@ class _InfoVacancyState extends State<InfoVacancy>
                                 horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFEF4444),
-                                  Color(0xFFDC2626)
-                                ],
+                                colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
                               ),
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFEF4444)
-                                      .withOpacity(0.4),
+                                  color:
+                                      const Color(0xFFEF4444).withOpacity(0.4),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -950,9 +831,9 @@ class _InfoVacancyState extends State<InfoVacancy>
                             constraints: const BoxConstraints(
                                 minWidth: 20, minHeight: 20),
                             child: Text(
-                              visibleCandidates.length > 99
+                              _candidates.length > 99
                                   ? '99+'
-                                  : '${visibleCandidates.length}',
+                                  : '${_candidates.length}',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
@@ -976,7 +857,7 @@ class _InfoVacancyState extends State<InfoVacancy>
         controller: _tabController,
         children: [
           _buildInfoTab(),
-          _buildCandidatesTab(visibleCandidates),
+          _buildCandidatesTab(_candidates),
         ],
       ),
     );
@@ -1068,8 +949,7 @@ class _InfoVacancyState extends State<InfoVacancy>
             borderRadius:
                 const BorderRadius.vertical(bottom: Radius.circular(20)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: _isRenewing
@@ -1087,8 +967,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                                 color: accent)),
                       ]
                     : [
-                        Icon(Icons.refresh_rounded,
-                            size: 17, color: accent),
+                        Icon(Icons.refresh_rounded, size: 17, color: accent),
                         const SizedBox(width: 8),
                         Text(
                           expired
@@ -1131,8 +1010,8 @@ class _InfoVacancyState extends State<InfoVacancy>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(16),
@@ -1144,8 +1023,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                           width: 8,
                           height: 8,
                           decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle)),
+                              color: Colors.white, shape: BoxShape.circle)),
                       const SizedBox(width: 8),
                       Text('Vaga $_currentStatus',
                           style: const TextStyle(
@@ -1163,12 +1041,11 @@ class _InfoVacancyState extends State<InfoVacancy>
                         color: Colors.white)),
                 const SizedBox(height: 8),
                 Row(children: [
-                  const Icon(Icons.location_on,
-                      size: 18, color: Colors.white),
+                  const Icon(Icons.location_on, size: 18, color: Colors.white),
                   const SizedBox(width: 6),
                   Text('$_currentCity, $_currentState',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 15)),
+                      style:
+                          const TextStyle(color: Colors.white, fontSize: 15)),
                 ]),
                 if (_expiresAt != null && _expiresAt!.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -1202,8 +1079,8 @@ class _InfoVacancyState extends State<InfoVacancy>
               height: 220,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 itemCount: _images.length + _videos.length,
                 itemBuilder: (context, index) {
                   if (index < _images.length) {
@@ -1223,8 +1100,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                                     height: 188,
                                     color: Colors.grey[300],
                                     child: Icon(Icons.broken_image,
-                                        size: 48,
-                                        color: Colors.grey[600]),
+                                        size: 48, color: Colors.grey[600]),
                                   )),
                         ),
                       ),
@@ -1246,14 +1122,12 @@ class _InfoVacancyState extends State<InfoVacancy>
                               children: [
                                 Icon(Icons.videocam,
                                     size: 48,
-                                    color:
-                                        Colors.white.withOpacity(0.7)),
+                                    color: Colors.white.withOpacity(0.7)),
                                 Container(
                                   width: 56,
                                   height: 56,
                                   decoration: BoxDecoration(
-                                    color:
-                                        Colors.blue.withOpacity(0.9),
+                                    color: Colors.blue.withOpacity(0.9),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(Icons.play_arrow,
@@ -1279,9 +1153,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                   icon: Icons.description,
                   content: Text(_currentDescription,
                       style: TextStyle(
-                          color: Colors.grey[700],
-                          fontSize: 14,
-                          height: 1.5)),
+                          color: Colors.grey[700], fontSize: 14, height: 1.5)),
                 ),
                 const SizedBox(height: 16),
                 _buildSectionCard(
@@ -1347,8 +1219,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.blue,
                         side: const BorderSide(color: Colors.blue),
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -1363,9 +1234,8 @@ class _InfoVacancyState extends State<InfoVacancy>
                               ? Icons.play_circle
                               : Icons.pause_circle,
                           size: 18),
-                      label: Text(_currentStatus == 'Pausada'
-                          ? 'Reativar'
-                          : 'Pausar'),
+                      label: Text(
+                          _currentStatus == 'Pausada' ? 'Reativar' : 'Pausar'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _isExpired
                             ? Colors.grey.shade400
@@ -1373,8 +1243,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                                 ? Colors.green
                                 : Colors.orange),
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -1395,8 +1264,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white))
+                                  strokeWidth: 2.5, color: Colors.white))
                           : const Icon(Icons.refresh_rounded, size: 18),
                       label: Text(_isRenewing
                           ? 'Renovando...'
@@ -1406,8 +1274,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF16A34A),
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -1449,8 +1316,7 @@ class _InfoVacancyState extends State<InfoVacancy>
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                       side: BorderSide(color: Colors.red[300]!),
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -1464,8 +1330,7 @@ class _InfoVacancyState extends State<InfoVacancy>
     );
   }
 
-  /// Recebe a lista filtrada para não precisar acessar _candidates direto
-  Widget _buildCandidatesTab(List<Map<String, dynamic>> visibleCandidates) {
+  Widget _buildCandidatesTab(List<Map<String, dynamic>> candidates) {
     return Column(
       children: [
         Container(
@@ -1475,19 +1340,17 @@ class _InfoVacancyState extends State<InfoVacancy>
             const Icon(Icons.people, color: Colors.blue),
             const SizedBox(width: 8),
             Text(
-              '${visibleCandidates.length} ${visibleCandidates.length == 1 ? 'candidato' : 'candidatos'}',
-              style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold),
+              '${candidates.length} ${candidates.length == 1 ? 'candidato' : 'candidatos'}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const Spacer(),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.blue[50],
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text('${visibleCandidates.length} pendentes',
+              child: Text('${candidates.length} pendentes',
                   style: TextStyle(
                       color: Colors.blue[700],
                       fontSize: 12,
@@ -1500,7 +1363,7 @@ class _InfoVacancyState extends State<InfoVacancy>
           child: _isLoadingCandidates
               ? const Center(
                   child: CircularProgressIndicator(color: Colors.blue))
-              : visibleCandidates.isEmpty
+              : candidates.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1522,9 +1385,9 @@ class _InfoVacancyState extends State<InfoVacancy>
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      itemCount: visibleCandidates.length,
+                      itemCount: candidates.length,
                       itemBuilder: (context, index) =>
-                          _buildCandidateCard(visibleCandidates[index]),
+                          _buildCandidateCard(candidates[index]),
                     ),
         ),
       ],
@@ -1552,8 +1415,7 @@ class _InfoVacancyState extends State<InfoVacancy>
             Row(children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor:
-                    const Color(0xFFFF6B35).withOpacity(0.1),
+                backgroundColor: const Color(0xFFFF6B35).withOpacity(0.1),
                 backgroundImage: candidate['avatar'] != null
                     ? NetworkImage(candidate['avatar'])
                     : null,
@@ -1573,18 +1435,17 @@ class _InfoVacancyState extends State<InfoVacancy>
                   children: [
                     Text(candidate['name'],
                         style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600)),
+                            fontSize: 16, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
                     Text(candidate['phone'],
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey[600])),
+                        style:
+                            TextStyle(fontSize: 13, color: Colors.grey[600])),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                     color: Colors.orange[50],
                     borderRadius: BorderRadius.circular(12)),
@@ -1602,8 +1463,7 @@ class _InfoVacancyState extends State<InfoVacancy>
               Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 6),
               Text('${candidate['city']}, ${candidate['state']}',
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.grey[700])),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[700])),
             ]),
             const SizedBox(height: 12),
             Row(children: [
@@ -1646,8 +1506,7 @@ class _InfoVacancyState extends State<InfoVacancy>
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () =>
-                      _approveCandidate(candidate['uid']),
+                  onPressed: () => _approveCandidate(candidate['uid']),
                   icon: const Icon(Icons.check, size: 16),
                   label: const Text('Aprovar'),
                   style: ElevatedButton.styleFrom(
@@ -1753,8 +1612,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      _videoController = VideoPlayerController.networkUrl(
-          Uri.parse(widget.videoUrl));
+      _videoController =
+          VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
       await _videoController.initialize();
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
@@ -1793,12 +1652,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ? Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
-                      Icon(Icons.error_outline,
-                          size: 64, color: Colors.white),
+                      Icon(Icons.error_outline, size: 64, color: Colors.white),
                       SizedBox(height: 16),
                       Text('Erro ao carregar vídeo',
-                          style: TextStyle(
-                              color: Colors.white, fontSize: 16)),
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                     ],
                   )
                 : _chewieController != null
