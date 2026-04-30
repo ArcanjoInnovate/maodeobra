@@ -243,7 +243,16 @@ class _ChatListScreenState extends State<ChatListScreen>
       final userLookup = UserLookupService();
       final otherUserData = await userLookup.getUserData(otherUserId);
 
+      // ✅ Verifica se a conta foi deletada
+      final isAccountDeleted = otherUserData.name == 'Usuário deletado' || 
+                               otherUserData.name.isEmpty;
+
       if (!mounted) return;
+
+      if (isAccountDeleted) {
+        _showDeletedAccountDialog(context);
+        return;
+      }
 
       await Navigator.push(
         context,
@@ -320,6 +329,87 @@ class _ChatListScreenState extends State<ChatListScreen>
               Text(
                 'Esta conversa foi bloqueada devido a denúncias envolvendo uma das partes.\n\n'
                 'Para solicitar a reversão do bloqueio, entre em contato com o nosso suporte.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Colors.grey.shade600,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1C1C1E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Entendi',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ NOVO: Dialog para conta deletada
+  void _showDeletedAccountDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.person_off_outlined,
+                  size: 34,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Conta deletada',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1C1C1E),
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Este usuário deletou sua conta e não está mais disponível para conversa.\n\n'
+                'O histórico de mensagens será mantido, mas não será possível enviar novas mensagens.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13.5,
@@ -709,8 +799,16 @@ class _ChatListTile extends StatelessWidget {
           final userData = userSnapshot.data ??
               UserData(name: 'Usuário', avatar: '', profession: '');
 
+          // ✅ Verifica se a conta foi deletada
+          final isAccountDeleted = userData.name == 'Usuário deletado' || 
+                                   userData.name.isEmpty;
+
           if (isBlocked) {
             return _buildBlockedTile(context, userData);
+          }
+
+          if (isAccountDeleted) {
+            return _buildDeletedAccountTile(context, userData);
           }
 
           // ── Stream do MEU unreadCount (para badge e negrito)
@@ -873,6 +971,98 @@ class _ChatListTile extends StatelessWidget {
             },
           );
         },
+      ),
+    );
+  }
+
+  // ✅ NOVO: Tile para conta deletada
+  Widget _buildDeletedAccountTile(BuildContext context, UserData userData) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Opacity(
+          opacity: 0.65,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.grey[300],
+                      child: const Icon(
+                        Icons.person_off_outlined,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade600,
+                          shape: BoxShape.circle,
+                          border:
+                              Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.block,
+                          size: 9,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Usuário deletado',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black54,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _formatTime(chat.metadata.lastTimestamp),
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Conta não disponível',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[500],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

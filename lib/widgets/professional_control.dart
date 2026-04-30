@@ -43,6 +43,15 @@ class _ProfessionalStatusControlWidgetState
     _loadProfessionalData();
   }
 
+  @override
+  void didUpdateWidget(covariant ProfessionalStatusControlWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Recarrega quando o professionalId finalmente chega (antes estava vazio)
+    if (oldWidget.professionalId != widget.professionalId &&
+        widget.professionalId.isNotEmpty) {
+      _loadProfessionalData();
+    }
+  }
   Future<void> _loadProfessionalData() async {
     try {
       if (widget.professionalId.isEmpty) {
