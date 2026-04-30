@@ -26,20 +26,20 @@ import 'package:flutter/material.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens
 // ─────────────────────────────────────────────────────────────────────────────
-const _kBlue       = Color(0xFF2563EB);
-const _kBlueSoft   = Color(0xFFEFF6FF);
-const _kBlueMid    = Color(0xFFBFDBFE);
-const _kGreen      = Color(0xFF16A34A);
-const _kGreenSoft  = Color(0xFFF0FDF4);
-const _kRed        = Color(0xFFDC2626);
-const _kRedSoft    = Color(0xFFFEF2F2);
-const _kOrange     = Color(0xFFEA580C);
+const _kBlue = Color(0xFF2563EB);
+const _kBlueSoft = Color(0xFFEFF6FF);
+const _kBlueMid = Color(0xFFBFDBFE);
+const _kGreen = Color(0xFF16A34A);
+const _kGreenSoft = Color(0xFFF0FDF4);
+const _kRed = Color(0xFFDC2626);
+const _kRedSoft = Color(0xFFFEF2F2);
+const _kOrange = Color(0xFFEA580C);
 const _kOrangeSoft = Color(0xFFFFF7ED);
-const _kSurface    = Color(0xFFF8FAFC);
-const _kCard       = Colors.white;
-const _kText       = Color(0xFF0F172A);
-const _kTextSub    = Color(0xFF64748B);
-const _kBorder     = Color(0xFFE2E8F0);
+const _kSurface = Color(0xFFF8FAFC);
+const _kCard = Colors.white;
+const _kText = Color(0xFF0F172A);
+const _kTextSub = Color(0xFF64748B);
+const _kBorder = Color(0xFFE2E8F0);
 
 const int _kSummaryMinLength = 40;
 
@@ -51,10 +51,8 @@ mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
   final Set<String> _deletedUsers = {};
 
   void initDeletedUserDetector() {
-    _deletedUsersSubscription = FirebaseDatabase.instance
-        .ref('deleted_users')
-        .onValue
-        .listen((event) {
+    _deletedUsersSubscription =
+        FirebaseDatabase.instance.ref('deleted_users').onValue.listen((event) {
       if (event.snapshot.exists) {
         final data = Map<String, dynamic>.from(event.snapshot.value as Map);
         if (mounted) {
@@ -261,7 +259,8 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
       content: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+          const Icon(Icons.warning_amber_rounded,
+              color: Colors.white, size: 20),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
         ],
@@ -314,33 +313,33 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
 
   Future<void> _createWorkerAd() async {
     final profession = widget.dataWorker['profession'] ?? 'Profissional';
-    final summary    = widget.dataWorker['summary'] ?? '';
-    final skills     = widget.dataWorker['skills'] ?? [];
-    final company    = widget.dataWorker['company'] ?? '';
+    final summary = widget.dataWorker['summary'] ?? '';
+    final skills = widget.dataWorker['skills'] ?? [];
+    final company = widget.dataWorker['company'] ?? '';
 
     final adData = {
-      'local_id'              : widget.localId,
-      'name'                  : widget.userName,
-      'avatar'                : widget.userAvatar,
-      'profession'            : profession,
-      'city'                  : widget.userCity,
-      'state'                 : widget.userState,
-      'legal_type'            : widget.legalType,
-      'company'               : company,
-      'summary'               : summary,
-      'skills'                : skills,
-      'telefone'              : widget.userTelefone,
-      'email'                 : widget.userEmail,
-      'created_at'            : DateTime.now().toIso8601String(),
-      'updated_at'            : DateTime.now().toIso8601String(),
-      'status'                : 'active',
-      'type'                  : 'worker',
-      'expires_at'            : _expirationService.getExpirationDateISO(),
-      'expiration_timestamp'  : _expirationService.getExpirationTimestamp(),
+      'local_id': widget.localId,
+      'name': widget.userName,
+      'avatar': widget.userAvatar,
+      'profession': profession,
+      'city': widget.userCity,
+      'state': widget.userState,
+      'legal_type': widget.legalType,
+      'company': company,
+      'summary': summary,
+      'skills': skills,
+      'telefone': widget.userTelefone,
+      'email': widget.userEmail,
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+      'status': 'active',
+      'type': 'worker',
+      'expires_at': _expirationService.getExpirationDateISO(),
+      'expiration_timestamp': _expirationService.getExpirationTimestamp(),
       'views': {
-        'total_views'    : 0,
-        'unique_viewers' : [],
-        'last_viewed_at' : null,
+        'total_views': 0,
+        'unique_viewers': [],
+        'last_viewed_at': null,
       },
     };
 
@@ -353,15 +352,15 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
       context,
       MaterialPageRoute(
         builder: (_) => _ConfirmationScreen(
-          userName     : widget.userName,
-          userAvatar   : widget.userAvatar,
-          userCity     : widget.userCity,
-          userState    : widget.userState,
-          userEmail    : widget.userEmail,
-          userTelefone : widget.userTelefone,
-          legalType    : widget.legalType,
-          dataWorker   : widget.dataWorker,
-          onConfirm    : () {
+          userName: widget.userName,
+          userAvatar: widget.userAvatar,
+          userCity: widget.userCity,
+          userState: widget.userState,
+          userEmail: widget.userEmail,
+          userTelefone: widget.userTelefone,
+          legalType: widget.legalType,
+          dataWorker: widget.dataWorker,
+          onConfirm: () {
             Navigator.pop(context);
             _activateProfile();
           },
@@ -406,28 +405,28 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
       body: SafeArea(
         child: _isCheckingProfile
             ? const Center(
-                child: CircularProgressIndicator(
-                    color: _kBlue, strokeWidth: 2.5))
+                child:
+                    CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
             : _hasProfile
                 ? _ActiveProfileTabs(
-                    userName              : widget.userName,
-                    userAvatar            : widget.userAvatar,
-                    userCity              : widget.userCity,
-                    userState             : widget.userState,
-                    legalType             : widget.legalType,
-                    dataWorker            : widget.dataWorker,
-                    localId               : widget.localId,
-                    onProfileIncomplete   : widget.onProfileIncomplete,
-                    finished_basic        : widget.finished_basic,
-                    finished_contact      : widget.finished_contact,
-                    finished_professional : widget.finished_professional,
-                    userTelefone          : widget.userTelefone,
-                    userEmail             : widget.userEmail,
+                    userName: widget.userName,
+                    userAvatar: widget.userAvatar,
+                    userCity: widget.userCity,
+                    userState: widget.userState,
+                    legalType: widget.legalType,
+                    dataWorker: widget.dataWorker,
+                    localId: widget.localId,
+                    onProfileIncomplete: widget.onProfileIncomplete,
+                    finished_basic: widget.finished_basic,
+                    finished_contact: widget.finished_contact,
+                    finished_professional: widget.finished_professional,
+                    userTelefone: widget.userTelefone,
+                    userEmail: widget.userEmail,
                   )
                 : _InactiveView(
-                    isActivating    : _isActivating,
-                    onActivate      : _showActivationConfirmation,
-                    dataWorker      : widget.dataWorker,
+                    isActivating: _isActivating,
+                    onActivate: _showActivationConfirmation,
+                    dataWorker: widget.dataWorker,
                     isProfileComplete: _isProfileComplete(),
                   ),
       ),
@@ -453,8 +452,8 @@ class _InactiveView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final summary  = dataWorker['summary']?.toString().trim() ?? '';
-    final skills   = dataWorker['skills'];
+    final summary = dataWorker['summary']?.toString().trim() ?? '';
+    final skills = dataWorker['skills'];
     final hasSkills = skills != null && (skills as List).isNotEmpty;
     final summaryOk = summary.length >= _kSummaryMinLength;
 
@@ -584,50 +583,49 @@ class _InactiveView extends StatelessWidget {
             const SizedBox(height: 20),
           ],
           _FeatureCard(
-            icon       : Icons.campaign_outlined,
-            iconColor  : _kBlue,
-            iconBg     : _kBlueSoft,
-            title      : 'Anúncio Automático',
+            icon: Icons.campaign_outlined,
+            iconColor: _kBlue,
+            iconBg: _kBlueSoft,
+            title: 'Anúncio Automático',
             description: 'Criamos um anúncio baseado no seu perfil completo',
           ),
           const SizedBox(height: 12),
           _FeatureCard(
-            icon       : Icons.visibility_outlined,
-            iconColor  : _kGreen,
-            iconBg     : _kGreenSoft,
-            title      : 'Visibilidade',
-            description:
-                'Seu perfil fica disponível no banco de profissionais',
+            icon: Icons.visibility_outlined,
+            iconColor: _kGreen,
+            iconBg: _kGreenSoft,
+            title: 'Visibilidade',
+            description: 'Seu perfil fica disponível no banco de profissionais',
           ),
           const SizedBox(height: 12),
           _FeatureCard(
-            icon       : Icons.connect_without_contact_outlined,
-            iconColor  : _kOrange,
-            iconBg     : _kOrangeSoft,
-            title      : 'Oportunidades',
+            icon: Icons.connect_without_contact_outlined,
+            iconColor: _kOrange,
+            iconBg: _kOrangeSoft,
+            title: 'Oportunidades',
             description: 'Empresas podem te encontrar e enviar propostas',
           ),
           const SizedBox(height: 40),
           SizedBox(
-            width : double.infinity,
+            width: double.infinity,
             height: 56,
-            child : ElevatedButton(
+            child: ElevatedButton(
               onPressed: isActivating ? null : onActivate,
               style: ElevatedButton.styleFrom(
-                backgroundColor        : isProfileComplete ? _kBlue : _kOrange,
+                backgroundColor: isProfileComplete ? _kBlue : _kOrange,
                 disabledBackgroundColor: _kBorder,
-                elevation              : 0,
-                shadowColor            : Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
               ),
               child: isActivating
                   ? const SizedBox(
                       height: 22,
-                      width : 22,
-                      child : CircularProgressIndicator(
-                          strokeWidth : 2.5,
-                          valueColor  :
+                      width: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor:
                               AlwaysStoppedAnimation<Color>(Colors.white)),
                     )
                   : Row(
@@ -638,7 +636,7 @@ class _InactiveView extends StatelessWidget {
                               ? Icons.rocket_launch_rounded
                               : Icons.edit_outlined,
                           color: Colors.white,
-                          size : 20,
+                          size: 20,
                         ),
                         const SizedBox(width: 10),
                         Text(
@@ -646,10 +644,10 @@ class _InactiveView extends StatelessWidget {
                               ? 'Ativar Perfil Profissional'
                               : 'Complete o Perfil para Ativar',
                           style: const TextStyle(
-                            fontSize      : 16,
-                            fontWeight    : FontWeight.w700,
-                            color         : Colors.white,
-                            letterSpacing : 0.2,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
                           ),
                         ),
                       ],
@@ -678,16 +676,16 @@ class _RequirementItem extends StatelessWidget {
       child: Row(children: [
         Icon(
           ok ? Icons.check_circle_rounded : Icons.cancel_rounded,
-          size : 16,
+          size: 16,
           color: ok ? _kGreen : _kRed,
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(label,
               style: TextStyle(
-                  fontSize   : 13,
-                  color      : ok ? _kText : _kRed,
-                  fontWeight : ok ? FontWeight.normal : FontWeight.w600)),
+                  fontSize: 13,
+                  color: ok ? _kText : _kRed,
+                  fontWeight: ok ? FontWeight.normal : FontWeight.w600)),
         ),
       ]),
     );
@@ -714,23 +712,22 @@ class _FeatureCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color        : _kCard,
-        borderRadius : BorderRadius.circular(16),
-        border       : Border.all(color: _kBorder),
-        boxShadow    : [
+        color: _kCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _kBorder),
+        boxShadow: [
           BoxShadow(
-              color     : Colors.black.withOpacity(0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 12,
-              offset    : const Offset(0, 4)),
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Row(children: [
         Container(
-          width      : 48,
-          height     : 48,
-          decoration : BoxDecoration(
-              color        : iconBg,
-              borderRadius : BorderRadius.circular(14)),
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+              color: iconBg, borderRadius: BorderRadius.circular(14)),
           child: Icon(icon, color: iconColor, size: 24),
         ),
         const SizedBox(width: 16),
@@ -740,9 +737,9 @@ class _FeatureCard extends StatelessWidget {
             children: [
               Text(title,
                   style: const TextStyle(
-                      fontSize  : 15,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color     : _kText)),
+                      color: _kText)),
               const SizedBox(height: 3),
               Text(description,
                   style: const TextStyle(fontSize: 13, color: _kTextSub)),
@@ -812,25 +809,25 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
   Widget build(BuildContext context) {
     return Column(children: [
       Container(
-        color  : _kCard,
+        color: _kCard,
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-        child  : Column(children: [
+        child: Column(children: [
           Row(children: [
             Container(
-              width      : 52,
-              height     : 52,
-              decoration : BoxDecoration(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF3B82F6), _kBlue],
-                  begin : Alignment.topLeft,
-                  end   : Alignment.bottomRight,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow   : [
+                boxShadow: [
                   BoxShadow(
-                      color     : _kBlue.withOpacity(0.25),
+                      color: _kBlue.withOpacity(0.25),
                       blurRadius: 14,
-                      offset    : const Offset(0, 6)),
+                      offset: const Offset(0, 6)),
                 ],
               ),
               child: const Icon(Icons.work_outline_rounded,
@@ -843,9 +840,9 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
                 children: [
                   Text('Perfil Profissional',
                       style: TextStyle(
-                          fontSize     : 20,
-                          fontWeight   : FontWeight.w800,
-                          color        : _kText,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: _kText,
                           letterSpacing: -0.3)),
                   SizedBox(height: 4),
                   _ActiveBadge(),
@@ -855,16 +852,16 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
           ]),
           const SizedBox(height: 20),
           TabBar(
-            controller            : _tabController,
-            labelColor            : _kBlue,
-            unselectedLabelColor  : _kTextSub,
-            indicatorColor        : _kBlue,
-            indicatorWeight       : 2.5,
-            indicatorSize         : TabBarIndicatorSize.label,
-            labelStyle            : const TextStyle(
+            controller: _tabController,
+            labelColor: _kBlue,
+            unselectedLabelColor: _kTextSub,
+            indicatorColor: _kBlue,
+            indicatorWeight: 2.5,
+            indicatorSize: TabBarIndicatorSize.label,
+            labelStyle: const TextStyle(
                 fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 0.1),
-            unselectedLabelStyle  : const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500),
+            unselectedLabelStyle:
+                const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             tabs: const [
               Tab(text: 'Solicitações'),
               Tab(text: 'Atualizar Perfil'),
@@ -875,22 +872,22 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
       Expanded(
         child: TabBarView(
           controller: _tabController,
-          children  : [
+          children: [
             _RequestsTab(localId: widget.localId),
             _UpdateProfileTab(
-              userName              : widget.userName,
-              userAvatar            : widget.userAvatar,
-              userCity              : widget.userCity,
-              userState             : widget.userState,
-              legalType             : widget.legalType,
-              dataWorker            : widget.dataWorker,
-              localId               : widget.localId,
-              onProfileIncomplete   : widget.onProfileIncomplete,
-              finished_basic        : widget.finished_basic,
-              finished_contact      : widget.finished_contact,
-              finished_professional : widget.finished_professional,
-              userTelefone          : widget.userTelefone,
-              userEmail             : widget.userEmail,
+              userName: widget.userName,
+              userAvatar: widget.userAvatar,
+              userCity: widget.userCity,
+              userState: widget.userState,
+              legalType: widget.legalType,
+              dataWorker: widget.dataWorker,
+              localId: widget.localId,
+              onProfileIncomplete: widget.onProfileIncomplete,
+              finished_basic: widget.finished_basic,
+              finished_contact: widget.finished_contact,
+              finished_professional: widget.finished_professional,
+              userTelefone: widget.userTelefone,
+              userEmail: widget.userEmail,
             ),
           ],
         ),
@@ -907,22 +904,22 @@ class _ActiveBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color        : _kGreenSoft,
-        borderRadius : BorderRadius.circular(20),
-        border       : Border.all(color: _kGreen.withOpacity(0.25)),
+        color: _kGreenSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kGreen.withOpacity(0.25)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
-            width      : 7,
-            height     : 7,
-            decoration : const BoxDecoration(
-                color: _kGreen, shape: BoxShape.circle)),
+            width: 7,
+            height: 7,
+            decoration:
+                const BoxDecoration(color: _kGreen, shape: BoxShape.circle)),
         const SizedBox(width: 6),
         const Text('Ativo',
             style: TextStyle(
-                fontSize     : 12,
-                fontWeight   : FontWeight.w700,
-                color        : _kGreen,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _kGreen,
                 letterSpacing: 0.2)),
       ]),
     );
@@ -940,11 +937,10 @@ class _RequestsTab extends StatefulWidget {
   State<_RequestsTab> createState() => _RequestsTabState();
 }
 
-class _RequestsTabState extends State<_RequestsTab>
-    with DeletedUserDetector {
+class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   bool _isLoadingRequests = false;
-  bool _isCreatingChat    = false;
+  bool _isCreatingChat = false;
 
   List<Map<String, dynamic>> _workRequests = [];
   String? _myProfileKey;
@@ -1001,15 +997,15 @@ class _RequestsTabState extends State<_RequestsTab>
   // ── Callback do stream ────────────────────────────────────────────────────
   Future<void> _onProfileSnapshot(DatabaseEvent event) async {
     if (!event.snapshot.exists || event.snapshot.value == null) {
-      if (mounted) setState(() {
-        _workRequests = [];
-        _isLoadingRequests = false;
-      });
+      if (mounted)
+        setState(() {
+          _workRequests = [];
+          _isLoadingRequests = false;
+        });
       return;
     }
 
-    final profileData =
-        Map<String, dynamic>.from(event.snapshot.value as Map);
+    final profileData = Map<String, dynamic>.from(event.snapshot.value as Map);
 
     List<String> requestLocalIds = [];
     final rawRequests = profileData['requests'];
@@ -1033,10 +1029,11 @@ class _RequestsTabState extends State<_RequestsTab>
     }
 
     if (requestLocalIds.isEmpty) {
-      if (mounted) setState(() {
-        _workRequests = [];
-        _isLoadingRequests = false;
-      });
+      if (mounted)
+        setState(() {
+          _workRequests = [];
+          _isLoadingRequests = false;
+        });
       return;
     }
 
@@ -1046,28 +1043,28 @@ class _RequestsTabState extends State<_RequestsTab>
       try {
         final userSnapshot = await _database.child('Users/$localId').once();
         if (userSnapshot.snapshot.value != null) {
-          final userData = Map<String, dynamic>.from(
-              userSnapshot.snapshot.value as Map);
+          final userData =
+              Map<String, dynamic>.from(userSnapshot.snapshot.value as Map);
           Map<String, dynamic> contractorData = {};
           if (userData['data_contractor'] != null) {
-            contractorData = Map<String, dynamic>.from(
-                userData['data_contractor'] as Map);
+            contractorData =
+                Map<String, dynamic>.from(userData['data_contractor'] as Map);
           }
           bool viewedByOwner = false;
           if (viewsData.containsKey(localId)) {
             viewedByOwner = viewsData[localId]['viewed_by_owner'] ?? false;
           }
           requests.add({
-            'local_id'      : localId,
-            'name'          : userData['Name'] ?? 'Nome não informado',
-            'avatar'        : userData['avatar'] ?? '',
-            'city'          : userData['city'] ?? '',
-            'state'         : userData['state'] ?? '',
-            'email'         : userData['email'] ?? '',
-            'telefone'      : userData['telefone'] ?? '',
-            'email_contact' : userData['email_contact'] ?? '',
-            'age'           : userData['age'],
-            'legalType'     : userData['legalType'] ?? 'PF',
+            'local_id': localId,
+            'name': userData['Name'] ?? 'Nome não informado',
+            'avatar': userData['avatar'] ?? '',
+            'city': userData['city'] ?? '',
+            'state': userData['state'] ?? '',
+            'email': userData['email'] ?? '',
+            'telefone': userData['telefone'] ?? '',
+            'email_contact': userData['email_contact'] ?? '',
+            'age': userData['age'],
+            'legalType': userData['legalType'] ?? 'PF',
             'data_contractor': contractorData,
             'viewed_by_owner': viewedByOwner,
           });
@@ -1082,38 +1079,33 @@ class _RequestsTabState extends State<_RequestsTab>
       return a['viewed_by_owner'] ? 1 : -1;
     });
 
-    if (mounted) setState(() {
-      _workRequests = requests;
-      _isLoadingRequests = false;
-    });
+    if (mounted)
+      setState(() {
+        _workRequests = requests;
+        _isLoadingRequests = false;
+      });
   }
 
   // ── Ações ─────────────────────────────────────────────────────────────────
-  Future<void> _refreshRequests() async =>
-      await _findProfileKeyAndSubscribe();
+  Future<void> _refreshRequests() async => await _findProfileKeyAndSubscribe();
 
   Future<void> _removeRequestFromList(String requestLocalId) async {
     if (_myProfileKey == null) return;
-    final snapshot = await _database
-        .child('professionals/$_myProfileKey/requests')
-        .once();
+    final snapshot =
+        await _database.child('professionals/$_myProfileKey/requests').once();
     if (snapshot.snapshot.value != null) {
       List<dynamic> currentRequests;
       if (snapshot.snapshot.value is List) {
-        currentRequests =
-            List<dynamic>.from(snapshot.snapshot.value as List);
+        currentRequests = List<dynamic>.from(snapshot.snapshot.value as List);
       } else if (snapshot.snapshot.value is Map) {
-        currentRequests =
-            (snapshot.snapshot.value as Map).values.toList();
+        currentRequests = (snapshot.snapshot.value as Map).values.toList();
       } else {
         currentRequests = [];
       }
       currentRequests.remove(requestLocalId);
 
       if (currentRequests.isEmpty) {
-        await _database
-            .child('professionals/$_myProfileKey/requests')
-            .remove();
+        await _database.child('professionals/$_myProfileKey/requests').remove();
       } else {
         await _database
             .child('professionals/$_myProfileKey/requests')
@@ -1132,8 +1124,7 @@ class _RequestsTabState extends State<_RequestsTab>
   /// Decrementa badge de request localmente (fallback ao BadgeHelper)
   Future<void> _decrementRequestBadge(String userId) async {
     try {
-      final badgeRef =
-          _database.child('badges/$userId/unread_requests');
+      final badgeRef = _database.child('badges/$userId/unread_requests');
       final snap = await badgeRef.once();
       int current = 0;
       if (snap.snapshot.exists && snap.snapshot.value != null) {
@@ -1159,8 +1150,8 @@ class _RequestsTabState extends State<_RequestsTab>
       bool wasUnviewed = false;
       if (requestViewSnap.snapshot.exists &&
           requestViewSnap.snapshot.value != null) {
-        final viewData = Map<String, dynamic>.from(
-            requestViewSnap.snapshot.value as Map);
+        final viewData =
+            Map<String, dynamic>.from(requestViewSnap.snapshot.value as Map);
         wasUnviewed = viewData['viewed_by_owner'] == false;
       }
 
@@ -1183,8 +1174,8 @@ class _RequestsTabState extends State<_RequestsTab>
           ]),
           backgroundColor: _kOrange,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1195,8 +1186,8 @@ class _RequestsTabState extends State<_RequestsTab>
           content: Text('Erro ao recusar solicitação: $e'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1213,15 +1204,14 @@ class _RequestsTabState extends State<_RequestsTab>
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
           Container(
-            width      : 40,
-            height     : 40,
-            decoration : BoxDecoration(
-              color        : const Color(0xFF64748B).withOpacity(0.1),
-              borderRadius : BorderRadius.circular(12),
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF64748B).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.person_off_rounded,
                 color: Color(0xFF64748B), size: 22),
@@ -1233,9 +1223,9 @@ class _RequestsTabState extends State<_RequestsTab>
           ),
         ]),
         content: Column(
-          mainAxisSize        : MainAxisSize.min,
-          crossAxisAlignment  : CrossAxisAlignment.start,
-          children            : [
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
               'Não foi possível iniciar o chat com $userName.',
               style: const TextStyle(
@@ -1245,9 +1235,9 @@ class _RequestsTabState extends State<_RequestsTab>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color        : const Color(0xFFF8FAFC),
-                borderRadius : BorderRadius.circular(12),
-                border       : Border.all(color: const Color(0xFFE2E8F0)),
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: const Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1259,9 +1249,7 @@ class _RequestsTabState extends State<_RequestsTab>
                     child: Text(
                       'Este usuário pode ter encerrado sua conta ou está temporariamente indisponível.',
                       style: TextStyle(
-                          fontSize: 13,
-                          color   : Color(0xFF64748B),
-                          height  : 1.45),
+                          fontSize: 13, color: Color(0xFF64748B), height: 1.45),
                     ),
                   ),
                 ],
@@ -1275,16 +1263,15 @@ class _RequestsTabState extends State<_RequestsTab>
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor : const Color(0xFF2563EB),
-                foregroundColor : Colors.white,
-                elevation       : 0,
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                elevation: 0,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(vertical: 13),
               ),
               child: const Text('Entendido',
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
@@ -1297,10 +1284,36 @@ class _RequestsTabState extends State<_RequestsTab>
     setState(() => _isCreatingChat = true);
 
     try {
-      final uid    = requestData['local_id'] as String;
+      final uid = requestData['local_id'] as String;
       final exists = await _checkUserStillExists(uid);
 
       if (!exists) {
+        // ── 1. Lê estado do view ANTES de remover (igual ao info_vacancy) ──
+        final requestViewSnap = await _database
+            .child('professionals/$_myProfileKey/views/request_views/$uid')
+            .once();
+
+        bool wasUnviewed = false;
+        if (requestViewSnap.snapshot.exists &&
+            requestViewSnap.snapshot.value != null) {
+          final viewData =
+              Map<String, dynamic>.from(requestViewSnap.snapshot.value as Map);
+          wasUnviewed = viewData['viewed_by_owner'] == false;
+        }
+
+        // ── 2. Remove da lista + request_view (stream dispara → card some) ──
+        await _removeRequestFromList(uid);
+
+        // ── 3. Decrementa badge somente se não havia sido visualizado ────────
+        if (wasUnviewed) {
+          debugPrint(
+              '🔽 [userNotFound] Decrementando badge: ${widget.localId}');
+          await _decrementRequestBadge(widget.localId);
+        } else {
+          debugPrint('ℹ️ [userNotFound] Já visualizado, badge inalterado');
+        }
+
+        // ── 4. Exibe dialog de usuário indisponível ──────────────────────────
         if (mounted) {
           setState(() => _isCreatingChat = false);
           _showUserNotFoundDialog(
@@ -1309,17 +1322,18 @@ class _RequestsTabState extends State<_RequestsTab>
         return;
       }
 
+      // ── Usuário existe: fluxo normal de criação do chat ───────────────────
       final DatabaseReference chatRef = _database.child('Chats').push();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
       await chatRef.set({
-        'contractor' : uid,
-        'employee'   : widget.localId,
+        'contractor': uid,
+        'employee': widget.localId,
         'participants': {'contractor': 'offline', 'employee': 'offline'},
         'metadata': {
-          'created_at'    : timestamp,
-          'last_message'  : '',
-          'last_sender'   : '',
+          'created_at': timestamp,
+          'last_message': '',
+          'last_sender': '',
           'last_timestamp': timestamp,
         },
         'historical_messages': {
@@ -1339,8 +1353,8 @@ class _RequestsTabState extends State<_RequestsTab>
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1350,8 +1364,8 @@ class _RequestsTabState extends State<_RequestsTab>
           content: const Text('Erro ao aceitar solicitação'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1366,7 +1380,7 @@ class _RequestsTabState extends State<_RequestsTab>
       MaterialPageRoute(
         builder: (_) => _RequestDetailsScreen(
           requestData: requestData,
-          onAccept   : () {
+          onAccept: () {
             Navigator.pop(context);
             _createChat(requestData);
           },
@@ -1386,22 +1400,21 @@ class _RequestsTabState extends State<_RequestsTab>
         .toList();
 
     return RefreshIndicator(
-      color   : _kBlue,
+      color: _kBlue,
       onRefresh: _refreshRequests,
-      child   : _isLoadingRequests
+      child: _isLoadingRequests
           ? const Center(
-              child: CircularProgressIndicator(
-                  color: _kBlue, strokeWidth: 2.5))
+              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
           : visibleRequests.isEmpty
               ? _EmptyRequests()
               : ListView.builder(
-                  padding : const EdgeInsets.fromLTRB(20, 20, 20, 32),
-                  physics : const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  physics: const BouncingScrollPhysics(),
                   itemCount: visibleRequests.length,
                   itemBuilder: (context, index) => _RequestCard(
-                    request       : visibleRequests[index],
+                    request: visibleRequests[index],
                     isCreatingChat: _isCreatingChat,
-                    onTap  : () => _showRequestDetails(visibleRequests[index]),
+                    onTap: () => _showRequestDetails(visibleRequests[index]),
                     onAccept: () => _createChat(visibleRequests[index]),
                     onReject: () =>
                         _rejectRequest(visibleRequests[index]['local_id']),
@@ -1423,26 +1436,24 @@ class _EmptyRequests extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width      : 80,
-                height     : 80,
-                decoration : BoxDecoration(
-                    color        : _kBlueSoft,
-                    borderRadius : BorderRadius.circular(24)),
-                child: const Icon(Icons.inbox_outlined,
-                    size: 40, color: _kBlue),
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                    color: _kBlueSoft, borderRadius: BorderRadius.circular(24)),
+                child:
+                    const Icon(Icons.inbox_outlined, size: 40, color: _kBlue),
               ),
               const SizedBox(height: 20),
               const Text('Nenhuma solicitação',
                   style: TextStyle(
-                      fontSize  : 18,
+                      fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color     : _kText)),
+                      color: _kText)),
               const SizedBox(height: 8),
               const Text(
                 'Empresas poderão te encontrar\ne enviar solicitações por aqui.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 14, color: _kTextSub, height: 1.5),
+                style: TextStyle(fontSize: 14, color: _kTextSub, height: 1.5),
               ),
             ],
           ),
@@ -1471,34 +1482,34 @@ class _RequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final contractorData =
         request['data_contractor'] as Map<String, dynamic>? ?? {};
-    final bool isNew  = !(request['viewed_by_owner'] ?? false);
+    final bool isNew = !(request['viewed_by_owner'] ?? false);
     final String avatar = request['avatar']?.toString() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color        : _kCard,
-        borderRadius : BorderRadius.circular(18),
-        border       : Border.all(
+        color: _kCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
           color: isNew ? _kBlue.withOpacity(0.4) : _kBorder,
           width: isNew ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color     : isNew
+            color: isNew
                 ? _kBlue.withOpacity(0.08)
                 : Colors.black.withOpacity(0.04),
             blurRadius: isNew ? 16 : 10,
-            offset    : const Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Material(
-        color        : Colors.transparent,
-        borderRadius : BorderRadius.circular(18),
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          onTap        : onTap,
-          borderRadius : BorderRadius.circular(18),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1506,11 +1517,10 @@ class _RequestCard extends StatelessWidget {
               children: [
                 if (isNew) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                        color        : _kBlue,
-                        borderRadius : BorderRadius.circular(8)),
+                        color: _kBlue, borderRadius: BorderRadius.circular(8)),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1519,9 +1529,9 @@ class _RequestCard extends StatelessWidget {
                         SizedBox(width: 5),
                         Text('NOVA SOLICITAÇÃO',
                             style: TextStyle(
-                                color        : Colors.white,
-                                fontSize     : 11,
-                                fontWeight   : FontWeight.w800,
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4)),
                       ],
                     ),
@@ -1530,7 +1540,7 @@ class _RequestCard extends StatelessWidget {
                 ],
                 Row(children: [
                   CircleAvatar(
-                    radius         : 26,
+                    radius: 26,
                     backgroundImage:
                         avatar.isNotEmpty ? NetworkImage(avatar) : null,
                     backgroundColor: _kBlueSoft,
@@ -1547,10 +1557,10 @@ class _RequestCard extends StatelessWidget {
                         Text(
                           request['name'] ?? 'Nome não informado',
                           style: TextStyle(
-                              fontSize  : 15,
+                              fontSize: 15,
                               fontWeight:
                                   isNew ? FontWeight.w800 : FontWeight.w600,
-                              color     : _kText),
+                              color: _kText),
                         ),
                         if (contractorData['company']
                                 ?.toString()
@@ -1585,25 +1595,25 @@ class _RequestCard extends StatelessWidget {
                 Row(children: [
                   Expanded(
                     child: _ActionButton(
-                      label   : 'Recusar',
-                      icon    : Icons.close_rounded,
-                      color   : _kRed,
-                      bg      : _kRedSoft,
-                      onTap   : onReject,
+                      label: 'Recusar',
+                      icon: Icons.close_rounded,
+                      color: _kRed,
+                      bg: _kRedSoft,
+                      onTap: onReject,
                       disabled: isCreatingChat,
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _ActionButton(
-                      label   : isCreatingChat ? 'Aguarde...' : 'Aceitar',
-                      icon    : isCreatingChat
+                      label: isCreatingChat ? 'Aguarde...' : 'Aceitar',
+                      icon: isCreatingChat
                           ? Icons.hourglass_top_rounded
                           : Icons.check_rounded,
-                      color   : Colors.white,
-                      bg      : isCreatingChat ? _kBorder : _kGreen,
-                      onTap   : isCreatingChat ? () {} : onAccept,
-                      filled  : true,
+                      color: Colors.white,
+                      bg: isCreatingChat ? _kBorder : _kGreen,
+                      onTap: isCreatingChat ? () {} : onAccept,
+                      filled: true,
                       disabled: isCreatingChat,
                     ),
                   ),
@@ -1632,7 +1642,7 @@ class _ActionButton extends StatelessWidget {
     required this.color,
     required this.bg,
     required this.onTap,
-    this.filled   = false,
+    this.filled = false,
     this.disabled = false,
   });
 
@@ -1641,11 +1651,11 @@ class _ActionButton extends StatelessWidget {
     return GestureDetector(
       onTap: disabled ? null : onTap,
       child: Container(
-        height     : 42,
-        decoration : BoxDecoration(
-          color        : bg,
-          borderRadius : BorderRadius.circular(12),
-          border       : filled ? null : Border.all(color: bg),
+        height: 42,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          border: filled ? null : Border.all(color: bg),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1654,9 +1664,7 @@ class _ActionButton extends StatelessWidget {
             const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
-                    color     : color,
-                    fontSize  : 14,
-                    fontWeight: FontWeight.w700)),
+                    color: color, fontSize: 14, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -1708,8 +1716,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   String? _professionalId;
   bool _currentProfessionalIsActive = false;
   String? _expiresAt;
-  bool _isExpired          = false;
-  bool _isNearExpiration   = false;
+  bool _isExpired = false;
+  bool _isNearExpiration = false;
   final ExpirationService _expirationService = ExpirationService();
   int _daysLeft = 0;
 
@@ -1734,15 +1742,15 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           await _database.child('professionals/$_professionalId').get();
 
       if (snapshot.exists && snapshot.value != null) {
-        final data     = Map<String, dynamic>.from(snapshot.value as Map);
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
         final expiresAt = data['expires_at']?.toString();
 
         if (mounted) {
           setState(() {
-            _expiresAt         = expiresAt;
-            _isExpired         = _expirationService.isExpired(expiresAt);
-            _isNearExpiration  = _expirationService.isNearExpiration(expiresAt);
-            _daysLeft          = _expirationService.daysUntilExpiration(expiresAt);
+            _expiresAt = expiresAt;
+            _isExpired = _expirationService.isExpired(expiresAt);
+            _isNearExpiration = _expirationService.isNearExpiration(expiresAt);
+            _daysLeft = _expirationService.daysUntilExpiration(expiresAt);
           });
 
           // Debug detalhado
@@ -1775,8 +1783,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   }
 
   void _handleProfileIncomplete() {
-    final summary  = widget.dataWorker['summary']?.toString().trim() ?? '';
-    final skills   = widget.dataWorker['skills'];
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    final skills = widget.dataWorker['skills'];
     final hasSkills = skills != null && (skills as List).isNotEmpty;
 
     String message;
@@ -1833,12 +1841,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         });
         final resolvedKey = activeKey ?? fallbackKey;
         if (resolvedKey != null) {
-          final profData =
-              Map<String, dynamic>.from(data[resolvedKey] as Map);
-          final status =
-              profData['status']?.toString().toLowerCase() ?? '';
+          final profData = Map<String, dynamic>.from(data[resolvedKey] as Map);
+          final status = profData['status']?.toString().toLowerCase() ?? '';
           setState(() {
-            _professionalId              = resolvedKey;
+            _professionalId = resolvedKey;
             _currentProfessionalIsActive = status == 'active';
           });
         }
@@ -1858,9 +1864,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       if (_professionalId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content    : Text('Erro: Perfil profissional não encontrado'),
+            content: Text('Erro: Perfil profissional não encontrado'),
             backgroundColor: _kRed,
-            behavior   : SnackBarBehavior.floating,
+            behavior: SnackBarBehavior.floating,
           ));
         }
         return;
@@ -1869,17 +1875,17 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     setState(() => _isUpdating = true);
     try {
       final updateData = {
-        'name'      : widget.userName,
-        'avatar'    : widget.userAvatar,
+        'name': widget.userName,
+        'avatar': widget.userAvatar,
         'profession': widget.dataWorker['profession'] ?? 'Profissional',
-        'city'      : widget.userCity,
-        'state'     : widget.userState,
+        'city': widget.userCity,
+        'state': widget.userState,
         'legal_type': widget.legalType,
-        'company'   : widget.dataWorker['company'] ?? '',
-        'summary'   : widget.dataWorker['summary'] ?? '',
-        'skills'    : widget.dataWorker['skills'] ?? [],
-        'telefone'  : widget.userTelefone,
-        'email'     : widget.userEmail,
+        'company': widget.dataWorker['company'] ?? '',
+        'summary': widget.dataWorker['summary'] ?? '',
+        'skills': widget.dataWorker['skills'] ?? [],
+        'telefone': widget.userTelefone,
+        'email': widget.userEmail,
         'updated_at': DateTime.now().toIso8601String(),
       };
       await _database
@@ -1895,8 +1901,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1907,8 +1913,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           content: Text('Erro ao atualizar perfil: $e'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1920,16 +1926,16 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       context,
       MaterialPageRoute(
         builder: (_) => _ConfirmationScreen(
-          userName     : widget.userName,
-          userEmail    : widget.userEmail,
-          userTelefone : widget.userTelefone,
-          userAvatar   : widget.userAvatar,
-          userCity     : widget.userCity,
-          userState    : widget.userState,
-          legalType    : widget.legalType,
-          dataWorker   : widget.dataWorker,
-          isUpdate     : true,
-          onConfirm    : () {
+          userName: widget.userName,
+          userEmail: widget.userEmail,
+          userTelefone: widget.userTelefone,
+          userAvatar: widget.userAvatar,
+          userCity: widget.userCity,
+          userState: widget.userState,
+          legalType: widget.legalType,
+          dataWorker: widget.dataWorker,
+          isUpdate: true,
+          onConfirm: () {
             Navigator.pop(context);
             _updateProfessionalProfile();
           },
@@ -1940,9 +1946,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
   // ── Banner de expiração ───────────────────────────────────────────────────
   Widget _buildExpirationBanner() {
-    final bool expired     = _isExpired;
-    final bool shouldShow  =
-        expired || (_isNearExpiration && _daysLeft <= 1);
+    final bool expired = _isExpired;
+    final bool shouldShow = expired || (_isNearExpiration && _daysLeft <= 1);
     final isTestMode = ExpirationService.testDate != null;
 
     if (!shouldShow && !isTestMode) return const SizedBox.shrink();
@@ -1952,10 +1957,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       return Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color        : _kOrangeSoft,
-          borderRadius : BorderRadius.circular(20),
-          border       : Border.all(
-              color: _kOrange.withOpacity(0.3), width: 1.5),
+          color: _kOrangeSoft,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _kOrange.withOpacity(0.3), width: 1.5),
         ),
         child: Column(children: [
           Padding(
@@ -1963,11 +1967,11 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             child: Column(children: [
               Row(children: [
                 Container(
-                  width      : 40,
-                  height     : 40,
-                  decoration : BoxDecoration(
-                    color        : _kOrange.withOpacity(0.12),
-                    borderRadius : BorderRadius.circular(12),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _kOrange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.science_rounded,
                       color: _kOrange, size: 22),
@@ -1979,9 +1983,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                     children: [
                       Text('🧪 Modo de Teste Ativo',
                           style: TextStyle(
-                              fontSize  : 14,
+                              fontSize: 14,
                               fontWeight: FontWeight.w800,
-                              color     : _kOrange)),
+                              color: _kOrange)),
                       SizedBox(height: 4),
                       Text(
                         'Perfil criado antes do testDate. Ajuste para ver o banner de renovação.',
@@ -1994,19 +1998,19 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
               ]),
               const SizedBox(height: 12),
               Container(
-                padding    : const EdgeInsets.all(10),
-                decoration : BoxDecoration(
-                    color        : Colors.white,
-                    borderRadius : BorderRadius.circular(10)),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10)),
                 child: Column(children: [
-                  _DebugInfoRow('Data atual simulada',
+                  _DebugInfoRow(
+                      'Data atual simulada',
                       _expirationService
                           .getCurrentNow()
                           .toString()
                           .split('.')[0]),
                   if (_expiresAt != null)
-                    _DebugInfoRow(
-                        'Expira em', _expiresAt!.split('.')[0]),
+                    _DebugInfoRow('Expira em', _expiresAt!.split('.')[0]),
                   _DebugInfoRow('Dias restantes', '$_daysLeft dias'),
                   _DebugInfoRow(
                       'Status',
@@ -2029,14 +2033,12 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                         .renewProfessional(_professionalId!);
                     if (success && mounted) {
                       await _loadExpirationInfo();
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(SnackBar(
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: const Row(children: [
                           Icon(Icons.check_circle_rounded,
                               color: Colors.white, size: 20),
                           SizedBox(width: 12),
-                          Text(
-                              '🧪 Perfil ajustado para o tempo de teste!'),
+                          Text('🧪 Perfil ajustado para o tempo de teste!'),
                         ]),
                         backgroundColor: _kGreen,
                         behavior: SnackBarBehavior.floating,
@@ -2051,19 +2053,17 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             borderRadius:
                 const BorderRadius.vertical(bottom: Radius.circular(20)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _isUpdating
                       ? const SizedBox(
                           height: 18,
-                          width : 18,
-                          child : CircularProgressIndicator(
+                          width: 18,
+                          child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                _kOrange),
+                            valueColor: AlwaysStoppedAnimation<Color>(_kOrange),
                           ))
                       : const Icon(Icons.refresh_rounded,
                           size: 18, color: _kOrange),
@@ -2073,9 +2073,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                         ? 'Ajustando...'
                         : '🧪 Ajustar para Teste (+2 dias)',
                     style: const TextStyle(
-                        fontSize  : 13,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color     : _kOrange),
+                        color: _kOrange),
                   ),
                 ],
               ),
@@ -2086,10 +2086,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     }
 
     // Banner normal de expiração/renovação
-    final Color accent  = expired ? _kRed : _kOrange;
-    final Color bgColor = expired
-        ? const Color(0xFFFEF2F2)
-        : const Color(0xFFFFF7ED);
+    final Color accent = expired ? _kRed : _kOrange;
+    final Color bgColor =
+        expired ? const Color(0xFFFEF2F2) : const Color(0xFFFFF7ED);
 
     final String headline = expired
         ? 'Seu perfil expirou'
@@ -2104,14 +2103,14 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color        : bgColor,
-        borderRadius : BorderRadius.circular(20),
-        border       : Border.all(color: accent.withOpacity(0.3), width: 1.5),
-        boxShadow    : [
+        color: bgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withOpacity(0.3), width: 1.5),
+        boxShadow: [
           BoxShadow(
-              color     : accent.withOpacity(0.08),
+              color: accent.withOpacity(0.08),
               blurRadius: 12,
-              offset    : const Offset(0, 4)),
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(children: [
@@ -2121,18 +2120,18 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width      : 48,
-                height     : 48,
-                decoration : BoxDecoration(
-                  color        : accent.withOpacity(0.12),
-                  borderRadius : BorderRadius.circular(14),
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   expired
                       ? Icons.timer_off_rounded
                       : Icons.hourglass_bottom_rounded,
                   color: accent,
-                  size : 26,
+                  size: 26,
                 ),
               ),
               const SizedBox(width: 14),
@@ -2142,15 +2141,15 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                   children: [
                     Text(headline,
                         style: TextStyle(
-                            fontSize  : 15,
+                            fontSize: 15,
                             fontWeight: FontWeight.w800,
-                            color     : accent)),
+                            color: accent)),
                     const SizedBox(height: 4),
                     Text(sub,
                         style: TextStyle(
                             fontSize: 12.5,
-                            height  : 1.4,
-                            color   : accent.withOpacity(0.75))),
+                            height: 1.4,
+                            color: accent.withOpacity(0.75))),
                   ],
                 ),
               ),
@@ -2202,16 +2201,15 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           borderRadius:
               const BorderRadius.vertical(bottom: Radius.circular(20)),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _isUpdating
                     ? SizedBox(
                         height: 18,
-                        width : 18,
-                        child : CircularProgressIndicator(
+                        width: 18,
+                        child: CircularProgressIndicator(
                           strokeWidth: 2,
                           valueColor: AlwaysStoppedAnimation<Color>(accent),
                         ))
@@ -2220,9 +2218,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                 Text(
                   _isUpdating ? 'Renovando...' : 'Renovar agora (+2 dias)',
                   style: TextStyle(
-                      fontSize  : 13,
-                      fontWeight: FontWeight.w700,
-                      color     : accent),
+                      fontSize: 13, fontWeight: FontWeight.w700, color: accent),
                 ),
               ],
             ),
@@ -2234,12 +2230,12 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
   @override
   Widget build(BuildContext context) {
-    final skills         = (widget.dataWorker['skills'] as List?) ?? [];
-    final profession     = widget.dataWorker['profession']?.toString() ??
-        'Profissão não definida';
-    final summary        = widget.dataWorker['summary']?.toString().trim() ?? '';
-    final summaryOk      = summary.length >= _kSummaryMinLength;
-    final hasSkills      = skills.isNotEmpty;
+    final skills = (widget.dataWorker['skills'] as List?) ?? [];
+    final profession =
+        widget.dataWorker['profession']?.toString() ?? 'Profissão não definida';
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    final summaryOk = summary.length >= _kSummaryMinLength;
+    final hasSkills = skills.isNotEmpty;
     final profileComplete = _isProfileComplete();
 
     return SingleChildScrollView(
@@ -2248,22 +2244,22 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       child: Column(children: [
         // ── Avatar + Nome ───────────────────────────────────────────────
         Container(
-          width  : double.infinity,
+          width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
           decoration: BoxDecoration(
-            color        : _kCard,
-            borderRadius : BorderRadius.circular(20),
-            border       : Border.all(color: _kBorder),
-            boxShadow    : [
+            color: _kCard,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _kBorder),
+            boxShadow: [
               BoxShadow(
-                  color     : Colors.black.withOpacity(0.04),
+                  color: Colors.black.withOpacity(0.04),
                   blurRadius: 16,
-                  offset    : const Offset(0, 4)),
+                  offset: const Offset(0, 4)),
             ],
           ),
           child: Column(children: [
             CircleAvatar(
-              radius         : 42,
+              radius: 42,
               backgroundImage: widget.userAvatar.isNotEmpty
                   ? NetworkImage(widget.userAvatar)
                   : null,
@@ -2276,9 +2272,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             Text(
               widget.userName,
               style: const TextStyle(
-                  fontSize     : 20,
-                  fontWeight   : FontWeight.w800,
-                  color        : _kText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: _kText,
                   letterSpacing: -0.3),
             ),
             const SizedBox(height: 4),
@@ -2299,25 +2295,24 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         // ── Alerta perfil incompleto ────────────────────────────────────
         if (!profileComplete) ...[
           Container(
-            width  : double.infinity,
+            width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color        : _kOrangeSoft,
-              borderRadius : BorderRadius.circular(16),
-              border       : Border.all(color: _kOrange.withOpacity(0.3)),
+              color: _kOrangeSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _kOrange.withOpacity(0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Row(children: [
-                  Icon(Icons.warning_amber_rounded,
-                      color: _kOrange, size: 18),
+                  Icon(Icons.warning_amber_rounded, color: _kOrange, size: 18),
                   SizedBox(width: 8),
                   Text('Perfil incompleto',
                       style: TextStyle(
-                          fontSize  : 13,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          color     : _kOrange)),
+                          color: _kOrange)),
                 ]),
                 const SizedBox(height: 10),
                 _RequirementItem(
@@ -2332,10 +2327,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color        : Colors.white,
-                      borderRadius : BorderRadius.circular(10),
-                      border       : Border.all(
-                          color: _kOrange.withOpacity(0.2)),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _kOrange.withOpacity(0.2)),
                     ),
                     child: const Row(children: [
                       Icon(Icons.info_outline, size: 14, color: _kOrange),
@@ -2357,10 +2351,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
         // ── Status Control ──────────────────────────────────────────────
         ProfessionalStatusControlWidget(
-          initialIsActive : _currentProfessionalIsActive,
-          localId         : widget.localId,
-          professionalId  : _professionalId ?? '',
-          onStatusChanged : (bool isNowActive) {
+          initialIsActive: _currentProfessionalIsActive,
+          localId: widget.localId,
+          professionalId: _professionalId ?? '',
+          onStatusChanged: (bool isNowActive) {
             setState(() => _currentProfessionalIsActive = isNowActive);
           },
         ),
@@ -2369,17 +2363,17 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
         // ── Informações do Perfil ───────────────────────────────────────
         Container(
-          width  : double.infinity,
+          width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color        : _kCard,
-            borderRadius : BorderRadius.circular(20),
-            border       : Border.all(color: _kBorder),
-            boxShadow    : [
+            color: _kCard,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _kBorder),
+            boxShadow: [
               BoxShadow(
-                  color     : Colors.black.withOpacity(0.04),
+                  color: Colors.black.withOpacity(0.04),
                   blurRadius: 16,
-                  offset    : const Offset(0, 4)),
+                  offset: const Offset(0, 4)),
             ],
           ),
           child: Column(
@@ -2387,39 +2381,36 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             children: [
               const Text('Informações do Perfil',
                   style: TextStyle(
-                      fontSize  : 15,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color     : _kText)),
+                      color: _kText)),
               const SizedBox(height: 16),
               _InfoRow(
-                  icon : Icons.location_on_outlined,
+                  icon: Icons.location_on_outlined,
                   label: 'Localização',
                   value: '${widget.userCity}, ${widget.userState}'),
               _InfoRow(
-                  icon : Icons.badge_outlined,
+                  icon: Icons.badge_outlined,
                   label: 'Tipo',
                   value: widget.legalType == 'PJ'
                       ? 'Pessoa Jurídica'
                       : 'Pessoa Física'),
               if (widget.legalType == 'PJ' &&
-                  widget.dataWorker['company']
-                          ?.toString()
-                          .trim()
-                          .isNotEmpty ==
+                  widget.dataWorker['company']?.toString().trim().isNotEmpty ==
                       true)
                 _InfoRow(
-                    icon : Icons.business_outlined,
+                    icon: Icons.business_outlined,
                     label: 'Empresa',
                     value: widget.dataWorker['company']),
               if (widget.userTelefone.isNotEmpty &&
                   widget.userTelefone != 'Não definido')
                 _InfoRow(
-                    icon : Icons.phone_outlined,
+                    icon: Icons.phone_outlined,
                     label: 'Telefone',
                     value: widget.userTelefone),
               if (widget.userEmail.isNotEmpty)
                 _InfoRow(
-                    icon : Icons.email_outlined,
+                    icon: Icons.email_outlined,
                     label: 'E-mail de contato',
                     value: widget.userEmail),
               if (skills.isNotEmpty) ...[
@@ -2428,26 +2419,26 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                 const SizedBox(height: 12),
                 const Text('Habilidades',
                     style: TextStyle(
-                        fontSize  : 13,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color     : _kTextSub)),
+                        color: _kTextSub)),
                 const SizedBox(height: 10),
                 Wrap(
-                  spacing   : 8,
+                  spacing: 8,
                   runSpacing: 8,
-                  children  : skills.map((skill) {
+                  children: skills.map((skill) {
                     return Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color        : _kBlueSoft,
-                        borderRadius : BorderRadius.circular(20),
-                        border       : Border.all(color: _kBlueMid),
+                        color: _kBlueSoft,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: _kBlueMid),
                       ),
                       child: Text(skill.toString(),
                           style: const TextStyle(
-                              fontSize  : 12,
-                              color     : _kBlue,
+                              fontSize: 12,
+                              color: _kBlue,
                               fontWeight: FontWeight.w600)),
                     );
                   }).toList(),
@@ -2462,9 +2453,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color        : _kBlueSoft,
-            borderRadius : BorderRadius.circular(14),
-            border       : Border.all(color: _kBlueMid),
+            color: _kBlueSoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _kBlueMid),
           ),
           child: const Row(children: [
             Icon(Icons.info_outline_rounded, color: _kBlue, size: 18),
@@ -2472,8 +2463,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             Expanded(
               child: Text(
                 'Sincronize o anúncio com as alterações mais recentes do seu perfil.',
-                style:
-                    TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
+                style: TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
               ),
             ),
           ]),
@@ -2482,24 +2472,24 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         const SizedBox(height: 20),
 
         SizedBox(
-          width : double.infinity,
+          width: double.infinity,
           height: 54,
-          child : ElevatedButton(
+          child: ElevatedButton(
             onPressed: _isUpdating ? null : _showUpdateConfirmation,
             style: ElevatedButton.styleFrom(
-              backgroundColor        : profileComplete ? _kBlue : _kOrange,
+              backgroundColor: profileComplete ? _kBlue : _kOrange,
               disabledBackgroundColor: _kBorder,
-              elevation              : 0,
+              elevation: 0,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16)),
             ),
             child: _isUpdating
                 ? const SizedBox(
                     height: 22,
-                    width : 22,
-                    child : CircularProgressIndicator(
+                    width: 22,
+                    child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor :
+                        valueColor:
                             AlwaysStoppedAnimation<Color>(Colors.white)),
                   )
                 : Row(
@@ -2510,7 +2500,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                             ? Icons.sync_rounded
                             : Icons.edit_outlined,
                         color: Colors.white,
-                        size : 20,
+                        size: 20,
                       ),
                       const SizedBox(width: 10),
                       Text(
@@ -2518,9 +2508,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                             ? 'Sincronizar Perfil Profissional'
                             : 'Complete o Perfil para Sincronizar',
                         style: const TextStyle(
-                            fontSize  : 14,
+                            fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color     : Colors.white),
+                            color: Colors.white),
                       ),
                     ],
                   ),
@@ -2546,14 +2536,10 @@ class _DebugInfoRow extends StatelessWidget {
         children: [
           Text(label,
               style: const TextStyle(
-                  fontSize  : 11,
-                  color     : _kTextSub,
-                  fontWeight: FontWeight.w600)),
+                  fontSize: 11, color: _kTextSub, fontWeight: FontWeight.w600)),
           Text(value,
               style: const TextStyle(
-                  fontSize  : 11,
-                  color     : _kText,
-                  fontWeight: FontWeight.w700)),
+                  fontSize: 11, color: _kText, fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -2577,26 +2563,23 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(children: [
         Container(
-          width      : 34,
-          height     : 34,
-          decoration : BoxDecoration(
-              color        : _kSurface,
-              borderRadius : BorderRadius.circular(10),
-              border       : Border.all(color: _kBorder)),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _kBorder)),
           child: Icon(icon, size: 17, color: _kTextSub),
         ),
         const SizedBox(width: 12),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(fontSize: 11, color: _kTextSub)),
+            Text(label, style: const TextStyle(fontSize: 11, color: _kTextSub)),
             const SizedBox(height: 1),
             Text(value,
                 style: const TextStyle(
-                    fontSize  : 14,
-                    fontWeight: FontWeight.w600,
-                    color     : _kText)),
+                    fontSize: 14, fontWeight: FontWeight.w600, color: _kText)),
           ],
         ),
       ]),
@@ -2639,17 +2622,17 @@ class _ConfirmationScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: _kSurface,
       appBar: AppBar(
-        backgroundColor    : _kCard,
-        elevation          : 0,
-        surfaceTintColor   : Colors.transparent,
+        backgroundColor: _kCard,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: Container(
-            width      : 36,
-            height     : 36,
-            decoration : BoxDecoration(
-                color        : _kSurface,
-                borderRadius : BorderRadius.circular(10),
-                border       : Border.all(color: _kBorder)),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kBorder)),
             child: const Icon(Icons.arrow_back_ios_new_rounded,
                 size: 16, color: _kText),
           ),
@@ -2658,9 +2641,7 @@ class _ConfirmationScreen extends StatelessWidget {
         title: Text(
           isUpdate ? 'Confirmar Atualização' : 'Confirmar Ativação',
           style: const TextStyle(
-              fontSize  : 17,
-              fontWeight: FontWeight.w800,
-              color     : _kText),
+              fontSize: 17, fontWeight: FontWeight.w800, color: _kText),
         ),
       ),
       body: SingleChildScrollView(
@@ -2668,7 +2649,7 @@ class _ConfirmationScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Column(children: [
           CircleAvatar(
-            radius         : 52,
+            radius: 52,
             backgroundImage:
                 userAvatar.isNotEmpty ? NetworkImage(userAvatar) : null,
             backgroundColor: _kBlueSoft,
@@ -2679,9 +2660,7 @@ class _ConfirmationScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Text(userName,
               style: const TextStyle(
-                  fontSize  : 22,
-                  fontWeight: FontWeight.w800,
-                  color     : _kText)),
+                  fontSize: 22, fontWeight: FontWeight.w800, color: _kText)),
           const SizedBox(height: 6),
           Text(
             isUpdate
@@ -2691,59 +2670,54 @@ class _ConfirmationScreen extends StatelessWidget {
           ),
           const SizedBox(height: 28),
           Container(
-            width  : double.infinity,
+            width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color        : _kCard,
-              borderRadius : BorderRadius.circular(20),
-              border       : Border.all(color: _kBorder),
-              boxShadow    : [
+              color: _kCard,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kBorder),
+              boxShadow: [
                 BoxShadow(
-                    color     : Colors.black.withOpacity(0.04),
+                    color: Colors.black.withOpacity(0.04),
                     blurRadius: 16,
-                    offset    : const Offset(0, 4)),
+                    offset: const Offset(0, 4)),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _ConfirmRow(
-                    icon : Icons.person_outline_rounded,
+                    icon: Icons.person_outline_rounded,
                     label: 'Nome',
                     value: userName),
                 _ConfirmRow(
-                    icon : Icons.work_outline_rounded,
+                    icon: Icons.work_outline_rounded,
                     label: 'Profissão',
                     value: dataWorker['profession'] ?? 'Não definida'),
                 _ConfirmRow(
-                    icon : Icons.badge_outlined,
+                    icon: Icons.badge_outlined,
                     label: 'Tipo',
                     value: legalType == 'PJ'
                         ? 'Pessoa Jurídica'
                         : 'Pessoa Física'),
                 if (legalType == 'PJ' &&
-                    dataWorker['company']
-                            ?.toString()
-                            .trim()
-                            .isNotEmpty ==
-                        true)
+                    dataWorker['company']?.toString().trim().isNotEmpty == true)
                   _ConfirmRow(
-                      icon : Icons.business_outlined,
+                      icon: Icons.business_outlined,
                       label: 'Empresa',
                       value: dataWorker['company']),
                 _ConfirmRow(
-                    icon : Icons.location_on_outlined,
+                    icon: Icons.location_on_outlined,
                     label: 'Localização',
                     value: '$userCity, $userState'),
-                if (userTelefone.isNotEmpty &&
-                    userTelefone != 'Não definido')
+                if (userTelefone.isNotEmpty && userTelefone != 'Não definido')
                   _ConfirmRow(
-                      icon : Icons.phone_outlined,
+                      icon: Icons.phone_outlined,
                       label: 'Telefone',
                       value: userTelefone),
                 if (userEmail.isNotEmpty)
                   _ConfirmRow(
-                      icon : Icons.email_outlined,
+                      icon: Icons.email_outlined,
                       label: 'E-mail de contato',
                       value: userEmail),
                 if (dataWorker['summary']?.toString().isNotEmpty == true) ...[
@@ -2752,15 +2726,13 @@ class _ConfirmationScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Text('Resumo',
                       style: TextStyle(
-                          fontSize  : 12,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color     : _kTextSub)),
+                          color: _kTextSub)),
                   const SizedBox(height: 6),
                   Text(dataWorker['summary'],
                       style: const TextStyle(
-                          fontSize : 14,
-                          color    : _kText,
-                          height   : 1.55),
+                          fontSize: 14, color: _kText, height: 1.55),
                       textAlign: TextAlign.justify),
                 ],
                 if (skills.isNotEmpty) ...[
@@ -2769,26 +2741,26 @@ class _ConfirmationScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Text('Habilidades',
                       style: TextStyle(
-                          fontSize  : 12,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color     : _kTextSub)),
+                          color: _kTextSub)),
                   const SizedBox(height: 10),
                   Wrap(
-                    spacing   : 8,
+                    spacing: 8,
                     runSpacing: 8,
-                    children  : skills.map((skill) {
+                    children: skills.map((skill) {
                       return Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color        : _kBlueSoft,
-                          borderRadius : BorderRadius.circular(20),
-                          border       : Border.all(color: _kBlueMid),
+                          color: _kBlueSoft,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _kBlueMid),
                         ),
                         child: Text(skill.toString(),
                             style: const TextStyle(
-                                fontSize  : 12,
-                                color     : _kBlue,
+                                fontSize: 12,
+                                color: _kBlue,
                                 fontWeight: FontWeight.w600)),
                       );
                     }).toList(),
@@ -2802,13 +2774,13 @@ class _ConfirmationScreen extends StatelessWidget {
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         decoration: BoxDecoration(
-          color  : _kCard,
-          border : Border(top: BorderSide(color: _kBorder)),
+          color: _kCard,
+          border: Border(top: BorderSide(color: _kBorder)),
           boxShadow: [
             BoxShadow(
-                color     : Colors.black.withOpacity(0.04),
+                color: Colors.black.withOpacity(0.04),
                 blurRadius: 10,
-                offset    : const Offset(0, -4)),
+                offset: const Offset(0, -4)),
           ],
         ),
         child: SafeArea(
@@ -2818,14 +2790,14 @@ class _ConfirmationScreen extends StatelessWidget {
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
-                  side    : const BorderSide(color: _kBorder, width: 1.5),
-                  shape   : RoundedRectangleBorder(
+                  side: const BorderSide(color: _kBorder, width: 1.5),
+                  shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Cancelar',
                     style: TextStyle(
-                        color     : _kTextSub,
-                        fontSize  : 15,
+                        color: _kTextSub,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600)),
               ),
             ),
@@ -2835,17 +2807,17 @@ class _ConfirmationScreen extends StatelessWidget {
                 onPressed: onConfirm,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isUpdate ? _kBlue : _kGreen,
-                  elevation      : 0,
-                  padding        : const EdgeInsets.symmetric(vertical: 15),
-                  shape          : RoundedRectangleBorder(
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: Text(
                   isUpdate ? 'Confirmar' : 'Ativar Agora',
                   style: const TextStyle(
-                      color     : Colors.white,
+                      color: Colors.white,
                       fontWeight: FontWeight.w700,
-                      fontSize  : 15),
+                      fontSize: 15),
                 ),
               ),
             ),
@@ -2875,12 +2847,12 @@ class _ConfirmRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width      : 34,
-            height     : 34,
-            decoration : BoxDecoration(
-                color        : _kSurface,
-                borderRadius : BorderRadius.circular(10),
-                border       : Border.all(color: _kBorder)),
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kBorder)),
             child: Icon(icon, size: 17, color: _kTextSub),
           ),
           const SizedBox(width: 12),
@@ -2889,14 +2861,13 @@ class _ConfirmRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style:
-                        const TextStyle(fontSize: 11, color: _kTextSub)),
+                    style: const TextStyle(fontSize: 11, color: _kTextSub)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(
-                        fontSize  : 14,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color     : _kText)),
+                        color: _kText)),
               ],
             ),
           ),
@@ -2929,17 +2900,17 @@ class _RequestDetailsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: _kSurface,
       appBar: AppBar(
-        backgroundColor  : _kCard,
-        elevation        : 0,
-        surfaceTintColor : Colors.transparent,
+        backgroundColor: _kCard,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
           icon: Container(
-            width      : 36,
-            height     : 36,
-            decoration : BoxDecoration(
-                color        : _kSurface,
-                borderRadius : BorderRadius.circular(10),
-                border       : Border.all(color: _kBorder)),
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kBorder)),
             child: const Icon(Icons.arrow_back_ios_new_rounded,
                 size: 16, color: _kText),
           ),
@@ -2948,9 +2919,7 @@ class _RequestDetailsScreen extends StatelessWidget {
         title: const Text(
           'Detalhes da Solicitação',
           style: TextStyle(
-              fontSize  : 17,
-              fontWeight: FontWeight.w800,
-              color     : _kText),
+              fontSize: 17, fontWeight: FontWeight.w800, color: _kText),
         ),
       ),
       body: SingleChildScrollView(
@@ -2958,22 +2927,18 @@ class _RequestDetailsScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Column(children: [
           CircleAvatar(
-            radius         : 50,
-            backgroundImage:
-                avatar.isNotEmpty ? NetworkImage(avatar) : null,
+            radius: 50,
+            backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
             backgroundColor: _kBlueSoft,
             child: avatar.isEmpty
-                ? const Icon(Icons.business_rounded,
-                    size: 50, color: _kBlue)
+                ? const Icon(Icons.business_rounded, size: 50, color: _kBlue)
                 : null,
           ),
           const SizedBox(height: 16),
           Text(
             requestData['name'] ?? 'Nome não informado',
             style: const TextStyle(
-                fontSize  : 22,
-                fontWeight: FontWeight.w800,
-                color     : _kText),
+                fontSize: 22, fontWeight: FontWeight.w800, color: _kText),
             textAlign: TextAlign.center,
           ),
           if (contractorData['profession']?.toString() != null &&
@@ -2984,75 +2949,70 @@ class _RequestDetailsScreen extends StatelessWidget {
           ],
           const SizedBox(height: 24),
           _DetailSection(
-            title   : 'Informações de Contato',
+            title: 'Informações de Contato',
             children: [
               if (requestData['email']?.toString().isNotEmpty == true)
                 _DetailRow(
-                    icon : Icons.email_outlined,
+                    icon: Icons.email_outlined,
                     label: 'E-mail',
                     value: requestData['email']),
-              if (requestData['email_contact']?.toString().isNotEmpty ==
-                  true)
+              if (requestData['email_contact']?.toString().isNotEmpty == true)
                 _DetailRow(
-                    icon : Icons.alternate_email_rounded,
+                    icon: Icons.alternate_email_rounded,
                     label: 'E-mail de Contato',
                     value: requestData['email_contact']),
               if (requestData['telefone']?.toString().isNotEmpty == true &&
                   requestData['telefone'] != 'Não definido')
                 _DetailRow(
-                    icon : Icons.phone_outlined,
+                    icon: Icons.phone_outlined,
                     label: 'Telefone',
                     value: requestData['telefone']),
               _DetailRow(
-                  icon : Icons.location_on_outlined,
+                  icon: Icons.location_on_outlined,
                   label: 'Localização',
                   value:
                       '${requestData['city'] ?? ''}, ${requestData['state'] ?? ''}'),
               if (requestData['age'] != null)
                 _DetailRow(
-                    icon : Icons.cake_outlined,
+                    icon: Icons.cake_outlined,
                     label: 'Idade',
                     value: '${requestData['age']} anos'),
             ],
           ),
           const SizedBox(height: 16),
           _DetailSection(
-            title   : 'Informações Profissionais',
+            title: 'Informações Profissionais',
             children: [
-              if (contractorData['company']
-                      ?.toString()
-                      .trim()
-                      .isNotEmpty ==
+              if (contractorData['company']?.toString().trim().isNotEmpty ==
                   true)
                 _DetailRow(
-                    icon : Icons.business_outlined,
+                    icon: Icons.business_outlined,
                     label: 'Empresa',
                     value: contractorData['company']),
               if (contractorData['profession']?.toString() != null &&
                   contractorData['profession'].toString() != 'Não definida')
                 _DetailRow(
-                    icon : Icons.work_outline_rounded,
+                    icon: Icons.work_outline_rounded,
                     label: 'Profissão',
                     value: contractorData['profession']),
               _DetailRow(
-                  icon : Icons.badge_outlined,
+                  icon: Icons.badge_outlined,
                   label: 'Tipo',
                   value: requestData['legalType'] == 'PJ'
                       ? 'Pessoa Jurídica'
                       : requestData['legalType'] == 'PF'
                           ? 'Pessoa Física'
                           : 'Não definido'),
-              if (contractorData['summary']?.toString().isNotEmpty ==
-                      true &&
+              if (contractorData['summary']?.toString().isNotEmpty == true &&
                   contractorData['summary'] != 'Não definido') ...[
                 const SizedBox(height: 4),
                 const Divider(color: _kBorder),
                 const SizedBox(height: 10),
                 const Text('Sobre',
                     style: TextStyle(
-                        fontSize  : 12,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color     : _kTextSub)),
+                        color: _kTextSub)),
                 const SizedBox(height: 6),
                 Text(contractorData['summary'],
                     style: const TextStyle(
@@ -3066,7 +3026,7 @@ class _RequestDetailsScreen extends StatelessWidget {
       bottomNavigationBar: Container(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         decoration: BoxDecoration(
-          color : _kCard,
+          color: _kCard,
           border: Border(top: BorderSide(color: _kBorder)),
         ),
         child: SafeArea(
@@ -3076,14 +3036,14 @@ class _RequestDetailsScreen extends StatelessWidget {
                 onPressed: onReject,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
-                  side    : BorderSide(color: _kRed.withOpacity(0.4)),
-                  shape   : RoundedRectangleBorder(
+                  side: BorderSide(color: _kRed.withOpacity(0.4)),
+                  shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Recusar',
                     style: TextStyle(
-                        color     : _kRed,
-                        fontSize  : 15,
+                        color: _kRed,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600)),
               ),
             ),
@@ -3093,16 +3053,16 @@ class _RequestDetailsScreen extends StatelessWidget {
                 onPressed: onAccept,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kGreen,
-                  elevation      : 0,
-                  padding        : const EdgeInsets.symmetric(vertical: 15),
-                  shape          : RoundedRectangleBorder(
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                  shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('Aceitar',
                     style: TextStyle(
-                        color     : Colors.white,
+                        color: Colors.white,
                         fontWeight: FontWeight.w700,
-                        fontSize  : 15)),
+                        fontSize: 15)),
               ),
             ),
           ]),
@@ -3121,17 +3081,17 @@ class _DetailSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width  : double.infinity,
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color        : _kCard,
-        borderRadius : BorderRadius.circular(20),
-        border       : Border.all(color: _kBorder),
-        boxShadow    : [
+        color: _kCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kBorder),
+        boxShadow: [
           BoxShadow(
-              color     : Colors.black.withOpacity(0.04),
+              color: Colors.black.withOpacity(0.04),
               blurRadius: 16,
-              offset    : const Offset(0, 4)),
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
@@ -3139,9 +3099,7 @@ class _DetailSection extends StatelessWidget {
         children: [
           Text(title,
               style: const TextStyle(
-                  fontSize  : 15,
-                  fontWeight: FontWeight.w800,
-                  color     : _kText)),
+                  fontSize: 15, fontWeight: FontWeight.w800, color: _kText)),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -3169,12 +3127,12 @@ class _DetailRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width      : 34,
-            height     : 34,
-            decoration : BoxDecoration(
-                color        : _kSurface,
-                borderRadius : BorderRadius.circular(10),
-                border       : Border.all(color: _kBorder)),
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+                color: _kSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _kBorder)),
             child: Icon(icon, size: 17, color: _kTextSub),
           ),
           const SizedBox(width: 12),
@@ -3183,14 +3141,13 @@ class _DetailRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style:
-                        const TextStyle(fontSize: 11, color: _kTextSub)),
+                    style: const TextStyle(fontSize: 11, color: _kTextSub)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(
-                        fontSize  : 14,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color     : _kText)),
+                        color: _kText)),
               ],
             ),
           ),
