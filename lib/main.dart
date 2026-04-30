@@ -253,10 +253,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FIX: processInitialMessage agora trata DUAS origens de payload:
+  //
+  //   1. _initialMessage  → FCM direto (app terminado, tap em push FCM).
+  //                         Capturado via getInitialMessage() logo no boot.
+  //
+  //   2. consumePendingPayload() → Notificação local (flutter_local_notifications).
+  //                         O tap dispara _onLocalNotificationTap durante
+  //                         _initLocalNotifications(), quando os callbacks
+  //                         ainda são null. notification_service.dart salva
+  //                         o payload em _pendingPayload; aqui consumimos.
+  //
+  // A ordem importa: FCM primeiro (mais específico), local depois.
+  // Ambos são mutuamente exclusivos na prática — um cold start vem de
+  // apenas uma das duas origens.
+  // ═══════════════════════════════════════════════════════════════════════════
   Future<void> processInitialMessage() async {
     if (_initialMessageProcessed) return;
-    if (_initialMessage == null) return;
 
+    // Garante userId e role antes de qualquer navegação.
     if (_currentUserId == null) {
       _currentUserId = await _getCurrentUserId();
       if (_currentUserId == null) {
@@ -264,15 +280,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return;
       }
     }
-
     if (_currentUserRole == null) {
       _currentUserRole = await _getUserRole(_currentUserId!);
     }
 
-    _initialMessageProcessed = true;
-    print('🎯 Processando notificação inicial...');
+    // ── Origem 1: FCM direto ─────────────────────────────────────────────
+    if (_initialMessage != null) {
+      _initialMessageProcessed = true;
+      print('🎯 Processando notificação FCM inicial...');
+      await _dispatchPayload(_initialMessage!.data);
+      return;
+    }
 
-    final data = _initialMessage!.data;
+    // ── Origem 2: notificação local (tap com app morto) ──────────────────
+    final pending = NotificationService().consumePendingPayload();
+    if (pending != null) {
+      _initialMessageProcessed = true;
+      print('🎯 Processando payload local pendente: $pending');
+      await _dispatchPayload(pending);
+      return;
+    }
+
+    print('ℹ️ processInitialMessage: nenhum payload pendente');
+  }
+
+  // ── Despacha o Map<String, dynamic> para a tela correta ─────────────────
+  Future<void> _dispatchPayload(Map<String, dynamic> data) async {
     final type = data['type']?.toString() ?? '';
 
     print('⏳ Aguardando HomeScreen montar...');

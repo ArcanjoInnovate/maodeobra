@@ -151,11 +151,20 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       await _loginCtrl.navigateToNextScreen(context, user);
 
       // ═════════════════════════════════════════════════════════════════════
-      // FIX: Após navegar para HomeScreen, garante que as notificações
-      // estejam inicializadas (caso _initializeNotifications() do main.dart
-      // tenha falhado por userId nulo no cold start) e processa a mensagem
-      // inicial (app terminado → tap na notificação).
+      // FIX: Aguarda o próximo frame para garantir que a HomeScreen já está
+      // montada na árvore antes de processar qualquer notificação pendente.
+      //
+      // Ordem:
+      //   1. reinitializeNotifications → registra os callbacks no
+      //      NotificationService, resolvendo o race condition do cold start
+      //      (userId nulo quando _initializeNotifications() rodou no main.dart).
+      //   2. processInitialMessage → consome _initialMessage (FCM direto) ou
+      //      consumePendingPayload() (tap em notificação local com app morto),
+      //      agora que os callbacks já estão registrados e a tela de destino
+      //      já está na árvore de widgets.
       // ═════════════════════════════════════════════════════════════════════
+      await WidgetsBinding.instance.endOfFrame;
+
       final appState = MyApp.appStateKey.currentState;
       if (appState != null) {
         await appState.reinitializeNotifications(currentUser.uid);
