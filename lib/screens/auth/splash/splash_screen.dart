@@ -37,7 +37,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _setupAnimations();
     _requestPermissions();
     _initApp();
-
   }
 
   Future<void> _requestPermissions() async {
@@ -46,7 +45,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         final iosInfo = await DeviceInfoPlugin().iosInfo;
         debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
 
-        // ✅ 1. NOTIFICAÇÕES (Firebase - iOS obrigatório)
         final NotificationSettings settings =
             await FirebaseMessaging.instance.requestPermission(
           alert: true,
@@ -56,7 +54,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         );
         debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
 
-        // ✅ 2. CÂMERA + FOTOS juntas
         final statuses = await [
           Permission.camera,
           Permission.photos,
@@ -70,17 +67,14 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         debugPrint(
             '🤖 Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
 
-        // ✅ 1. NOTIFICAÇÕES (Android 13+)
         if (androidInfo.version.sdkInt >= 33) {
           final notifStatus = await Permission.notification.request();
           debugPrint('🔔 Android Notificações: $notifStatus');
         }
 
-        // ✅ 2. CÂMERA
         final cameraStatus = await Permission.camera.request();
         debugPrint('📸 Android Câmera: $cameraStatus');
 
-        // ✅ 3. FOTOS (Android 13+) ou STORAGE (Android < 13)
         if (androidInfo.version.sdkInt >= 33) {
           final photosStatus = await Permission.photos.request();
           debugPrint('🖼️ Android Fotos: $photosStatus');
@@ -151,26 +145,32 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         return;
       }
 
-      // ✅ ADICIONE AQUI — usuário confirmado, configura notificações
       await _refreshNotificationCallbacks(currentUser.uid, user.activeMode);
 
       if (!mounted) return;
       await _loginCtrl.navigateToNextScreen(context, user);
+
+      // ═════════════════════════════════════════════════════════════════════
+      // FIX: Após navegar para HomeScreen, garante que as notificações
+      // estejam inicializadas (caso _initializeNotifications() do main.dart
+      // tenha falhado por userId nulo no cold start) e processa a mensagem
+      // inicial (app terminado → tap na notificação).
+      // ═════════════════════════════════════════════════════════════════════
+      final appState = MyApp.appStateKey.currentState;
+      if (appState != null) {
+        await appState.reinitializeNotifications(currentUser.uid);
+        await appState.processInitialMessage();
+      }
     } catch (e) {
       print('❌ Erro: $e');
       _goToLogin();
     }
   }
 
-// ✅ ADICIONE ESTE MÉTODO no _SplashPageState
   Future<void> _refreshNotificationCallbacks(
       String userId, String userRole) async {
     final service = NotificationService();
 
-    // ❌ REMOVA ESSA LINHA
-    // await service.initialize(userId);
-
-    // ✅ Só atualiza os callbacks, sem reinicializar
     service.updateCallbacks(
       onChatTap: (chatId, senderId) async {
         final context = MyApp.navigatorKey.currentContext;

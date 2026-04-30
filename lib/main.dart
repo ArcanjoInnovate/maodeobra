@@ -28,11 +28,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
-// ✅ UMA ÚNICA chave global — usada em todo o app.
-// O código anterior declarava DUAS: uma aqui no topo e outra
-// como `static` dentro de `_MyAppState`. O `MaterialApp` recebia
-// a da classe, mas `_safeNavigate*` usava a do topo (sempre null).
-// Isso fazia o foreground nunca navegar.
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<_MyAppState> appStateKey = GlobalKey<_MyAppState>();
 
@@ -99,7 +94,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  // ✅ ADICIONAR: Armazena a notificação inicial
   RemoteMessage? _initialMessage;
   bool _initialMessageProcessed = false;
 
@@ -114,14 +108,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> clearBadge() async {
     try {
-      // ✅ Limpa o badge do ícone do app (iOS e Android)
       if (Platform.isIOS) {
         await FlutterAppBadger.removeBadge();
       } else if (Platform.isAndroid) {
         await FlutterAppBadger.removeBadge();
       }
 
-      // Cancela notificações locais pendentes
       await _localNotifications.cancelAll();
 
       print('🧹 Badge limpo');
@@ -183,30 +175,38 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FIX: _initializeNotifications agora captura _initialMessage ANTES de
+  // verificar userId, e só marca _notificationsInitialized = true quando
+  // a inicialização completa com sucesso.
+  // ═══════════════════════════════════════════════════════════════════════════
   Future<void> _initializeNotifications() async {
     if (_notificationsInitialized) return;
-    _notificationsInitialized = true;
+
+    // Captura a mensagem inicial ANTES de qualquer verificação de userId.
+    // getInitialMessage() só retorna valor uma única vez (a próxima chamada
+    // retorna null), por isso precisa ser chamado o mais cedo possível.
+    _initialMessage ??= await FirebaseMessaging.instance.getInitialMessage();
+    if (_initialMessage != null) {
+      print(
+          '🚀 [TERMINATED] Notificação inicial capturada: ${_initialMessage!.data}');
+    }
 
     _currentUserId = await _getCurrentUserId();
     if (_currentUserId == null) {
-      print('⚠️ userId nulo — não é possível inicializar notificações agora');
+      print('⚠️ userId nulo — notificações serão inicializadas pelo SplashPage');
+      // NÃO marca _notificationsInitialized = true aqui, permitindo
+      // que reinitializeNotifications() complete a inicialização depois.
       return;
     }
+
+    _notificationsInitialized = true;
 
     _currentUserRole = await _getUserRole(_currentUserId!);
 
     final service = NotificationService();
     await service.initialize(_currentUserId!);
 
-    // ✅ Captura AQUI, uma única vez, antes de qualquer callback
-    // O NotificationService.initialize() NÃO chama getInitialMessage() mais
-    _initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (_initialMessage != null) {
-      print(
-          '🚀 [TERMINATED] Notificação inicial capturada: ${_initialMessage!.data}');
-    }
-
-    // ✅ Registra callbacks com userId/role garantidamente não-nulos
     service.updateCallbacks(
       onChatTap: (chatId, senderId) async {
         print('🔔 onChatTap: $chatId');
@@ -222,7 +222,37 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     print('✅ Callbacks configurados: $_currentUserId | $_currentUserRole');
   }
 
-  // ✅ NOVA FUNÇÃO: Processar notificação inicial
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FIX: Método chamado pelo SplashPage quando o userId fica disponível
+  // e _initializeNotifications() não completou na primeira tentativa.
+  // ═══════════════════════════════════════════════════════════════════════════
+  Future<void> reinitializeNotifications(String userId) async {
+    if (_notificationsInitialized) return;
+
+    print('🔄 Reinicializando notificações com userId: $userId');
+    _currentUserId = userId;
+    _notificationsInitialized = true;
+
+    _currentUserRole = await _getUserRole(userId);
+
+    final service = NotificationService();
+    await service.initialize(userId);
+
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        print('🔔 onChatTap: $chatId');
+        await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+            requestType, profileId, vacancyId);
+      },
+    );
+
+    print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
+  }
+
   Future<void> processInitialMessage() async {
     if (_initialMessageProcessed) return;
     if (_initialMessage == null) return;
@@ -245,8 +275,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final data = _initialMessage!.data;
     final type = data['type']?.toString() ?? '';
 
-    // ✅ Aguarda a HomeScreen estar de fato montada via homeScreenKey
-    // antes de tentar navegar — sem isso o context pode ser da SplashPage
     print('⏳ Aguardando HomeScreen montar...');
     bool homeReady = false;
     for (int i = 0; i < 30; i++) {
@@ -264,7 +292,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return;
     }
 
-    // ✅ Mais 300ms para garantir que o build terminou
     await Future.delayed(const Duration(milliseconds: 300));
 
     switch (type) {
