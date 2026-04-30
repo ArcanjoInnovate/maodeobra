@@ -1,5 +1,6 @@
 import * as admin from "firebase-admin";
 import { onValueCreated } from "firebase-functions/v2/database";
+import { onValueDeleted } from "firebase-functions/v2/database";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
@@ -694,83 +695,140 @@ async function decrementRequestBadge(userId: string) {
 
 async function cleanupCandidaturesBadges(userId: string, userRole: string) {
   const database = admin.database();
-
+ 
   logger.info(`\n🗑️ Limpando candidaturas de ${userId} (${userRole})`);
-
+ 
   if (userRole === "worker") {
-    // Buscar vagas onde o worker se candidatou
-    const vacanciesSnap = await database.ref("vacancy").once("value");
-
-    if (vacanciesSnap.exists()) {
-      const vacancies = vacanciesSnap.val() as Record<string, any>;
-
-      for (const [vacancyId, vacancyData] of Object.entries(vacancies)) {
-        // ✅ Normalizar requests (pode ser Map ou Array)
-        const requests = _normalizeRequests(vacancyData.requests);
-
-        if (requests.includes(userId)) {
-          logger.info(`  📌 Removendo de vacancy/${vacancyId}`);
-
-          // Verificar se não foi visualizado
-          const requestViews = vacancyData.views?.request_views || {};
-          if (requestViews[userId]?.viewed_by_owner === false) {
-            const ownerId = vacancyData.local_id;
-            logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
-            await decrementRequestBadge(ownerId);
-          }
-
-          // Remover das listas
-          const filteredRequests = requests.filter(
-            (id: string) => id !== userId,
-          );
-          await database
-            .ref(`vacancy/${vacancyId}/requests`)
-            .set(filteredRequests);
-          await database
-            .ref(`vacancy/${vacancyId}/views/request_views/${userId}`)
-            .remove();
+    // ── Worker: limpa vagas onde se candidatou ─────────────────────────────
+    const vacanciesSnap = await database
+      .ref("vacancy")
+      .orderByChild("status")
+      .equalTo("active")
+      .once("value");
+ 
+    if (!vacanciesSnap.exists()) {
+      logger.info("  ℹ️ Nenhuma vaga ativa encontrada");
+      return;
+    }
+ 
+    const vacancies = vacanciesSnap.val() as Record<string, any>;
+    let processedCount = 0;
+    let badgeDecrementCount = 0;
+ 
+    // ✅ Processa sequencialmente para garantir ordem
+    for (const [vacancyId, vacancyData] of Object.entries(vacancies)) {
+      const requests = _normalizeRequests(vacancyData.requests);
+      if (!requests.includes(userId)) continue;
+ 
+      try {
+        logger.info(`  📌 Processando vacancy/${vacancyId}`);
+        
+        const requestViews = vacancyData.views?.request_views || {};
+        const ownerId = vacancyData.local_id as string;
+ 
+        // ✅ PRIMEIRO decrementa badge se necessário
+        if (requestViews[userId]?.viewed_by_owner === false && ownerId) {
+          logger.info(`    🔽 Decrementando badge do owner: ${ownerId}`);
+          await decrementRequestBadge(ownerId);
+          badgeDecrementCount++;
+          logger.info(`    ✅ Badge decrementado com sucesso`);
+        } else {
+          logger.info(`    ℹ️ Badge não precisa ser decrementado (já visualizado ou sem owner)`);
         }
+ 
+        // ✅ DEPOIS remove da lista de requests
+        const filteredRequests = requests.filter((id) => id !== userId);
+        await database
+          .ref(`vacancy/${vacancyId}/requests`)
+          .set(filteredRequests);
+        logger.info(`    ✅ Removido da lista de requests`);
+ 
+        // ✅ Por último remove o request_view
+        await database
+          .ref(`vacancy/${vacancyId}/views/request_views/${userId}`)
+          .remove();
+        logger.info(`    ✅ Request view removido`);
+        
+        processedCount++;
+      } catch (err) {
+        logger.error(`  ❌ Erro ao processar vacancy/${vacancyId}:`, err);
+        // Continua processando as outras mesmo se uma falhar
       }
     }
+ 
+    logger.info(`\n  📊 Resumo Worker:`);
+    logger.info(`     Vagas processadas: ${processedCount}`);
+    logger.info(`     Badges decrementados: ${badgeDecrementCount}`);
   } else {
-    // Buscar professionals onde o contractor se candidatou
-    const professionalsSnap = await database.ref("professionals").once("value");
-
-    if (professionalsSnap.exists()) {
-      const professionals = professionalsSnap.val() as Record<string, any>;
-
-      for (const [professionalId, professionalData] of Object.entries(
-        professionals,
-      )) {
-        // ✅ Normalizar requests
-        const requests = _normalizeRequests(professionalData.requests);
-
-        if (requests.includes(userId)) {
-          logger.info(`  📌 Removendo de professionals/${professionalId}`);
-
-          const requestViews = professionalData.views?.request_views || {};
-          if (requestViews[userId]?.viewed_by_owner === false) {
-            const ownerId = professionalData.local_id;
-            logger.info(`  🔽 Decrementando badge do owner: ${ownerId}`);
-            await decrementRequestBadge(ownerId);
-          }
-
-          const filteredRequests = requests.filter(
-            (id: string) => id !== userId,
-          );
-          await database
-            .ref(`professionals/${professionalId}/requests`)
-            .set(filteredRequests);
-          await database
-            .ref(
-              `professionals/${professionalId}/views/request_views/${userId}`,
-            )
-            .remove();
+    // ── Contractor: limpa professionals onde se candidatou ─────────────────
+    const professionalsSnap = await database
+      .ref("professionals")
+      .orderByChild("status")
+      .equalTo("active")
+      .once("value");
+ 
+    if (!professionalsSnap.exists()) {
+      logger.info("  ℹ️ Nenhum profissional ativo encontrado");
+      return;
+    }
+ 
+    const professionals = professionalsSnap.val() as Record<string, any>;
+    let processedCount = 0;
+    let badgeDecrementCount = 0;
+ 
+    // ✅ Processa sequencialmente para garantir ordem
+    for (const [professionalId, professionalData] of Object.entries(
+      professionals,
+    )) {
+      const requests = _normalizeRequests(professionalData.requests);
+      if (!requests.includes(userId)) continue;
+ 
+      try {
+        logger.info(`  📌 Processando professionals/${professionalId}`);
+        
+        const requestViews = professionalData.views?.request_views || {};
+        const ownerId = professionalData.local_id as string;
+ 
+        // ✅ PRIMEIRO decrementa badge se necessário
+        if (requestViews[userId]?.viewed_by_owner === false && ownerId) {
+          logger.info(`    🔽 Decrementando badge do owner: ${ownerId}`);
+          await decrementRequestBadge(ownerId);
+          badgeDecrementCount++;
+          logger.info(`    ✅ Badge decrementado com sucesso`);
+        } else {
+          logger.info(`    ℹ️ Badge não precisa ser decrementado (já visualizado ou sem owner)`);
         }
+ 
+        // ✅ DEPOIS remove da lista de requests
+        const filteredRequests = requests.filter((id) => id !== userId);
+        await database
+          .ref(`professionals/${professionalId}/requests`)
+          .set(filteredRequests);
+        logger.info(`    ✅ Removido da lista de requests`);
+ 
+        // ✅ Por último remove o request_view
+        await database
+          .ref(
+            `professionals/${professionalId}/views/request_views/${userId}`,
+          )
+          .remove();
+        logger.info(`    ✅ Request view removido`);
+        
+        processedCount++;
+      } catch (err) {
+        logger.error(
+          `  ❌ Erro ao processar professionals/${professionalId}:`,
+          err,
+        );
+        // Continua processando os outros mesmo se um falhar
       }
     }
+ 
+    logger.info(`\n  📊 Resumo Contractor:`);
+    logger.info(`     Profissionais processados: ${processedCount}`);
+    logger.info(`     Badges decrementados: ${badgeDecrementCount}`);
   }
-
+ 
   logger.info(`✅ Limpeza de candidaturas concluída\n`);
 }
 
@@ -779,8 +837,6 @@ async function cleanupCandidaturesBadges(userId: string, userRole: string) {
 // ✅ CORRIGIDO: Salva role ANTES de deletar Users
 // ============================================================
 
-import { onValueDeleted } from "firebase-functions/v2/database";
-
 export const onUserDeleted = onValueDeleted(
   {
     ref: "/Users/{userId}",
@@ -788,38 +844,48 @@ export const onUserDeleted = onValueDeleted(
   },
   async (event) => {
     const userId = event.params.userId;
-
+ 
     try {
       logger.info(`\n═══════════════════════════════════════════`);
       logger.info(`🗑️ USUÁRIO DELETADO: ${userId}`);
       logger.info(`═══════════════════════════════════════════\n`);
-
-      // ✅ Pegar role ANTES de deletar (do snapshot antes da exclusão)
+ 
       const beforeData = event.data.val() as any;
       const userRole = beforeData?.role || "worker";
-
+ 
       logger.info(`👤 Role detectado: ${userRole}`);
-
-      // ✅ Limpar candidaturas e ajustar badges dos outros
-      await cleanupCandidaturesBadges(userId, userRole);
-
-      // ✅ Marcar como deletado (expira em 24h) + SALVAR ROLE
+      logger.info(`🔑 Executando como Admin SDK (sem restrição de regras)`);
+ 
+      // ✅ PASSO 1: Marca como deletado PRIMEIRO
+      // Isso faz o Flutter filtrar os cards imediatamente
       const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
       await admin.database().ref(`deleted_users/${userId}`).set({
         expires_at: expiresAt,
-        role: userRole, // ✅ Salvar role para referência futura
+        role: userRole,
         deleted_at: Date.now(),
       });
-
-      logger.info(
-        `\n✅ Marcado como deletado até ${new Date(expiresAt).toISOString()}`,
-      );
+      logger.info(`✅ 1/3 - Marcado como deletado (Flutter vai filtrar)`);
+ 
+      // ✅ PASSO 2: Limpa candidaturas e decrementa badges
+      // Agora que está marcado como deletado, podemos limpar com calma
+      await cleanupCandidaturesBadges(userId, userRole);
+      logger.info(`✅ 2/3 - Candidaturas limpas e badges decrementados`);
+ 
+      // ✅ PASSO 3: Remove o badge do próprio usuário
+      await admin.database().ref(`badges/${userId}`).remove();
+      logger.info(`✅ 3/3 - Badge do usuário removido`);
+ 
+      logger.info(`\n✅ PROCESSO COMPLETO`);
+      logger.info(`   Deletado permanentemente em: ${new Date(expiresAt).toISOString()}`);
       logger.info(`═══════════════════════════════════════════\n`);
     } catch (error) {
       logger.error(`\n❌❌❌ ERRO AO PROCESSAR EXCLUSÃO ❌❌❌`);
+      logger.error(`Usuário: ${userId}`);
       logger.error(`Erro:`, error);
+      logger.error(`═══════════════════════════════════════════\n`);
     }
   },
+
 );
 
 // ============================================================

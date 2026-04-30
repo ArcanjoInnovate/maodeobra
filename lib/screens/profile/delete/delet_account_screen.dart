@@ -55,7 +55,6 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   final _formKey = GlobalKey<FormState>();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _showWarning = false;
 
   @override
   void dispose() {
@@ -69,32 +68,36 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // ✅ PASSO 1: Reautenticar usuário
       final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('Usuário não autenticado');
 
-      if (user != null) {
-        final credential = EmailAuthProvider.credential(
-          email: widget.userEmail,
-          password: _passwordController.text,
-        );
-        await user.reauthenticateWithCredential(credential);
-      }
+      // ── Passo 1: Reautenticar ──────────────────────────────────────────
+      final credential = EmailAuthProvider.credential(
+        email: widget.userEmail,
+        password: _passwordController.text,
+      );
+      await user.reauthenticateWithCredential(credential);
 
-      // ✅ PASSO 2: Deletar dados do Firebase Realtime Database
-      await _deleteUserData();
+      // ── Passo 2: Deletar dados próprios do banco ───────────────────────
+      // NÃO inclui limpeza de candidaturas em vagas/profissionais alheios.
+      // Isso é feito pela Cloud Function onUserDeleted com Admin SDK,
+      // que tem permissão para escrever em /badges de outros usuários.
+      // O cliente Flutter não tem (e não deve ter) essa permissão.
+      await _deleteOwnData();
 
-      // ✅ PASSO 3: Deletar conta Firebase Auth
-      await user?.delete();
+      // ── Passo 3: Deletar conta Firebase Auth ───────────────────────────
+      // Feito DEPOIS de deletar /Users/{uid}, para que o trigger
+      // onUserDeleted ainda consiga ler o snapshot anterior (role, etc.).
+      await user.delete();
 
-      // ✅ PASSO 4: Voltar para login
+      // ── Passo 4: Navegar para login ────────────────────────────────────
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
         );
+        _showSnackBar('Conta deletada permanentemente!', Colors.green);
       }
-
-      _showSnackBar('Conta deletada permanentemente!', Colors.green);
     } catch (e) {
       _showSnackBar('Erro: ${_getErrorMessage(e)}', Colors.red);
     } finally {
@@ -102,181 +105,83 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
     }
   }
 
-  Future<void> _deleteUserData() async {
-    final database = FirebaseDatabase.instance.ref();
-
-    // ✅ PASSO 1: Limpar candidaturas ANTES de deletar
-    await _cleanupCandidatures();
-
-    // ✅ PASSO 2: Deletar badges
-    await database.child('badges/${widget.local_id}').remove();
-
-    // ✅ PASSO 3: Deletar professionals (se worker)
-    if (widget.activeMode == 'worker') {
-      final profilesRef = database.child('professionals');
-      final profiles = await profilesRef
-          .orderByChild('local_id')
-          .equalTo(widget.local_id)
-          .once();
-      if (profiles.snapshot.exists) {
-        final profilesData = profiles.snapshot.value as Map;
-        for (final profileId in profilesData.keys) {
-          await profilesRef.child(profileId).remove();
-        }
-      }
-    }
-
-    // ✅ PASSO 4: Deletar vacancies (se contractor)
-    if (widget.activeMode == 'contractor') {
-      final vacanciesRef = database.child('vacancy');
-      final vacancies = await vacanciesRef
-          .orderByChild('local_id')
-          .equalTo(widget.local_id)
-          .once();
-      if (vacancies.snapshot.exists) {
-        final vacanciesData = vacancies.snapshot.value as Map;
-        for (final vacancyId in vacanciesData.keys) {
-          await vacanciesRef.child(vacancyId).remove();
-        }
-      }
-    }
-
-    // ✅ PASSO 5: Deletar User principal (ÚLTIMO)
-    await database.child('Users/${widget.local_id}').remove();
-  }
-
-  /// ✅ LIMPAR CANDIDATURAS FEITAS PELO USUÁRIO
-  Future<void> _cleanupCandidatures() async {
-    final database = FirebaseDatabase.instance.ref();
+  // ══════════════════════════════════════════════════════════════════════════
+  // Deleta apenas os dados que pertencem ao próprio usuário.
+  //
+  // O que NÃO fazemos aqui (responsabilidade da Cloud Function):
+  //   - decrementar /badges de outros usuários
+  //   - remover o userId de /vacancy/{id}/requests de outros
+  //   - remover o userId de /professionals/{id}/requests de outros
+  //
+  // A Cloud Function onUserDeleted é disparada quando /Users/{uid} é
+  // removido e executa toda essa limpeza com Admin SDK.
+  // ══════════════════════════════════════════════════════════════════════════
+  Future<void> _deleteOwnData() async {
+    final db = FirebaseDatabase.instance.ref();
     final userId = widget.local_id;
 
+    // Badge próprio
+    await db.child('badges/$userId').remove();
+
+    // Perfil de profissional próprio (se worker)
     if (widget.activeMode == 'worker') {
-      // 🔵 Worker: remover de vagas onde se candidatou
-      final vacanciesSnap = await database.child('vacancy').once();
+      final profilesSnap = await db
+          .child('professionals')
+          .orderByChild('local_id')
+          .equalTo(userId)
+          .once();
+
+      if (profilesSnap.snapshot.exists) {
+        final profiles = Map<String, dynamic>.from(
+          profilesSnap.snapshot.value as Map,
+        );
+        for (final profileId in profiles.keys) {
+          await db.child('professionals/$profileId').remove();
+        }
+      }
+    }
+
+    // Vagas próprias (se contractor)
+    if (widget.activeMode == 'contractor') {
+      final vacanciesSnap = await db
+          .child('vacancy')
+          .orderByChild('local_id')
+          .equalTo(userId)
+          .once();
 
       if (vacanciesSnap.snapshot.exists) {
-        final vacancies = vacanciesSnap.snapshot.value as Map;
-
-        for (final entry in vacancies.entries) {
-          final vacancyId = entry.key;
-          final vacancyData = entry.value as Map;
-
-          // Normalizar requests (pode ser List ou Map)
-          final requests = _normalizeList(vacancyData['requests']);
-
-          if (requests.contains(userId)) {
-            // Verificar se não foi visualizado
-            final requestViews =
-                vacancyData['views']?['request_views'] as Map? ?? {};
-
-            if (requestViews[userId]?['viewed_by_owner'] == false) {
-              // Decrementar badge do owner
-              final ownerId = vacancyData['local_id'] as String?;
-              if (ownerId != null) {
-                await _decrementRequestBadge(ownerId);
-              }
-            }
-
-            // Remover das listas
-            final filteredRequests =
-                requests.where((id) => id != userId).toList();
-            await database
-                .child('vacancy/$vacancyId/requests')
-                .set(filteredRequests);
-            await database
-                .child('vacancy/$vacancyId/views/request_views/$userId')
-                .remove();
-          }
-        }
-      }
-    } else {
-      // 🟢 Contractor: remover de professionals onde se candidatou
-      final professionalsSnap = await database.child('professionals').once();
-
-      if (professionalsSnap.snapshot.exists) {
-        final professionals = professionalsSnap.snapshot.value as Map;
-
-        for (final entry in professionals.entries) {
-          final professionalId = entry.key;
-          final professionalData = entry.value as Map;
-
-          final requests = _normalizeList(professionalData['requests']);
-
-          if (requests.contains(userId)) {
-            final requestViews =
-                professionalData['views']?['request_views'] as Map? ?? {};
-
-            if (requestViews[userId]?['viewed_by_owner'] == false) {
-              final ownerId = professionalData['local_id'] as String?;
-              if (ownerId != null) {
-                await _decrementRequestBadge(ownerId);
-              }
-            }
-
-            final filteredRequests =
-                requests.where((id) => id != userId).toList();
-            await database
-                .child('professionals/$professionalId/requests')
-                .set(filteredRequests);
-            await database
-                .child('professionals/$professionalId/views/request_views/$userId')
-                .remove();
-          }
+        final vacancies = Map<String, dynamic>.from(
+          vacanciesSnap.snapshot.value as Map,
+        );
+        for (final vacancyId in vacancies.keys) {
+          await db.child('vacancy/$vacancyId').remove();
         }
       }
     }
-  }
 
-  /// ✅ NORMALIZAR LISTA (suporta Map e List)
-  List<String> _normalizeList(dynamic data) {
-    if (data == null) return [];
-    if (data is List) {
-      return data.whereType<String>().toList();
-    }
-    if (data is Map) {
-      return data.values.whereType<String>().toList();
-    }
-    return [];
-  }
-
-  /// ✅ DECREMENTAR BADGE DE REQUEST
-  Future<void> _decrementRequestBadge(String userId) async {
-    try {
-      final badgeRef = FirebaseDatabase.instance.ref('badges/$userId');
-      final snap = await badgeRef.once();
-
-      final current = snap.snapshot.exists
-          ? snap.snapshot.value as Map
-          : {'unread_chats': 0, 'unread_requests': 0};
-
-      final newUnreadRequests =
-          ((current['unread_requests'] as int? ?? 0) - 1).clamp(0, 9);
-
-      await badgeRef.set({
-        'unread_chats': current['unread_chats'] ?? 0,
-        'unread_requests': newUnreadRequests,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      });
-    } catch (e) {
-      debugPrint('⚠️ Erro ao decrementar badge: $e');
-    }
+    // Nó principal do usuário — deve ser o ÚLTIMO a ser removido,
+    // pois o trigger onUserDeleted lê o snapshot anterior para obter o role.
+    await db.child('Users/$userId').remove();
   }
 
   String _getErrorMessage(dynamic error) {
-    if (error.toString().contains('password')) {
+    final msg = error.toString();
+    if (msg.contains('password') || msg.contains('wrong-password')) {
       return 'Senha incorreta';
-    } else if (error.toString().contains('requires-recent-login')) {
-      return 'Faça login novamente';
+    }
+    if (msg.contains('requires-recent-login')) {
+      return 'Faça login novamente e tente de novo';
     }
     return 'Erro ao deletar conta. Tente novamente.';
   }
 
   void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            Icon(Icons.info, color: Colors.white),
+            const Icon(Icons.info, color: Colors.white),
             const SizedBox(width: 12),
             Expanded(child: Text(message)),
           ],
@@ -315,7 +220,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ✅ AVATAR + NOME
+              // Avatar + nome
               Center(
                 child: Column(
                   children: [
@@ -348,17 +253,14 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                     ),
                     Text(
                       widget.userEmail,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 40),
 
-              // ✅ AVISO AMARELO
+              // Aviso
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
@@ -393,18 +295,18 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               ),
               const SizedBox(height: 32),
 
-              // ✅ FORM SENHA
+              // Formulário de senha
               Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Digite sua senha para confirmar',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF2D3142),
+                        color: Color(0xFF2D3142),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -431,9 +333,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Digite sua senha';
                         }
-                        if (value.length < 6) {
-                          return 'Senha muito curta';
-                        }
+                        if (value.length < 6) return 'Senha muito curta';
                         return null;
                       },
                     ),
@@ -442,7 +342,7 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
               ),
               const Spacer(),
 
-              // ✅ BOTÃO DELETAR
+              // Botão deletar
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -462,13 +362,14 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white),
                         )
-                      : Row(
+                      : const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
+                          children: [
                             Icon(Icons.delete_forever, size: 24),
                             SizedBox(width: 12),
                             Text('Deletar Minha Conta',
-                                style: TextStyle(fontWeight: FontWeight.bold)),
+                                style:
+                                    TextStyle(fontWeight: FontWeight.bold)),
                           ],
                         ),
                 ),

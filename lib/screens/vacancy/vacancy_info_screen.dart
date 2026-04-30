@@ -6,6 +6,9 @@
 //   2. DeletedUserDetector já estava presente — mantido e integrado
 //      ao listener para filtrar cards de usuários deletados.
 //   3. dispose() cancela o listener corretamente.
+//   4. ✅ NOVA: Verificação de existência do usuário ANTES de aprovar
+//      candidato, evitando race conditions quando internet está instável.
+//   5. ✅ NOVA: Dialog informativo quando usuário não existe mais.
 // ============================================================
 
 // ignore_for_file: unused_import
@@ -26,15 +29,16 @@ import 'package:video_player/video_player.dart';
 mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
   StreamSubscription? _deletedUsersSubscription;
   final Set<String> _deletedUsers = {};
+  VoidCallback? _onDeletedUsersChanged;
 
-  void initDeletedUserDetector() {
+  void initDeletedUserDetector({VoidCallback? onChange}) {
+    _onDeletedUsersChanged = onChange;
     _deletedUsersSubscription = FirebaseDatabase.instance
         .ref('deleted_users')
         .onValue
         .listen((event) {
       if (event.snapshot.exists) {
-        final data =
-            Map<String, dynamic>.from(event.snapshot.value as Map);
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
         if (mounted) {
           setState(() {
             _deletedUsers.clear();
@@ -44,6 +48,9 @@ mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
       } else {
         if (mounted) setState(() => _deletedUsers.clear());
       }
+      
+      // ✅ Callback dispara refiltro
+      _onDeletedUsersChanged?.call();
     });
   }
 
@@ -53,7 +60,6 @@ mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
     _deletedUsersSubscription?.cancel();
   }
 }
-
 class InfoVacancy extends StatefulWidget {
   final String userPhone;
   final String userEmail;
@@ -147,7 +153,9 @@ class _InfoVacancyState extends State<InfoVacancy>
     _currentSalaryType = widget.salaryType;
     _currentMedia = widget.media;
 
-    initDeletedUserDetector();
+    initDeletedUserDetector(
+      onChange: _refilterCandidates, // ← ESTAVA FALTANDO!
+    );
     _loadMedia();
     _subscribeToRequests(); // ← stream em vez de get()
     _loadExpirationInfo();
@@ -161,6 +169,17 @@ class _InfoVacancyState extends State<InfoVacancy>
     super.dispose();
   }
 
+  void _refilterCandidates() {
+    if (!mounted) return;
+    
+    setState(() {
+      _candidates = _candidates
+          .where((c) => !isUserDeleted(c['uid'] ?? ''))
+          .toList();
+    });
+    
+    debugPrint('🔄 Refiltrados candidatos. Restam: ${_candidates.length}');
+  }
   // ══════════════════════════════════════════════════════════════════════════
   // HELPER — normaliza requests (Map ou List → List<String>)
   // ══════════════════════════════════════════════════════════════════════════
@@ -297,13 +316,122 @@ class _InfoVacancyState extends State<InfoVacancy>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // HELPER — verifica se usuário ainda existe
+  // ══════════════════════════════════════════════════════════════════════════
+
+  Future<bool> _checkUserStillExists(String uid) async {
+    final snapshot = await _database.child('Users/$uid').get();
+    return snapshot.exists;
+  }
+
+  void _showUserNotFoundDialog({required String userName}) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF64748B).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.person_off_rounded,
+                color: Color(0xFF64748B), size: 22),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('Usuário indisponível',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Não foi possível aprovar $userName.',
+              style: const TextStyle(
+                  fontSize: 14, color: Color(0xFF0F172A), height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 16, color: Color(0xFF64748B)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Este usuário pode ter encerrado sua conta ou está temporariamente indisponível.',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF64748B),
+                          height: 1.45),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+              child: const Text('Entendido',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // APROVAR CANDIDATO
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _approveCandidate(String employeeUid) async {
     try {
-      final chatsSnapshot = await _database.child('Chats').get();
+      // ✅ PRIMEIRA VERIFICAÇÃO: usuário ainda existe?
+      final exists = await _checkUserStillExists(employeeUid);
+      
+      if (!exists) {
+        // Remove da lista e mostra dialog informativo
+        await _rejectCandidate(employeeUid);
+        if (mounted) {
+          _showUserNotFoundDialog(
+            userName: _candidates
+                .firstWhere(
+                  (c) => c['uid'] == employeeUid,
+                  orElse: () => {'name': 'este usuário'},
+                )['name'] ?? 'este usuário',
+          );
+        }
+        return;
+      }
 
+      final chatsSnapshot = await _database.child('Chats').get();
+      
       if (chatsSnapshot.exists && chatsSnapshot.value != null) {
         final chatsData = chatsSnapshot.value as Map<dynamic, dynamic>;
         bool chatExists = false;
