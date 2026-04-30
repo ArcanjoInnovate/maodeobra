@@ -236,25 +236,25 @@ class NotificationNavigationService {
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _navigateToWorkerProfile(
-  BuildContext context,
-  String userId,
-) async {
-  print('🔔 _navigateToWorkerProfile: $userId');
+    BuildContext context,
+    String userId,
+  ) async {
+    print('🔔 _navigateToWorkerProfile: $userId');
 
-  for (int i = 0; i < 20; i++) {
-    // ✅ Acessa currentState AQUI dentro, a cada tentativa
-    final state = homeScreenKey.currentState;
-    if (state != null && state.mounted) {
-      print('✅ HomeScreen encontrada na tentativa ${i + 1}');
-      state.openWorkerProfileTab();
-      return;
+    for (int i = 0; i < 20; i++) {
+      // ✅ Acessa currentState AQUI dentro, a cada tentativa
+      final state = homeScreenKey.currentState;
+      if (state != null && state.mounted) {
+        print('✅ HomeScreen encontrada na tentativa ${i + 1}');
+        state.openWorkerProfileTab();
+        return;
+      }
+      print('⏳ Tentativa ${i + 1}: HomeScreen não montada ainda...');
+      await Future.delayed(const Duration(milliseconds: 300));
     }
-    print('⏳ Tentativa ${i + 1}: HomeScreen não montada ainda...');
-    await Future.delayed(const Duration(milliseconds: 300));
-  }
 
-  print('⚠️ HomeScreen não encontrada após 20 tentativas');
-}
+    print('⚠️ HomeScreen não encontrada após 20 tentativas');
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // HELPER — SnackBar

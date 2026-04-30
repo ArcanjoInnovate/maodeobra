@@ -37,6 +37,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _setupAnimations();
     _requestPermissions();
     _initApp();
+
   }
 
   Future<void> _requestPermissions() async {

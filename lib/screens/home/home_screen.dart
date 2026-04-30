@@ -117,10 +117,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _setupBadgeListener();
     _setupNotificationHandlers(); // ← primeiro registra callbacks locais
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = main_app.appStateKey.currentState;
+      if (appState != null) {
+        appState.processInitialMessage();
+      }
       _checkProfileCompletion();
-      // ✅ Processa notificação inicial após o frame estar renderizado
-      await _processInitialNotification();
     });
 
     _clearAppBadge();
