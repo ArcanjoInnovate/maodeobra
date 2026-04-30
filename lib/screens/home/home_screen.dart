@@ -11,6 +11,7 @@ import 'package:dartobra_new/services/notifications/notification_navigation_serv
 
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dartobra_new/screens/profile/edit_principal_profile_screen.dart';
@@ -116,6 +117,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadUserData();
     _setupBadgeListener();
     _setupNotificationHandlers(); // ← primeiro registra callbacks locais
+    
+    _processInitialNotification();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = main_app.appStateKey.currentState;
@@ -135,12 +138,48 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _selectedIndex = 3);
   }
 
-
+  bool _notificationProcessed = false; 
   Future<void> _processInitialNotification() async {
-    // Acessa a instância do _MyAppState através de uma chave global
-    final appState = main_app.appStateKey.currentState;
-    if (appState != null) {
-      await appState.processInitialMessage();
+    if (_notificationProcessed) return;
+    // ✅ MÉTODO DIRETO - SEM DEPENDÊNCIA
+    try {
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null && mounted) {
+        _notificationProcessed = true;
+        print('🚀 [Home] Notificação detectada DIRETAMENTE!');
+        
+        final data = initialMessage.data;
+        final type = data['type']?.toString() ?? '';
+        
+        final userRole = _activeMode == 'worker' ? 'employee' : 'contractor';
+        
+        switch (type) {
+          case 'chat':
+          case 'chat_accepted':
+            final chatId = data['chatId']?.toString() ?? '';
+            if (chatId.isNotEmpty) {
+              await NotificationNavigationService().navigateToChat(
+                context: context,
+                chatId: chatId,
+                userId: widget.local_id,
+                userRole: userRole,
+              );
+            }
+            break;
+          case 'request':
+            await NotificationNavigationService().navigateToRequest(
+              context: context,
+              userId: widget.local_id,
+              userRole: userRole,
+              requestType: data['requestType']?.toString() ?? 'professional',
+              profileId: data['profileId']?.toString(),
+              vacancyId: data['vacancyId']?.toString(),
+            );
+            break;
+        }
+      }
+    } catch (e) {
+      print('❌ Erro processar notificação: $e');
     }
   }
 
