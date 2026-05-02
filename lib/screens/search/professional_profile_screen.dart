@@ -1,16 +1,18 @@
-// lib/screens/search/professional_profile_screen.dart
-// ✅ Design premium — glassmorphism, gradientes, animações — lógica original preservada
-
 import 'dart:async';
 import 'dart:ui';
-
+import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
+import 'package:dartobra_new/features/vacancy/controllers/worker_controller.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
+import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_professional_screen.dart';
+import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 class ProfessionalProfilePage extends StatefulWidget {
   final ProfessionalModel professional;
@@ -50,8 +52,17 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
   static const Color _muted = Color(0xFF6B7280);
   static const Color _border = Color(0xFFE5E7EB);
 
+  // ID do dono do perfil
+  String get ownerLocalId => widget.professional.localId;
+
   bool _isRequesting = false;
   bool _hasAlreadyRequested = false;
+
+  // ── Verificação de chat existente ──────────────────────────────────────
+  bool _isCheckingChat = true;
+  String? _existingChatId;
+  String? _ownerRole;
+  String? _myRole;
 
   @override
   void initState() {
@@ -83,26 +94,137 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
       if (mounted) _contentCtrl.forward();
     });
 
-    _checkIfAlreadyRequested();
+    _checkExistingChat();
   }
 
+  // ── Verifica se já existe chat com o profissional ──────────────────────
+  Future<void> _checkExistingChat() async {
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null || ownerLocalId.isEmpty) {
+        if (mounted) setState(() => _isCheckingChat = false);
+        return;
+      }
+
+      final db = FirebaseDatabase.instance.ref();
+
+      // Buscar chats onde eu sou contractor e o profissional é employee
+      final contractorSnapshot = await db
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(currentUserId)
+          .get();
+
+      if (contractorSnapshot.exists) {
+        final data = contractorSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['employee'] == ownerLocalId) {
+            if (mounted) {
+              setState(() {
+                _existingChatId = entry.key.toString();
+                _myRole = 'contractor';
+                _ownerRole = 'employee';
+                _isCheckingChat = false;
+              });
+            }
+            return;
+          }
+        }
+      }
+
+      // Buscar chats onde eu sou employee e o profissional é contractor
+      final employeeSnapshot = await db
+          .child('Chats')
+          .orderByChild('employee')
+          .equalTo(currentUserId)
+          .get();
+
+      if (employeeSnapshot.exists) {
+        final data = employeeSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['contractor'] == ownerLocalId) {
+            if (mounted) {
+              setState(() {
+                _existingChatId = entry.key.toString();
+                _myRole = 'employee';
+                _ownerRole = 'contractor';
+                _isCheckingChat = false;
+              });
+            }
+            return;
+          }
+        }
+      }
+
+      // Nenhum chat encontrado — verifica se já solicitou
+      await _checkIfAlreadyRequested();
+
+      if (mounted) setState(() => _isCheckingChat = false);
+    } catch (e) {
+      debugPrint('❌ Erro ao verificar chat existente: $e');
+      if (mounted) setState(() => _isCheckingChat = false);
+    }
+  }
+
+  // ── Verifica se já enviou solicitação de chat ──────────────────────────
   Future<void> _checkIfAlreadyRequested() async {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) return;
 
     final professionalId = widget.professional.id;
     final db = FirebaseDatabase.instance.ref();
-    final snapshot = await db.child('professionals/$professionalId/requests').get();
+    final snapshot =
+        await db.child('professionals/$professionalId/requests').get();
 
     if (snapshot.exists && snapshot.value is List) {
       final requestsList = List.from(snapshot.value as List);
       if (requestsList.contains(currentUserId)) {
-        if (mounted) {
-          setState(() {
-            _hasAlreadyRequested = true;
-          });
-        }
+        if (mounted) setState(() => _hasAlreadyRequested = true);
       }
+    }
+  }
+
+  // ── Abre chat existente ────────────────────────────────────────────────
+  Future<void> _openExistingChat() async {
+    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null) return;
+
+      final userLookup = UserLookupService();
+      final ownerData = await userLookup.getUserData(ownerLocalId);
+
+      if (!mounted) return;
+
+      final contractorId =
+          _myRole == 'contractor' ? currentUserId : ownerLocalId;
+      final employeeId =
+          _myRole == 'employee' ? currentUserId : ownerLocalId;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChangeNotifierProvider(
+            create: (_) => ChatControllerFinal(),
+            child: ChatRoomScreen(
+              chatId: _existingChatId!,
+              contractorId: contractorId,
+              employeeId: employeeId,
+              userRole: _myRole!,
+              userId: currentUserId,
+              otherUserName: ownerData.name,
+              otherUserAvatar:
+                  ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ Erro ao abrir chat: $e');
+      _showError('Erro ao abrir conversa. Tente novamente.');
     }
   }
 
@@ -111,7 +233,6 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     _heroCtrl.dispose();
     _contentCtrl.dispose();
     _avatarCtrl.dispose();
-    
     super.dispose();
   }
 
@@ -205,6 +326,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                 elevation: 3,
                 onSelected: (value) {
                   if (value == 'report') _showReportDialog();
+                  if (value == 'block') _showBlockDialog();
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem<String>(
@@ -223,6 +345,27 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                         ),
                         const SizedBox(width: 12),
                         const Text('Denunciar',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'block',
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.lock,
+                              color: Colors.red.shade600, size: 17),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Bloquear usuário',
                             style: TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
@@ -301,7 +444,8 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                             children: [
                               ClipOval(
                                 child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                                  filter:
+                                      ImageFilter.blur(sigmaX: 6, sigmaY: 6),
                                   child: Container(
                                     width: 112,
                                     height: 112,
@@ -319,9 +463,11 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                               CircleAvatar(
                                 radius: 48,
                                 backgroundColor: Colors.white.withOpacity(0.1),
-                                backgroundImage: widget.professional.avatar.isNotEmpty
-                                    ? NetworkImage(widget.professional.avatar)
-                                    : null,
+                                backgroundImage:
+                                    widget.professional.avatar.isNotEmpty
+                                        ? NetworkImage(
+                                            widget.professional.avatar)
+                                        : null,
                                 child: widget.professional.avatar.isEmpty
                                     ? const Icon(Icons.person,
                                         size: 48, color: Colors.white)
@@ -609,15 +755,13 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                     color: _blueLight, shape: BoxShape.circle),
               ),
               const SizedBox(width: 7),
-              Text(
-                skill,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: _blue,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.1,
-                ),
-              ),
+              Text(skill,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _blue,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.1,
+                  )),
             ],
           ),
         );
@@ -653,9 +797,10 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     );
   }
 
+  // ── Bottom Bar com três estados: carregando / chat existente / solicitar ──
   Widget _buildBottomBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: _border, width: 1)),
@@ -670,32 +815,103 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
         child: SizedBox(
           width: double.infinity,
           height: 52,
-          child: _hasAlreadyRequested
-              ? _buildAlreadyRequestedBar()
-              : ElevatedButton.icon(
-                  onPressed: _isRequesting ? null : _requestChat,
-                  icon: _isRequesting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                  label: Text(
-                    _isRequesting ? 'Enviando...' : 'Solicitar Chat',
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700),
+          child: _buildBottomBarContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBarContent() {
+    // 1. Ainda verificando
+    if (_isCheckingChat) {
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(color: _blue, strokeWidth: 2),
+        ),
+      );
+    }
+
+    // 2. Chat já existe → botão "Abrir Chat"
+    if (_existingChatId != null) {
+      return Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF10B981), Color(0xFF059669)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF10B981).withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _openExistingChat,
+            borderRadius: BorderRadius.circular(14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _blue,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: _blue.withOpacity(0.6),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(Icons.chat_bubble_rounded,
+                      size: 18, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Abrir Chat',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.3,
                   ),
                 ),
+              ],
+            ),
+          ),
         ),
+      );
+    }
+
+    // 3. Solicitação já enviada mas sem chat criado ainda
+    if (_hasAlreadyRequested) {
+      return _buildAlreadyRequestedBar();
+    }
+
+    // 4. Estado padrão → botão "Solicitar Chat"
+    return ElevatedButton.icon(
+      onPressed: _isRequesting ? null : _requestChat,
+      icon: _isRequesting
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2))
+          : const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+      label: Text(
+        _isRequesting ? 'Enviando...' : 'Solicitar Chat',
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _blue,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: _blue.withOpacity(0.6),
+        disabledForegroundColor: Colors.white,
+        elevation: 0,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -739,6 +955,10 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
       ),
     );
   }
+
+  // ══════════════════════════════
+  // DIÁLOGOS — DENÚNCIA E BLOQUEIO
+  // ══════════════════════════════
 
   void _showReportDialog() {
     showDialog(
@@ -792,6 +1012,61 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     );
   }
 
+  void _showBlockDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.lock, color: Colors.red.shade600, size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Text('Bloquear Usuário',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Você tem certeza que deseja bloquear este usuário? Ele não poderá mais ver suas vagas ou entrar em contato com você.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+
+              final success =
+                  await context.read<BlockProvider>().blockUser(ownerLocalId);
+
+              if (!mounted) return;
+
+              if (success) {
+                _showSuccess('Usuário bloqueado com sucesso!');
+                Navigator.pop(context);
+              } else {
+                _showError('Erro ao bloquear usuário.');
+              }
+            },
+            child: const Text('Bloquear',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openReportScreen() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
@@ -812,7 +1087,6 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
   Future<void> _requestChat() async {
     if (_isRequesting) return;
-
     setState(() => _isRequesting = true);
 
     try {
@@ -865,7 +1139,9 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
       final updates = <String, dynamic>{};
       updates['professionals/$professionalId/requests'] = requestsList;
-      updates['professionals/$professionalId/views/request_views/$currentUserId'] = {
+      updates[
+              'professionals/$professionalId/views/request_views/$currentUserId'] =
+          {
         'viewed_by_owner': false,
         'requested_at': DateTime.now().millisecondsSinceEpoch,
         'contractor_name': userName,
@@ -874,15 +1150,11 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
       await db.update(updates);
 
-      // user_requests separado para não bloquear a solicitação se as regras não cobrirem este path
       try {
-        await db.child('user_requests/$currentUserId/professionals/$professionalId').set(true);
-      } catch (_) {}
-
-      // Assumindo que BadgeHelper existe no projeto conforme o código original sugeria
-      // Se der erro de compilação por falta dessa classe, o usuário deve verificar o import
-      try {
-        // await BadgeHelper.recalculateRequestBadge(professionalId);
+        await db
+            .child(
+                'user_requests/$currentUserId/professionals/$professionalId')
+            .set(true);
       } catch (_) {}
 
       _showSuccess('Chat solicitado com sucesso!');
@@ -890,10 +1162,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     } catch (e) {
       _showError('Erro ao solicitar chat: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isRequesting = false);
-      }
+      if (mounted) setState(() => _isRequesting = false);
     }
   }
-  
 }

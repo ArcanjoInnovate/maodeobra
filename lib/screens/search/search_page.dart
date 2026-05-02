@@ -29,11 +29,10 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final controller = context.read<search.SearchController>();
-      if (!controller.isLoading) {
-        controller.initialize();
-      }
+      // ✅ Sempre reinicializa — garante bloqueados atualizados
+      await controller.initialize();
     });
     _scrollController.addListener(_onScroll);
   }

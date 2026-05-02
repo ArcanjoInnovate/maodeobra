@@ -6,15 +6,12 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   Function(String)? onStatusChanged;
 
-  // ============================================================
-  // ✅ LOGIN - SALVA FCM TOKEN AUTOMATICAMENTE
-  // ============================================================
   Future<User?> signIn({
     required String email,
     required String password,
   }) async {
     try {
-      UserCredential credential = await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -22,7 +19,6 @@ class AuthService {
       final user = credential.user;
       if (user != null) {
         await _saveFCMToken(user.uid);
-        print('✅ Login OK + FCM token salvo: ${user.uid}');
       }
 
       return user;
@@ -35,16 +31,13 @@ class AuthService {
     }
   }
 
-  // ============================================================
-  // ✅ REGISTRO - SALVA FCM TOKEN AUTOMATICAMENTE
-  // ============================================================
   Future<User?> signUp({
     required String email,
     required String password,
     required String name,
   }) async {
     try {
-      UserCredential credential = await _auth.createUserWithEmailAndPassword(
+      final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -53,9 +46,7 @@ class AuthService {
       if (user != null) {
         await user.updateDisplayName(name);
         await user.sendEmailVerification();
-
         await _saveFCMToken(user.uid);
-        print('✅ Registro OK + FCM token salvo: ${user.uid}');
       }
 
       return user;
@@ -69,40 +60,6 @@ class AuthService {
     }
   }
 
-  // ============================================================
-  // ✅ SALVAR FCM TOKEN (iOS + Android)
-  // ============================================================
-Future<void> _saveFCMToken(String userId) async {
-  try {
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      onStatusChanged?.call('❌ Notificação negada');
-      return;
-    }
-
-    onStatusChanged?.call('⏳ Buscando FCM token...');
-    final token = await FirebaseMessaging.instance.getToken();
-
-    if (token != null) {
-      onStatusChanged?.call('✅ FCM: ${token.substring(0, 15)}...');
-      await FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(token);
-    } else {
-      onStatusChanged?.call('❌ FCM token NULL');
-    }
-  } catch (e) {
-    onStatusChanged?.call('❌ Erro: $e');
-  }
-}
-
-
-  // ============================================================
-  // ✅ LOGOUT - REMOVE TOKEN
-  // ============================================================
   Future<void> signOut() async {
     try {
       final user = _auth.currentUser;
@@ -110,20 +67,42 @@ Future<void> _saveFCMToken(String userId) async {
         await FirebaseDatabase.instance
             .ref('Users/${user.uid}/fcmToken')
             .remove();
-        print('🗑️ FCM token removido no logout');
       }
-
       await _auth.signOut();
-      print('✅ Logout completo');
     } catch (e) {
-      print('❌ Erro logout: $e');
       rethrow;
     }
   }
 
-  // ============================================================
-  // GETTERS
-  // ============================================================
+  Future<void> _saveFCMToken(String userId) async {
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        onStatusChanged?.call('❌ Notificação negada');
+        return;
+      }
+
+      onStatusChanged?.call('⏳ Buscando FCM token...');
+      final token = await FirebaseMessaging.instance.getToken();
+
+      if (token != null) {
+        onStatusChanged?.call('✅ FCM: ${token.substring(0, 15)}...');
+        await FirebaseDatabase.instance
+            .ref('Users/$userId/fcmToken')
+            .set(token);
+      } else {
+        onStatusChanged?.call('❌ FCM token NULL');
+      }
+    } catch (e) {
+      onStatusChanged?.call('❌ Erro: $e');
+    }
+  }
+
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 }

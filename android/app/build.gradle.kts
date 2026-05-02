@@ -48,7 +48,6 @@ android {
         versionName = flutter.versionName
         multiDexEnabled = true
 
-        // ✅ Inclui todas as arquiteturas ARM (32-bit e 64-bit)
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
@@ -64,16 +63,13 @@ android {
         }
     }
 
-    // ✅ Gera APKs separados por ABI para distribuição na Play Store
-    // Cada APK fica menor e com o .so correto para cada dispositivo.
-    // Se preferir um APK universal (único arquivo), remova este bloco
-    // e mantenha apenas o ndk { abiFilters } acima.
+    // Splits desabilitados — appbundle gerencia ABI splitting automaticamente
     splits {
         abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-            isUniversalApk = true  // também gera um APK universal como fallback
+            isEnable = false
+        }
+        density {
+            isEnable = false
         }
     }
 }

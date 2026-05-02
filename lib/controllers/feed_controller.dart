@@ -1,3 +1,4 @@
+import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -12,7 +13,9 @@ class FeedController with ChangeNotifier {
   final FirebaseFeedService _feedService = FirebaseFeedService();
   String? _currentUserId;
   final IBGEService _ibgeService = IBGEService();
+  late final UserRelationShipController _userController = UserRelationShipController();
   final ExpirationService _expirationService = ExpirationService();
+  
 
   // ===============================
   // STATE
@@ -74,11 +77,13 @@ class FeedController with ChangeNotifier {
   List<VacancyModel> get filteredVacancies => _filteredVacancies;
 
   // CORRIGIDO: Removido bypass por chat - profissionais com chat sao tratados normalmente
-  List<ProfessionalModel> get filteredProfessionals => _allProfessionals.where((p) {
-    if (_currentUserId != null && p.localId == _currentUserId) return true;
-    if (_requestsLoaded && _requestedProfessionalIds.contains(p.localId)) return false;
-    return true;
-  }).toList();
+  List<ProfessionalModel> get filteredProfessionals =>
+      _allProfessionals.where((p) {
+        if (_currentUserId != null && p.localId == _currentUserId) return true;
+        if (_requestsLoaded && _requestedProfessionalIds.contains(p.localId))
+          return false;
+        return true;
+      }).toList();
 
   List<dynamic> get unifiedFeed {
     final List<dynamic> combined = [];
@@ -137,6 +142,10 @@ class FeedController with ChangeNotifier {
     try {
       await _loadStates();
       if (initialState != null) await _loadCities(initialState);
+      if (_currentUserId != null) {
+        await _userController.fetchAllBlockedUsers(_currentUserId!);
+      }
+
       await _loadChats();
       await _loadInitialFeed();
       await _applyFilters();
@@ -246,7 +255,11 @@ class FeedController with ChangeNotifier {
 
       // Busca vagas
       if (_hasMoreVacancies) {
+        final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!);
+        final blockedUserIds = blockedList.toSet();
+
         final resultV = await _feedService.fetchVacanciesForFeed(
+          blockedUserIds: blockedUserIds,
           filterState: _filterState,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
@@ -265,8 +278,11 @@ class FeedController with ChangeNotifier {
 
       // Busca profissionais
       if (_hasMoreProfessionals) {
+        final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!); // ✅
+        final blockedUserIds = blockedList.toSet();
         final resultP = await _feedService.fetchProfessionalsForFeed(
           filterState: _filterState,
+          blockedUserIds: blockedUserIds,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
           chatUserIds: _chatUserIds,
@@ -284,7 +300,7 @@ class FeedController with ChangeNotifier {
 
       print(
           '   Total no feed: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
-      
+
       // Reaplica filtros apos carregar mais dados
       await _applyFilters();
     } catch (e) {
@@ -332,7 +348,8 @@ class FeedController with ChangeNotifier {
       }
 
       // 3 - Expirado por data
-      if (vac.expiresAt.isNotEmpty && _expirationService.isExpired(vac.expiresAt)) {
+      if (vac.expiresAt.isNotEmpty &&
+          _expirationService.isExpired(vac.expiresAt)) {
         return false;
       }
 
@@ -342,20 +359,27 @@ class FeedController with ChangeNotifier {
       }
 
       // 5 - Filtros adicionais: estado, cidade, profissao
-      if (_filterState != null && _filterState!.isNotEmpty && vac.state != _filterState) {
+      if (_filterState != null &&
+          _filterState!.isNotEmpty &&
+          vac.state != _filterState) {
         return false;
       }
-      if (_filterCity != null && _filterCity!.isNotEmpty && vac.city != _filterCity) {
+      if (_filterCity != null &&
+          _filterCity!.isNotEmpty &&
+          vac.city != _filterCity) {
         return false;
       }
-      if (_preferredProfession != null && _preferredProfession!.isNotEmpty && vac.profession != _preferredProfession) {
+      if (_preferredProfession != null &&
+          _preferredProfession!.isNotEmpty &&
+          vac.profession != _preferredProfession) {
         return false;
       }
 
       return true;
     }).toList();
 
-    print('FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visiveis');
+    print(
+        'FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visiveis');
     notifyListeners();
   }
 
@@ -425,6 +449,12 @@ class FeedController with ChangeNotifier {
     _chatUserIds.clear();
     _isLoading = true;
     notifyListeners();
+
+    // ✅ Recarrega bloqueados antes de tudo
+    if (_currentUserId != null) {
+      await _userController.fetchAllBlockedUsers(_currentUserId!);
+    }
+
     await _loadChats();
     await _loadInitialFeed();
     await _applyFilters();

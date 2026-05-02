@@ -1,4 +1,4 @@
-// lib/controllers/chat_controller.dart - VERSÃO HÍBRIDA COM TIMER
+// lib/controllers/chat_controller.dart
 
 import 'package:dartobra_new/services/chat/chat_service.dart';
 import 'package:flutter/foundation.dart';
@@ -26,9 +26,9 @@ class ChatControllerFinal extends ChangeNotifier {
   StreamSubscription? _messagesSubscription;
   StreamSubscription? _statusSubscription;
   StreamSubscription? _unreadCountSubscription;
-  
-  // ✅ HÍBRIDO: Timer periódico para mark as read contínuo
-  Timer? _markReadTimer;
+
+  // ✅ Guard: evita chamadas concorrentes e redundantes de markAsRead
+  bool _isMarkingAsRead = false;
 
   String? _chatId;
   String? _userRole;
@@ -82,11 +82,8 @@ class ChatControllerFinal extends ChangeNotifier {
       _setupStatusListener();
       _setupUnreadCountListener();
 
-      // ✅ HÍBRIDO: Mark as read imediato
-      await _chatService.markAsRead(chatId, userRole);
-      
-      // ✅ HÍBRIDO: Inicia timer para mark as read contínuo (da solução sugerida)
-      _startContinuousMarkRead(chatId, userRole);
+      // ✅ Marca como lido uma única vez ao entrar
+      await _markAsReadSafe();
 
       _setLoading(false);
     } catch (e) {
@@ -95,14 +92,35 @@ class ChatControllerFinal extends ChangeNotifier {
     }
   }
 
-  // ✅ HÍBRIDO: Timer periódico para garantir marcação contínua
-  void _startContinuousMarkRead(String chatId, String userRole) {
-    _markReadTimer?.cancel();
-    _markReadTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_chatId != null && _userRole != null) {
-        _chatService.markAsRead(chatId, userRole);
-      }
-    });
+  // ========================================
+  // MARK AS READ — com guard
+  // ========================================
+
+  /// Só grava no Firebase se:
+  ///   1. Não está em progresso (_isMarkingAsRead)
+  ///   2. Tem realmente mensagens não lidas (_unreadCount > 0)
+  ///   3. O chat não está bloqueado
+  Future<void> _markAsReadSafe() async {
+    if (_chatId == null || _userRole == null) return;
+    if (_isMarkingAsRead) return;
+
+    // ✅ Não faz nada se já está zerado — evita escrita desnecessária
+    if (_unreadCount == 0) return;
+
+    // ✅ Não marca se o chat está bloqueado
+    if (_currentChat?.blockDialog == true) return;
+
+    _isMarkingAsRead = true;
+    try {
+      await _chatService.markAsRead(_chatId!, _userRole!);
+    } finally {
+      _isMarkingAsRead = false;
+    }
+  }
+
+  /// Exposto para chamadas externas (ex: AppLifecycle resumed)
+  Future<void> markAsRead() async {
+    await _markAsReadSafe();
   }
 
   // ========================================
@@ -118,6 +136,10 @@ class ChatControllerFinal extends ChangeNotifier {
           (newMessages) {
             _messages = newMessages;
             notifyListeners();
+
+            // ✅ Ao receber novas mensagens, marca como lido SE necessário.
+            // O guard interno evita escrita quando já está zerado.
+            _markAsReadSafe();
           },
           onError: (error) => _setError('Erro ao carregar mensagens: $error'),
         );
@@ -144,8 +166,16 @@ class ChatControllerFinal extends ChangeNotifier {
         .getUnreadCountStream(_chatId!, _userRole!)
         .listen(
           (count) {
+            // ✅ Só notifica se o valor realmente mudou — evita rebuilds desnecessários
+            if (count == _unreadCount) return;
+
             _unreadCount = count;
             notifyListeners();
+
+            // ✅ Se chegou uma nova mensagem (count subiu para > 0), marca como lido
+            if (count > 0) {
+              _markAsReadSafe();
+            }
           },
           onError: (error) => print('Erro ao monitorar unreadCount: $error'),
         );
@@ -209,20 +239,10 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // MARK AS READ
-  // ========================================
-
-  Future<void> markAsRead() async {
-    if (_chatId == null || _userRole == null) return;
-    await _chatService.markAsRead(_chatId!, _userRole!);
-  }
-
-  // ========================================
-  // APP LIFECYCLE (OFFLINE ROBUSTO)
+  // APP LIFECYCLE
   // ========================================
 
   Future<void> handleAppPaused() async {
-    _markReadTimer?.cancel();
     if (_chatId != null && _userRole != null) {
       await _chatService.setUserOffline(_chatId!, _userRole!);
     }
@@ -231,8 +251,8 @@ class ChatControllerFinal extends ChangeNotifier {
   Future<void> handleAppResumed() async {
     if (_chatId != null && _userRole != null) {
       await _chatService.setUserOnline(_chatId!, _userRole!);
-      await _chatService.markAsRead(_chatId!, _userRole!);
-      _startContinuousMarkRead(_chatId!, _userRole!);
+      // ✅ Ao voltar ao app, marca como lido se houver pendências
+      await _markAsReadSafe();
     }
   }
 
@@ -260,9 +280,6 @@ class ChatControllerFinal extends ChangeNotifier {
   // ========================================
 
   Future<void> leaveChat() async {
-    // ✅ HÍBRIDO: Cancela o timer antes de sair
-    _markReadTimer?.cancel();
-    
     if (_chatId != null && _userRole != null) {
       await _chatService.setUserOffline(_chatId!, _userRole!);
     }
@@ -280,8 +297,6 @@ class ChatControllerFinal extends ChangeNotifier {
 
   @override
   void dispose() {
-    // ✅ HÍBRIDO: Garante cancelamento do timer
-    _markReadTimer?.cancel();
     leaveChat();
     super.dispose();
   }
@@ -291,8 +306,6 @@ class ChatControllerFinal extends ChangeNotifier {
   // ========================================
 
   void reset() {
-    _markReadTimer?.cancel();
-    
     _currentChat = null;
     _messages.clear();
     _otherParticipantStatus = null;
@@ -302,6 +315,7 @@ class ChatControllerFinal extends ChangeNotifier {
     _error = null;
     _hasMoreMessages = true;
     _isLoadingMore = false;
+    _isMarkingAsRead = false;
 
     _messagesSubscription?.cancel();
     _statusSubscription?.cancel();

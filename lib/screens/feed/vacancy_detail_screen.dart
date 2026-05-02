@@ -1,15 +1,17 @@
 // lib/screens/feed/vacancy_detail.dart
-// ✅ Design premium — CORRIGIDO para carregar E EXIBIR imagens na galeria + contato padronizado
-// ✅ Lógica de candidatura ajustada: salva apenas o ID do usuário em requests
-// ✅ Correção do BackdropFilter (não existe como parâmetro no BoxDecoration)
 
+import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
+import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_vacancy_screen.dart';
+import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui';
 
 class VacancyDetailsScreen extends StatefulWidget {
@@ -33,9 +35,18 @@ class VacancyDetailsScreen extends StatefulWidget {
 class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     with TickerProviderStateMixin {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
+
+  String get ownerLocalId => widget.vacancy['local_id']?.toString() ?? '';
+
   bool _isApplying = false;
   int _currentImageIndex = 0;
   late PageController _pageController;
+  
+  // ✅ NOVO: Estado para chat existente
+  bool _isCheckingChat = true;
+  String? _existingChatId;
+  String? _ownerRole;
+  String? _myRole;
 
   late AnimationController _heroCtrl;
   late AnimationController _contentCtrl;
@@ -72,8 +83,114 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
         .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 200),
-        () { if (mounted) _contentCtrl.forward(); });
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _contentCtrl.forward();
+    });
+    
+    // ✅ NOVO: Verificar chat existente
+    _checkExistingChat();
+  }
+
+  // ✅ NOVO: Verificar se já existe chat com o dono da vaga
+  Future<void> _checkExistingChat() async {
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null || ownerLocalId.isEmpty) {
+        setState(() => _isCheckingChat = false);
+        return;
+      }
+
+      // Buscar chats onde eu sou contractor e o dono é employee
+      final contractorSnapshot = await _database
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(currentUserId)
+          .get();
+
+      if (contractorSnapshot.exists) {
+        final data = contractorSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['employee'] == ownerLocalId) {
+            setState(() {
+              _existingChatId = entry.key.toString();
+              _myRole = 'contractor';
+              _ownerRole = 'employee';
+              _isCheckingChat = false;
+            });
+            return;
+          }
+        }
+      }
+
+      // Buscar chats onde eu sou employee e o dono é contractor
+      final employeeSnapshot = await _database
+          .child('Chats')
+          .orderByChild('employee')
+          .equalTo(currentUserId)
+          .get();
+
+      if (employeeSnapshot.exists) {
+        final data = employeeSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['contractor'] == ownerLocalId) {
+            setState(() {
+              _existingChatId = entry.key.toString();
+              _myRole = 'employee';
+              _ownerRole = 'contractor';
+              _isCheckingChat = false;
+            });
+            return;
+          }
+        }
+      }
+
+      setState(() => _isCheckingChat = false);
+    } catch (e) {
+      print('❌ Erro ao verificar chat existente: $e');
+      setState(() => _isCheckingChat = false);
+    }
+  }
+
+  // ✅ NOVO: Abrir chat existente
+  Future<void> _openExistingChat() async {
+    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+
+    try {
+      final userLookup = UserLookupService();
+      final ownerData = await userLookup.getUserData(ownerLocalId);
+
+      if (!mounted) return;
+
+      final contractorId = _myRole == 'contractor' 
+          ? widget.currentUserId 
+          : ownerLocalId;
+      final employeeId = _myRole == 'employee' 
+          ? widget.currentUserId 
+          : ownerLocalId;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChangeNotifierProvider(
+            create: (_) => ChatControllerFinal(),
+            child: ChatRoomScreen(
+              chatId: _existingChatId!,
+              contractorId: contractorId,
+              employeeId: employeeId,
+              userRole: _myRole!,
+              userId: widget.currentUserId,
+              otherUserName: ownerData.name,
+              otherUserAvatar: ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      print('❌ Erro ao abrir chat: $e');
+      _showError('Erro ao abrir conversa. Tente novamente.');
+    }
   }
 
   @override
@@ -92,8 +209,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
       return dateTimeStr;
     }
   }
-
-  // ── HELPERS ──────────────────────────────────────────────────
 
   List<String> _getImageUrls(Map<String, dynamic> v) {
     try {
@@ -129,12 +244,12 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   }
 
   bool _hasContactInfo(Map<String, dynamic> v) {
-    final email = (v['email_contact'] ?? v['emailContact'] ?? '').toString().trim();
-    final phone = (v['phone_contact'] ?? v['phoneContact'] ?? '').toString().trim();
+    final email =
+        (v['email_contact'] ?? v['emailContact'] ?? '').toString().trim();
+    final phone =
+        (v['phone_contact'] ?? v['phoneContact'] ?? '').toString().trim();
     return email.isNotEmpty || phone.isNotEmpty;
   }
-
-  // ── BUILD ─────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -173,11 +288,15 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
 
   Widget _buildFloatingAppBar(BuildContext context) {
     return Positioned(
-      top: 0, left: 0, right: 0,
+      top: 0,
+      left: 0,
+      right: 0,
       child: Container(
         padding: EdgeInsets.only(
           top: MediaQuery.of(context).padding.top + 8,
-          left: 8, right: 8, bottom: 8,
+          left: 8,
+          right: 8,
+          bottom: 8,
         ),
         color: Colors.transparent,
         child: Row(
@@ -207,6 +326,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                 elevation: 3,
                 onSelected: (value) {
                   if (value == 'report') _showReportDialog();
+                  if (value == 'block') _showBlockDialog();
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem<String>(
@@ -214,7 +334,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                     child: Row(
                       children: [
                         Container(
-                          width: 32, height: 32,
+                          width: 32,
+                          height: 32,
                           decoration: BoxDecoration(
                             color: Colors.red.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(8),
@@ -224,6 +345,27 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                         ),
                         const SizedBox(width: 12),
                         const Text('Denunciar',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'block',
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.lock,
+                              color: Colors.red.shade600, size: 17),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Bloquear usuário',
                             style: TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
@@ -289,7 +431,9 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
           ),
         ),
         Positioned(
-          top: 0, left: 0, right: 0,
+          top: 0,
+          left: 0,
+          right: 0,
           child: Container(
             height: 120,
             decoration: BoxDecoration(
@@ -313,7 +457,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(20),
@@ -332,13 +477,15 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
         if (images.length > 1)
           Positioned(
             bottom: 60,
-            left: 0, right: 0,
+            left: 0,
+            right: 0,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 images.length,
                 (i) => Container(
-                  width: 6, height: 6,
+                  width: 6,
+                  height: 6,
                   margin: const EdgeInsets.symmetric(horizontal: 3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -351,7 +498,9 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             ),
           ),
         Positioned(
-          bottom: 0, left: 0, right: 0,
+          bottom: 0,
+          left: 0,
+          right: 0,
           child: Container(
             height: 80,
             decoration: BoxDecoration(
@@ -384,9 +533,11 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
       child: Stack(
         children: [
           Positioned(
-            top: -60, right: -40,
+            top: -60,
+            right: -40,
             child: Container(
-              width: 200, height: 200,
+              width: 200,
+              height: 200,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withOpacity(0.06),
@@ -394,9 +545,11 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             ),
           ),
           Positioned(
-            bottom: -30, left: -50,
+            bottom: -30,
+            left: -50,
             child: Container(
-              width: 180, height: 180,
+              width: 180,
+              height: 180,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withOpacity(0.05),
@@ -413,7 +566,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                     child: Container(
-                      width: 90, height: 90,
+                      width: 90,
+                      height: 90,
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.18),
                         borderRadius: BorderRadius.circular(28),
@@ -443,7 +597,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 7, height: 7,
+                            width: 7,
+                            height: 7,
                             decoration: const BoxDecoration(
                               color: Color(0xFF93C5FD),
                               shape: BoxShape.circle,
@@ -481,7 +636,9 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             ),
           ),
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: Container(
               height: 48,
               decoration: BoxDecoration(
@@ -504,7 +661,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Título (quando há imagem o hero não mostra)
           if (images.isNotEmpty) ...[
             Text(
               v['title'] ?? 'Vaga sem título',
@@ -518,12 +674,11 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             ),
             const SizedBox(height: 8),
           ],
-
-          // Pill de profissão
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
                 color: _blueSurface,
                 borderRadius: BorderRadius.circular(30),
@@ -538,22 +693,16 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
               ),
             ),
           ),
-
-          // Detalhes
           _sectionLabel('DETALHES'),
           const SizedBox(height: 12),
           _buildDetailsGrid(v),
           const SizedBox(height: 28),
-
-          // ── CONTATO (padronizado igual professional_profile_page) ──
           if (_hasContactInfo(v)) ...[
             _sectionLabel('CONTATO'),
             const SizedBox(height: 12),
             _buildContactSection(v),
             const SizedBox(height: 28),
           ],
-
-          // Descrição
           if (v['description'] != null &&
               (v['description'] as String).isNotEmpty) ...[
             _sectionLabel('DESCRIÇÃO DA VAGA'),
@@ -561,8 +710,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             _buildTextCard(v['description']),
             const SizedBox(height: 28),
           ],
-
-          // Requisitos
           if (v['requirements'] != null &&
               (v['requirements'] as String).isNotEmpty) ...[
             _sectionLabel('REQUISITOS'),
@@ -570,8 +717,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             _buildTextCard(v['requirements']),
             const SizedBox(height: 28),
           ],
-
-          // Benefícios
           if (v['benefits'] != null &&
               (v['benefits'] as String).isNotEmpty) ...[
             _sectionLabel('BENEFÍCIOS'),
@@ -579,8 +724,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             _buildTextCard(v['benefits']),
             const SizedBox(height: 28),
           ],
-
-          // Galeria
           if (images.isNotEmpty) ...[
             _sectionLabel('GALERIA'),
             const SizedBox(height: 12),
@@ -592,11 +735,11 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     );
   }
 
-  // ── CONTATO (padrão professional_profile_page) ──────────────
-
   Widget _buildContactSection(Map<String, dynamic> v) {
-    final email = (v['email_contact'] ?? v['emailContact'] ?? '').toString().trim();
-    final phone = (v['phone_contact'] ?? v['phoneContact'] ?? '').toString().trim();
+    final email =
+        (v['email_contact'] ?? v['emailContact'] ?? '').toString().trim();
+    final phone =
+        (v['phone_contact'] ?? v['phoneContact'] ?? '').toString().trim();
 
     return Column(
       children: [
@@ -693,8 +836,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     ));
   }
 
-  // ── GALERIA ──────────────────────────────────────────────────
-
   Widget _buildGallerySection(List<String> images) {
     return SizedBox(
       height: 190,
@@ -749,7 +890,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                       ),
                     ),
                     Positioned(
-                      bottom: 10, right: 10,
+                      bottom: 10,
+                      right: 10,
                       child: Container(
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
@@ -764,7 +906,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                     ),
                     if (images.length > 1)
                       Positioned(
-                        top: 10, left: 10,
+                        top: 10,
+                        left: 10,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
@@ -876,7 +1019,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 42, height: 42,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: c.withOpacity(0.10),
               borderRadius: BorderRadius.circular(12),
@@ -932,7 +1076,116 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     );
   }
 
+  // ✅ NOVO: Bottom Bar com verificação de chat existente
   Widget _buildBottomBar() {
+    if (_isCheckingChat) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: _border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, -4)),
+          ],
+        ),
+        child: SafeArea(
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: _blue,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Se já existe chat, mostra botão "Abrir Chat"
+    if (_existingChatId != null) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: _border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, -4)),
+          ],
+        ),
+        child: SafeArea(
+          child: Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF10B981),
+                  Color(0xFF059669),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0xFF10B981).withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _openExistingChat,
+                borderRadius: BorderRadius.circular(14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.chat_bubble_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Abrir Chat',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Caso contrário, botão normal de candidatura
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       decoration: BoxDecoration(
@@ -953,7 +1206,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
             onPressed: _isApplying ? null : _applyToVacancy,
             icon: _isApplying
                 ? const SizedBox(
-                    width: 18, height: 18,
+                    width: 18,
+                    height: 18,
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.send_rounded, size: 18),
@@ -977,8 +1231,65 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   }
 
   // ══════════════════════════════
-  // LÓGICA ORIGINAL
+  // DIÁLOGOS
   // ══════════════════════════════
+
+  void _showBlockDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.lock, color: Colors.red.shade600, size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Text('Bloquear Usuário',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Você tem certeza que deseja bloquear este usuário? Ele não poderá mais ver suas vagas ou entrar em contato com você.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+
+              final success = await context
+                  .read<BlockProvider>()
+                  .blockUser(ownerLocalId);
+
+              if (!mounted) return;
+
+              if (success) {
+                _showSuccess('Usuário bloqueado com sucesso!');
+                Navigator.pop(context);
+              } else {
+                _showError('Erro ao bloquear usuário.');
+              }
+            },
+            child: const Text('Bloquear',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _showReportDialog() {
     showDialog(
@@ -988,7 +1299,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
         title: Row(
           children: [
             Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: Colors.red.withOpacity(0.10),
                 borderRadius: BorderRadius.circular(10),
@@ -1034,12 +1346,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   void _openReportScreen() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Você precisa estar logado para denunciar'),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      _showError('Você precisa estar logado para denunciar');
       return;
     }
     Navigator.push(
@@ -1054,99 +1361,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     );
   }
 
-  Future<void> _applyToVacancy() async {
-  setState(() => _isApplying = true);
-  
-  try {
-    // Validação
-    final validation = await ProfileValidationService.validateWorkerProfile();
-    if (!validation.isValid) {
-      setState(() => _isApplying = false);
-      validation.showErrorDialog(context);
-      return;
-    }
-
-    final db = FirebaseDatabase.instance.ref();
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
-    
-    // ✅ DADOS DO TRABALHADOR
-    final userSnapshot = await db.child('Users/$currentUserId').get();
-    String workerName = 'Trabalhador';
-    String workerAvatar = '';
-    if (userSnapshot.exists) {
-      final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
-      workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
-      workerAvatar = userData['avatar'] ?? '';
-    }
-
-    // 🔥 OWNER ID (dono da vaga)
-    final ownerLocalId = widget.vacancy['local_id']?.toString() ?? '';
-
-    // ✅ LÊ REQUESTS ATUAIS (ROBUSTO)
-    final requestsSnapshot = await db.child('vacancy/${widget.vacancyId}/requests').get();
-    List<String> requestsList = [];
-    
-    if (requestsSnapshot.exists && requestsSnapshot.value != null) {
-      final data = requestsSnapshot.value;
-      if (data is List) {
-        requestsList = List<String>.from(data);
-      } else if (data is String) {
-        requestsList = [data];
-      } else if (data is Map) {
-        requestsList = data.values.map((v) => v.toString()).toList();
-      }
-    }
-
-    // ✅ VERIFICA DUPLICATA
-    if (requestsList.contains(currentUserId)) {
-      setState(() => _isApplying = false);
-      _showError('Você já se candidatou!');
-      return;
-    }
-
-    // ✅ ADICIONA À LISTA
-    requestsList.add(currentUserId);
-
-    final updates = <String, dynamic>{
-      'vacancy/${widget.vacancyId}/requests': requestsList,
-      'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
-        'viewed_by_owner': false,
-        'applied_at': DateTime.now().millisecondsSinceEpoch,
-        'worker_name': workerName,
-        'worker_avatar': workerAvatar,
-      },
-      'vacancy/${widget.vacancyId}/stats/total_applications': requestsList.length,
-    };
-
-    await db.update(updates);
-
-    setState(() => _isApplying = false);
-    
-    // ✅ SUCESSO
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(
-        children: const [
-          Icon(Icons.check_circle, color: Colors.white, size: 20),
-          SizedBox(width: 12),
-          Text('Candidatura enviada! Dono da vaga foi notificado.'),
-        ],
-      ),
-      backgroundColor: const Color(0xFF10B981),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.all(16),
-      duration: const Duration(seconds: 4),
-    ));
-    
-    Navigator.pop(context);
-    
-  } catch (e, stack) {
-    print('❌ ERRO _applyToVacancy: $e\n$stack');
-    setState(() => _isApplying = false);
-    _showError('Erro ao enviar candidatura: $e');
-  }
-}
-
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
@@ -1154,6 +1368,100 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
+  Future<void> _applyToVacancy() async {
+    setState(() => _isApplying = true);
+
+    try {
+      final validation = await ProfileValidationService.validateWorkerProfile();
+      if (!validation.isValid) {
+        setState(() => _isApplying = false);
+        validation.showErrorDialog(context);
+        return;
+      }
+
+      final db = FirebaseDatabase.instance.ref();
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+      final userSnapshot = await db.child('Users/$currentUserId').get();
+      String workerName = 'Trabalhador';
+      String workerAvatar = '';
+      if (userSnapshot.exists) {
+        final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
+        workerName = userData['Name'] ?? userData['name'] ?? 'Trabalhador';
+        workerAvatar = userData['avatar'] ?? '';
+      }
+
+      final requestsSnapshot =
+          await db.child('vacancy/${widget.vacancyId}/requests').get();
+      List<String> requestsList = [];
+
+      if (requestsSnapshot.exists && requestsSnapshot.value != null) {
+        final data = requestsSnapshot.value;
+        if (data is List) {
+          requestsList = List<String>.from(data);
+        } else if (data is String) {
+          requestsList = [data];
+        } else if (data is Map) {
+          requestsList = data.values.map((v) => v.toString()).toList();
+        }
+      }
+
+      if (requestsList.contains(currentUserId)) {
+        setState(() => _isApplying = false);
+        _showError('Você já se candidatou!');
+        return;
+      }
+
+      requestsList.add(currentUserId);
+
+      final updates = <String, dynamic>{
+        'vacancy/${widget.vacancyId}/requests': requestsList,
+        'vacancy/${widget.vacancyId}/views/request_views/$currentUserId': {
+          'viewed_by_owner': false,
+          'applied_at': DateTime.now().millisecondsSinceEpoch,
+          'worker_name': workerName,
+          'worker_avatar': workerAvatar,
+        },
+        'vacancy/${widget.vacancyId}/stats/total_applications':
+            requestsList.length,
+      };
+
+      await db.update(updates);
+
+      setState(() => _isApplying = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(
+          children: const [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            SizedBox(width: 12),
+            Text('Candidatura enviada! Dono da vaga foi notificado.'),
+          ],
+        ),
+        backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ));
+
+      Navigator.pop(context);
+    } catch (e, stack) {
+      print('❌ ERRO _applyToVacancy: $e\n$stack');
+      setState(() => _isApplying = false);
+      _showError('Erro ao enviar candidatura: $e');
+    }
   }
 }
 
@@ -1201,11 +1509,7 @@ class _FullscreenImageViewerState extends State<_FullscreenImageViewer> {
         foregroundColor: Colors.white,
         title: Text(
           '${_currentIndex + 1} / ${widget.images.length}',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
         ),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),

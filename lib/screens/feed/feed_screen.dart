@@ -1,9 +1,11 @@
 import 'package:dartobra_new/controllers/feed_controller.dart';
+import 'package:dartobra_new/features/notifications/screens/notification_history_screen.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
 import 'package:dartobra_new/screens/feed/professional_profile_screen.dart';
 import 'package:dartobra_new/screens/feed/vacancy_detail_screen.dart';
 import 'package:dartobra_new/screens/search/my_professional_profile_screen.dart';
+import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
 import 'package:dartobra_new/screens/search/my_vacancy_details_screen.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/search/ibge_service.dart';
@@ -353,6 +355,8 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
                 ],
               ),
             ),
+            _notificationsButton(),
+            const SizedBox(width: 12),
             _buildFilterButton(controller, hasFilter),
           ],
         ),
@@ -360,6 +364,23 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _notificationsButton () {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationHistoryScreen(userId: widget.localId)));
+      },
+      child: Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: _border),
+        ),
+        child: const Icon(Icons.notifications_none_rounded,
+            size: 20, color: _muted),
+      ),
+    );
+  }
   Widget _buildFilterButton(FeedController controller, bool hasFilter) {
     return GestureDetector(
       onTap: () => _showAdvancedFilters(controller),

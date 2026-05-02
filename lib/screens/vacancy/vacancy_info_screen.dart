@@ -1,16 +1,18 @@
 // ============================================================
-// FIXED — info_vacancy.dart
-// Alterações aplicadas:
-//   1. ✅ Removido snackbar quando usuário deletado é detectado ao aprovar
-//   2. ✅ Removido DeletedUserDetector e todos os streams relacionados
-//   3. ✅ Mantida apenas verificação no momento de aprovar candidato
-//   4. ✅ Candidatos removidos silenciosamente quando detectada exclusão
+// info_vacancy.dart — com NotificationHistoryService integrado
+// Alterações:
+//   1. ✅ _approveCandidate → markAsApproved após criar chat
+//   2. ✅ _rejectCandidate  → markAsRejected após remover request
+//   3. ✅ Busca feita por requesterId + targetId + type vacancyRequest
+//   4. ✅ Falha na notificação nunca bloqueia o fluxo principal
 // ============================================================
 
 // ignore_for_file: unused_import
 import 'dart:async';
 import 'dart:convert';
 import 'package:chewie/chewie.dart';
+import 'package:dartobra_new/features/notifications/services/notification_history_service.dart';
+import 'package:dartobra_new/screens/vacancy/contractor_profile_view.dart';
 import 'package:dartobra_new/screens/vacancy/edit_vacancy_info_screen.dart';
 import 'package:dartobra_new/services/badge/badge_service.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
@@ -21,6 +23,30 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
+
+// ══════════════════════════════════════════════════════════════════════════
+// HELPER — Conversão segura de Map do Firebase
+// ══════════════════════════════════════════════════════════════════════════
+
+Map<String, dynamic> _safeMapConvert(dynamic data) {
+  if (data == null) return {};
+  if (data is Map) {
+    final Map<String, dynamic> result = {};
+    data.forEach((key, value) {
+      final stringKey = key.toString();
+      if (value is Map) {
+        result[stringKey] = _safeMapConvert(value);
+      } else if (value is List) {
+        result[stringKey] =
+            value.map((e) => e is Map ? _safeMapConvert(e) : e).toList();
+      } else {
+        result[stringKey] = value;
+      }
+    });
+    return result;
+  }
+  return {};
+}
 
 class InfoVacancy extends StatefulWidget {
   final String userPhone;
@@ -72,11 +98,13 @@ class _InfoVacancyState extends State<InfoVacancy>
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final VacancyService _vacancyService = VacancyService();
   final ExpirationService _expirationService = ExpirationService();
+  // ✅ Instância do serviço de histórico de notificações
+  final NotificationHistoryService _notificationHistory =
+      NotificationHistoryService();
 
   List<Map<String, dynamic>> _candidates = [];
   bool _isLoadingCandidates = false;
 
-  // ── Stream que escuta requests em tempo real ──────────────────────────────
   StreamSubscription? _requestsSubscription;
 
   late String _currentStatus;
@@ -128,7 +156,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // HELPER — normaliza requests (Map ou List → List<String>)
+  // HELPER — normaliza requests
   // ══════════════════════════════════════════════════════════════════════════
 
   List<String> _normalizeRequests(dynamic raw) {
@@ -148,6 +176,45 @@ class _InfoVacancyState extends State<InfoVacancy>
     }
     debugPrint('⚠️ requests tem tipo inesperado: ${raw.runtimeType}');
     return [];
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HELPER — busca e marca notificação de candidatura (vacancy)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Localiza a notificação ativa de um candidato nesta vaga e executa [action].
+  /// Nunca lança exceção — falhas são apenas logadas.
+  Future<void> _updateNotification(
+    String employeeUid,
+    Future<bool> Function(String notificationId) action,
+  ) async {
+    try {
+      final notifications = await _notificationHistory.getUserNotifications(
+        userId: widget.localId,
+        filterByType: NotificationType.vacancyRequest,
+        includeExpired: true, // inclui expiradas para garantir que encontra
+      );
+
+      // Encontra a notificação correspondente a este candidato + esta vaga
+      final match = notifications.where(
+        (n) =>
+            n.requesterId == employeeUid &&
+            n.targetId == widget.vacancyId &&
+            n.status != NotificationStatus.rejected &&
+            n.status != NotificationStatus.approved,
+      );
+
+      if (match.isEmpty) {
+        debugPrint(
+            '⚠️ Nenhuma notificação pendente encontrada para $employeeUid na vaga ${widget.vacancyId}');
+        return;
+      }
+
+      final notification = match.first;
+      await action(notification.id);
+    } catch (e) {
+      debugPrint('⚠️ _updateNotification falhou (não crítico): $e');
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -171,8 +238,7 @@ class _InfoVacancyState extends State<InfoVacancy>
         return;
       }
 
-      final vacancyData =
-          Map<String, dynamic>.from(event.snapshot.value as Map);
+      final vacancyData = _safeMapConvert(event.snapshot.value);
       final requestIds = _normalizeRequests(vacancyData['requests']);
 
       debugPrint('🔄 Stream requests atualizado: $requestIds');
@@ -187,7 +253,6 @@ class _InfoVacancyState extends State<InfoVacancy>
         return;
       }
 
-      // Carrega dados dos candidatos
       final candidates =
           await _vacancyService.getCandidates(widget.vacancyId, requestIds);
 
@@ -204,7 +269,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // REMOVE REQUEST (sempre salva como List)
+  // REMOVE REQUEST
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> remove_request(String uid) async {
@@ -227,8 +292,6 @@ class _InfoVacancyState extends State<InfoVacancy>
             .child('vacancy/${widget.vacancyId}/requests')
             .set(currentRequests);
       }
-
-      // O stream onValue vai disparar automaticamente e atualizar _candidates
     } catch (e, stack) {
       debugPrint('❌ Erro ao remover request: $e\n$stack');
     }
@@ -242,19 +305,14 @@ class _InfoVacancyState extends State<InfoVacancy>
     try {
       debugPrint('❌ Recusando candidato: $uid');
 
-      // ✅ Busca estado atual ANTES de remover
       final requestViewSnap = await _database
           .child('vacancy/${widget.vacancyId}/views/request_views/$uid')
           .get();
 
       bool wasUnviewed = false;
       if (requestViewSnap.exists && requestViewSnap.value != null) {
-        if (requestViewSnap.exists && requestViewSnap.value != null) {
-          final viewData =
-              Map<String, dynamic>.from(requestViewSnap.value as Map);
-
-          wasUnviewed = viewData['viewed_by_owner'] == false;
-        }
+        final viewData = _safeMapConvert(requestViewSnap.value);
+        wasUnviewed = viewData['viewed_by_owner'] == false;
       }
 
       await remove_request(uid);
@@ -262,13 +320,20 @@ class _InfoVacancyState extends State<InfoVacancy>
           .child('vacancy/${widget.vacancyId}/views/request_views/$uid')
           .remove();
 
-      // ✅ Decrementa badge SOMENTE se não foi visualizado
       if (wasUnviewed) {
         debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
         await BadgeHelper.decrementRequestBadge(widget.localId);
       } else {
         debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
       }
+
+      // ✅ Marca notificação como recusada (não bloqueia o fluxo se falhar)
+      await _updateNotification(uid, (notificationId) async {
+        return await _notificationHistory.markAsRejected(
+          ownerId: widget.localId,
+          notificationId: notificationId,
+        );
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -296,11 +361,10 @@ class _InfoVacancyState extends State<InfoVacancy>
 
   Future<void> _approveCandidate(String employeeUid) async {
     try {
-      // ✅ PRIMEIRA VERIFICAÇÃO: usuário ainda existe?
       final exists = await _checkUserStillExists(employeeUid);
 
       if (!exists) {
-        // ✅ Remove da lista SILENCIOSAMENTE (sem mostrar snackbar)
+        // Remove silenciosamente — sem marcar notificação (usuário já não existe)
         await remove_request(employeeUid);
         await _database
             .child(
@@ -315,10 +379,12 @@ class _InfoVacancyState extends State<InfoVacancy>
       final chatsSnapshot = await _database.child('Chats').get();
 
       if (chatsSnapshot.exists && chatsSnapshot.value != null) {
-        final chatsData = chatsSnapshot.value as Map<dynamic, dynamic>;
+        final chatsData = _safeMapConvert(chatsSnapshot.value);
         bool chatExists = false;
         for (final chatEntry in chatsData.entries) {
-          final chatData = chatEntry.value as Map<dynamic, dynamic>;
+          final chatData = chatEntry.value is Map
+              ? _safeMapConvert(chatEntry.value)
+              : <String, dynamic>{};
           if (chatData['contractor']?.toString() == widget.localId &&
               chatData['employee']?.toString() == employeeUid) {
             chatExists = true;
@@ -369,15 +435,13 @@ class _InfoVacancyState extends State<InfoVacancy>
         'unreadCount': {'contractor': 0, 'employee': 0},
       });
 
-      // ✅ Busca estado ANTES de remover
       final requestViewSnap = await _database
           .child('vacancy/${widget.vacancyId}/views/request_views/$employeeUid')
           .get();
 
       bool wasUnviewed = false;
       if (requestViewSnap.exists && requestViewSnap.value != null) {
-        final viewData =
-            Map<String, dynamic>.from(requestViewSnap.value as Map);
+        final viewData = _safeMapConvert(requestViewSnap.value);
         wasUnviewed = viewData['viewed_by_owner'] == false;
 
         await _database
@@ -387,13 +451,20 @@ class _InfoVacancyState extends State<InfoVacancy>
 
         await remove_request(employeeUid);
 
-        // ✅ Decrementa badge SOMENTE se não foi visualizado
         if (wasUnviewed) {
           debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
           await BadgeHelper.decrementRequestBadge(widget.localId);
         } else {
           debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
         }
+
+        // ✅ Marca notificação como aprovada (não bloqueia o fluxo se falhar)
+        await _updateNotification(employeeUid, (notificationId) async {
+          return await _notificationHistory.markAsApproved(
+            ownerId: widget.localId,
+            notificationId: notificationId,
+          );
+        });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -404,8 +475,8 @@ class _InfoVacancyState extends State<InfoVacancy>
             ]),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
             margin: const EdgeInsets.all(16),
           ));
         }
@@ -430,7 +501,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // RESTO DO CÓDIGO — sem alterações funcionais relevantes
+  // RESTO DO CÓDIGO — sem alterações funcionais
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _loadExpirationInfo() async {
@@ -438,7 +509,7 @@ class _InfoVacancyState extends State<InfoVacancy>
       final snapshot =
           await _database.child('vacancy/${widget.vacancyId}').get();
       if (!snapshot.exists || snapshot.value == null) return;
-      final data = Map<String, dynamic>.from(snapshot.value as Map);
+      final data = _safeMapConvert(snapshot.value);
       final expiresAt = data['expires_at']?.toString();
       if (mounted) {
         setState(() {
@@ -546,7 +617,7 @@ class _InfoVacancyState extends State<InfoVacancy>
       final snapshot =
           await _database.child('vacancy/${widget.vacancyId}').get();
       if (snapshot.exists) {
-        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        final data = _safeMapConvert(snapshot.value);
         setState(() {
           _currentTitle = data['title'] ?? widget.title;
           _currentProfession = data['profession'] ?? widget.profession;
@@ -673,10 +744,10 @@ class _InfoVacancyState extends State<InfoVacancy>
             .child('vacancy/${widget.vacancyId}/views/request_views')
             .get();
         if (requestViewsSnap.exists) {
-          final views =
-              Map<String, dynamic>.from(requestViewsSnap.value as Map);
+          final views = _safeMapConvert(requestViewsSnap.value);
           for (final entry in views.values) {
-            final viewData = Map<String, dynamic>.from(entry as Map);
+            final viewData =
+                entry is Map ? _safeMapConvert(entry) : <String, dynamic>{};
             if (viewData['viewed_by_owner'] == false) {
               unreadCandidates++;
             }
@@ -819,8 +890,8 @@ class _InfoVacancyState extends State<InfoVacancy>
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color:
-                                      const Color(0xFFEF4444).withOpacity(0.4),
+                                  color: const Color(0xFFEF4444)
+                                      .withOpacity(0.4),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1395,133 +1466,209 @@ class _InfoVacancyState extends State<InfoVacancy>
   }
 
   Widget _buildCandidateCard(Map<String, dynamic> candidate) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ContractorProfileView(
+              candidateData: candidate,
+              myUserId: widget.localId,
+              vacancyId: widget.vacancyId,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: const Color(0xFFFF6B35).withOpacity(0.1),
-                backgroundImage: candidate['avatar'] != null
-                    ? NetworkImage(candidate['avatar'])
-                    : null,
-                child: candidate['avatar'] == null
-                    ? Text(
-                        candidate['name'][0].toUpperCase(),
-                        style: const TextStyle(
-                            color: Color(0xFFFF6B35),
-                            fontWeight: FontWeight.bold),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(candidate['name'],
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
-                    Text(candidate['phone'],
-                        style:
-                            TextStyle(fontSize: 13, color: Colors.grey[600])),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(12)),
-                child: Text('Pendente',
-                    style: TextStyle(
-                        color: Colors.orange[700],
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            Row(children: [
-              Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
-              const SizedBox(width: 6),
-              Text('${candidate['city']}, ${candidate['state']}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700])),
-            ]),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Recusar candidato'),
-                        content: const Text(
-                            'Tem certeza que deseja recusar este candidato?'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancelar')),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _rejectCandidate(candidate['uid']);
-                            },
-                            child: const Text('Recusar',
-                                style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 23,
+                        backgroundColor: const Color(0xFFE6F1FB),
+                        backgroundImage: candidate['avatar'] != null
+                            ? NetworkImage(candidate['avatar'])
+                            : null,
+                        child: candidate['avatar'] == null
+                            ? Text(
+                                candidate['name'][0].toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFF185FA5),
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 16,
+                                ),
+                              )
+                            : null,
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.close, size: 16),
-                  label: const Text('Recusar'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              candidate['name'],
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              candidate['phone'],
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildStatusBadge(candidate['status'] ?? 'pending'),
+                    ],
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _approveCandidate(candidate['uid']),
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('Aprovar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on_outlined,
+                          size: 13, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${candidate['city']}, ${candidate['state']}',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500),
+                      ),
+                      const SizedBox(width: 14),
+                      Icon(Icons.work_outline,
+                          size: 13, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text(
+                        candidate['profession'] ?? '',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
-            ]),
+            ),
+            Divider(height: 1, thickness: 0.5, color: Colors.grey.shade200),
+            IntrinsicHeight(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: () => _showRejectDialog(candidate['uid']),
+                      icon: const Icon(Icons.close_rounded, size: 15),
+                      label: const Text('Recusar'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFA32D2D),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero),
+                        textStyle: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                  VerticalDivider(
+                      width: 1,
+                      thickness: 0.5,
+                      color: Colors.grey.shade200),
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: () => _approveCandidate(candidate['uid']),
+                      icon: const Icon(Icons.check_rounded, size: 15),
+                      label: const Text('Aprovar'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF3B6D11),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero),
+                        textStyle: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    final Map<String, Map<String, dynamic>> styles = {
+      'pending': {
+        'label': 'Pendente',
+        'bg': const Color(0xFFFFF3E0),
+        'color': const Color(0xFFE65100),
+      },
+      'approved': {
+        'label': 'Aprovado',
+        'bg': const Color(0xFFE8F5E9),
+        'color': const Color(0xFF2E7D32),
+      },
+      'rejected': {
+        'label': 'Recusado',
+        'bg': const Color(0xFFFFEBEE),
+        'color': const Color(0xFFC62828),
+      },
+    };
+
+    final style = styles[status] ?? styles['pending']!;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: style['bg'],
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(style['label'],
+          style: TextStyle(
+            color: style['color'],
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          )),
+    );
+  }
+
+  void _showRejectDialog(String uid) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Recusar candidato'),
+        content: const Text('Tem certeza que deseja recusar este candidato?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _rejectCandidate(uid);
+            },
+            child: Text('Recusar', style: TextStyle(color: Colors.red[700])),
+          ),
+        ],
       ),
     );
   }
@@ -1587,7 +1734,7 @@ class _InfoVacancyState extends State<InfoVacancy>
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// VideoPlayerScreen — sem alterações
+// VideoPlayerScreen
 // ══════════════════════════════════════════════════════════════════════════════
 
 class VideoPlayerScreen extends StatefulWidget {
@@ -1655,7 +1802,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       Icon(Icons.error_outline, size: 64, color: Colors.white),
                       SizedBox(height: 16),
                       Text('Erro ao carregar vídeo',
-                          style: TextStyle(color: Colors.white, fontSize: 16)),
+                          style:
+                              TextStyle(color: Colors.white, fontSize: 16)),
                     ],
                   )
                 : _chewieController != null

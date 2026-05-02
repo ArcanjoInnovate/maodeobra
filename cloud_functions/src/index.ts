@@ -1167,6 +1167,7 @@ export const onVacancyChatRequestCreated = onValueCreated(
     }
   },
 );
+
 // ============================================================
 // FUNCTION - CHAT CREATED
 // ============================================================
@@ -1208,6 +1209,491 @@ export const onChatCreated = onValueCreated(
       logger.error("Erro em onChatCreated", { error: err });
     }
   },
+);
+export const onUserBlocked = onValueCreated(
+  {
+    ref: "/Users/{userId}/blocked_users/{blockedUserId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const blockerId = event.params.userId;
+    const blockedId = event.params.blockedUserId;
+
+    try {
+      logger.info(`\n════════════════════════════════════════`);
+      logger.info(`🚫 USUÁRIO BLOQUEADO`);
+      logger.info(`════════════════════════════════════════`);
+      logger.info(`👤 Bloqueador: ${blockerId}`);
+      logger.info(`🚫 Bloqueado: ${blockedId}`);
+
+      // ══════════════════════════════════════════════════════════════
+      // PASSO 1: block_dialog + índice inverso + zera unreadCount
+      // ══════════════════════════════════════════════════════════════
+      const updates: Record<string, any> = {
+        [`blocked_by/${blockedId}/${blockerId}`]: true,
+      };
+
+      let blockedChatId: string | null = null;
+
+      const chatsSnap = await admin.database().ref("Chats").get();
+
+      if (!chatsSnap.exists()) {
+        logger.info(`ℹ️ Nenhum chat encontrado no sistema`);
+      } else {
+        const chats = chatsSnap.val() as Record<string, any>;
+
+        for (const [chatId, chatData] of Object.entries(chats)) {
+          const contractor = chatData.contractor as string | undefined;
+          const employee = chatData.employee as string | undefined;
+
+          const isChatBetweenUsers =
+            (contractor === blockerId && employee === blockedId) ||
+            (employee === blockerId && contractor === blockedId);
+
+          if (isChatBetweenUsers) {
+            logger.info(`\n📌 Chat encontrado: ${chatId}`);
+
+            if (chatData.block_dialog === true) {
+              logger.info(`   ⚠️ Chat já estava bloqueado`);
+            } else {
+              blockedChatId = chatId;
+              updates[`Chats/${chatId}/block_dialog`] = true;
+              updates[`Chats/${chatId}/blocked_by`] = blockerId;
+              updates[`Chats/${chatId}/blocked_at`] = Date.now();
+              updates[`Chats/${chatId}/unreadCount/employee`] = 0;
+              updates[`Chats/${chatId}/unreadCount/contractor`] = 0;
+              logger.info(`   ✅ Chat será bloqueado + unreadCount zerado`);
+            }
+            break;
+          }
+        }
+      }
+
+      await admin.database().ref().update(updates);
+      logger.info(`✅ PASSO 1 concluído`);
+
+      // Recalcula badge de chats para ambos
+      if (blockedChatId) {
+        logger.info(`\n🔄 Recalculando badges de chat...`);
+        await Promise.all([
+          recalculateChatBadge(blockerId),
+          recalculateChatBadge(blockedId),
+        ]);
+        logger.info(`✅ Badges de chat recalculados`);
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // Helper reutilizável: remove candidatura de um usuário em um
+      // nó (vacancy ou professionals) e decrementa badge do dono se
+      // a candidatura ainda não havia sido visualizada.
+      // ══════════════════════════════════════════════════════════════
+      async function removeCandidature(
+        nodeType: "vacancy" | "professionals",
+        nodeId: string,
+        nodeData: Record<string, any>,
+        candidateId: string,
+        ownerId: string,
+      ): Promise<void> {
+        const requests = _normalizeRequests(nodeData.requests);
+        if (!requests.includes(candidateId)) return;
+
+        logger.info(
+          `  📌 Candidatura de ${candidateId} em ${nodeType}/${nodeId}`
+        );
+
+        const requestViews: Record<string, any> =
+          nodeData.views?.request_views ?? {};
+
+        if (requestViews[candidateId]?.viewed_by_owner === false) {
+          logger.info(`    🔽 Decrementando badge de ${ownerId}`);
+          await decrementRequestBadge(ownerId);
+        } else {
+          logger.info(`    ℹ️ Já visualizado — badge inalterado`);
+        }
+
+        const filteredRequests = requests.filter((id) => id !== candidateId);
+
+        await admin
+          .database()
+          .ref(`${nodeType}/${nodeId}/requests`)
+          .set(filteredRequests.length > 0 ? filteredRequests : null);
+
+        await admin
+          .database()
+          .ref(`${nodeType}/${nodeId}/views/request_views/${candidateId}`)
+          .remove();
+
+        logger.info(`    ✅ Candidatura removida`);
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // PASSO 2: blockedId se candidatou nas VAGAS do blockerId
+      // ══════════════════════════════════════════════════════════════
+      logger.info(
+        `\n🔍 [VACANCY] ${blockedId} nas vagas de ${blockerId}...`
+      );
+      const vacanciesBlockerSnap = await admin
+        .database()
+        .ref("vacancy")
+        .orderByChild("local_id")
+        .equalTo(blockerId)
+        .once("value");
+
+      if (vacanciesBlockerSnap.exists()) {
+        const vacancies = vacanciesBlockerSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(vacancies)) {
+          await removeCandidature("vacancy", id, data, blockedId, blockerId);
+        }
+      } else {
+        logger.info(`  ℹ️ Nenhuma vaga para ${blockerId}`);
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // PASSO 3: blockedId se candidatou nos PROFISSIONAIS do blockerId
+      // ══════════════════════════════════════════════════════════════
+      logger.info(
+        `\n🔍 [PROFESSIONALS] ${blockedId} nos perfis de ${blockerId}...`
+      );
+      const profsBlockerSnap = await admin
+        .database()
+        .ref("professionals")
+        .orderByChild("local_id")
+        .equalTo(blockerId)
+        .once("value");
+
+      if (profsBlockerSnap.exists()) {
+        const profs = profsBlockerSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(profs)) {
+          await removeCandidature("professionals", id, data, blockedId, blockerId);
+        }
+      } else {
+        logger.info(`  ℹ️ Nenhum perfil para ${blockerId}`);
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // PASSO 4: blockerId se candidatou nas VAGAS do blockedId
+      // ══════════════════════════════════════════════════════════════
+      logger.info(
+        `\n🔍 [VACANCY] ${blockerId} nas vagas de ${blockedId}...`
+      );
+      const vacanciesBlockedSnap = await admin
+        .database()
+        .ref("vacancy")
+        .orderByChild("local_id")
+        .equalTo(blockedId)
+        .once("value");
+
+      if (vacanciesBlockedSnap.exists()) {
+        const vacancies = vacanciesBlockedSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(vacancies)) {
+          // candidato = blockerId, dono = blockedId → decrementa badge do blockedId
+          await removeCandidature("vacancy", id, data, blockerId, blockedId);
+        }
+      } else {
+        logger.info(`  ℹ️ Nenhuma vaga para ${blockedId}`);
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // PASSO 5: blockerId se candidatou nos PROFISSIONAIS do blockedId
+      // ══════════════════════════════════════════════════════════════
+      logger.info(
+        `\n🔍 [PROFESSIONALS] ${blockerId} nos perfis de ${blockedId}...`
+      );
+      const profsBlockedSnap = await admin
+        .database()
+        .ref("professionals")
+        .orderByChild("local_id")
+        .equalTo(blockedId)
+        .once("value");
+
+      if (profsBlockedSnap.exists()) {
+        const profs = profsBlockedSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(profs)) {
+          // candidato = blockerId, dono = blockedId → decrementa badge do blockedId
+          await removeCandidature("professionals", id, data, blockerId, blockedId);
+        }
+      } else {
+        logger.info(`  ℹ️ Nenhum perfil para ${blockedId}`);
+      }
+
+      logger.info(`\n✅ PROCESSAMENTO CONCLUÍDO`);
+      logger.info(`════════════════════════════════════════\n`);
+    } catch (error) {
+      logger.error(`\n❌❌❌ ERRO AO PROCESSAR BLOQUEIO ❌❌❌`);
+      logger.error(`Bloqueador: ${blockerId}`);
+      logger.error(`Bloqueado: ${blockedId}`);
+      logger.error(`Erro:`, error);
+      logger.error(`════════════════════════════════════════\n`);
+    }
+  }
+);
+
+// ============================================================
+// CLOUD FUNCTION - CRIAR NOTIFICAÇÃO DE CANDIDATURA
+// ============================================================
+
+export const onVacancyRequestViewCreated = onValueCreated(
+  {
+    ref: "/vacancy/{vacancyId}/views/request_views/{requesterId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const vacancyId = event.params.vacancyId;
+    const requesterId = event.params.requesterId;
+    const requestData = event.data.val() as any;
+
+    try {
+      logger.info(`\n📝 CRIANDO NOTIFICAÇÃO DE CANDIDATURA`);
+      logger.info(`Vaga: ${vacancyId} | Candidato: ${requesterId}`);
+
+      const vacancySnap = await admin
+        .database()
+        .ref(`vacancy/${vacancyId}`)
+        .once("value");
+
+      if (!vacancySnap.exists()) {
+        logger.warn(`⚠️ Vaga ${vacancyId} não encontrada`);
+        return;
+      }
+
+      const vacancyData = vacancySnap.val() as Record<string, any>;
+      const ownerId = vacancyData.local_id as string;
+
+      if (!ownerId) {
+        logger.warn(`⚠️ Vaga sem local_id`);
+        return;
+      }
+
+      // Criar notificação no histórico
+      const now = Date.now();
+      const expiresAt = now + 30 * 24 * 60 * 60 * 1000; // 30 dias
+
+      const notificationRef = admin
+        .database()
+        .ref(`notification_history/${ownerId}`)
+        .push();
+
+      await notificationRef.set({
+        type: "vacancy_request",
+        target_id: vacancyId,
+        target_title: vacancyData.title || "Vaga",
+        requester_id: requesterId,
+        requester_name: requestData.worker_name || "Candidato",
+        requester_avatar: requestData.worker_avatar || "",
+        status: "unviewed",
+        created_at: now,
+        updated_at: now,
+        expires_at: expiresAt,
+        viewed_at: null,
+        responded_at: null,
+      });
+
+      logger.info(`✅ Notificação criada: ${notificationRef.key}`);
+    } catch (error) {
+      logger.error(`❌ Erro ao criar notificação:`, error);
+    }
+  }
+);
+
+export const onProfessionalRequestViewCreated = onValueCreated(
+  {
+    ref: "/professionals/{professionalId}/views/request_views/{requesterId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const professionalId = event.params.professionalId;
+    const requesterId = event.params.requesterId;
+    const requestData = event.data.val() as any;
+
+    try {
+      logger.info(`\n📝 CRIANDO NOTIFICAÇÃO DE SOLICITAÇÃO PROFISSIONAL`);
+
+      const professionalSnap = await admin
+        .database()
+        .ref(`professionals/${professionalId}`)
+        .once("value");
+
+      if (!professionalSnap.exists()) {
+        logger.warn(`⚠️ Profissional ${professionalId} não encontrado`);
+        return;
+      }
+
+      const professionalData = professionalSnap.val() as Record<string, any>;
+      const ownerId = professionalData.local_id as string;
+
+      if (!ownerId) {
+        logger.warn(`⚠️ Profissional sem local_id`);
+        return;
+      }
+
+      const now = Date.now();
+      const expiresAt = now + 30 * 24 * 60 * 60 * 1000;
+
+      const notificationRef = admin
+        .database()
+        .ref(`notification_history/${ownerId}`)
+        .push();
+
+      await notificationRef.set({
+        type: "professional_request",
+        target_id: professionalId,
+        target_title: professionalData.profession || "Perfil Profissional",
+        requester_id: requesterId,
+        requester_name: requestData.contractor_name || "Solicitante",
+        requester_avatar: requestData.contractor_avatar || "",
+        status: "unviewed",
+        created_at: now,
+        updated_at: now,
+        expires_at: expiresAt,
+        viewed_at: null,
+        responded_at: null,
+      });
+
+      logger.info(`✅ Notificação criada: ${notificationRef.key}`);
+    } catch (error) {
+      logger.error(`❌ Erro ao criar notificação:`, error);
+    }
+  }
+);
+
+// ============================================================
+// CLOUD FUNCTION - LIMPAR NOTIFICAÇÕES EXPIRADAS (diário)
+// ============================================================
+
+export const cleanExpiredNotifications = onSchedule(
+  {
+    schedule: "every 24 hours",
+    timeZone: "America/Sao_Paulo",
+    region: "us-central1",
+  },
+  async (_event) => {
+    logger.info("\n🧹 LIMPANDO NOTIFICAÇÕES EXPIRADAS");
+
+    try {
+      const now = Date.now();
+      const usersSnap = await admin
+        .database()
+        .ref("notification_history")
+        .once("value");
+
+      if (!usersSnap.exists()) {
+        logger.info("ℹ️ Nenhuma notificação encontrada");
+        return;
+      }
+
+      const users = usersSnap.val() as Record<string, any>;
+      let totalDeleted = 0;
+
+      for (const [userId, notifications] of Object.entries(users)) {
+        let userDeleted = 0;
+
+        for (const [notifId, notifData] of Object.entries(
+          notifications as Record<string, any>
+        )) {
+          const expiresAt = notifData.expires_at as number;
+
+          if (now > expiresAt) {
+            await admin
+              .database()
+              .ref(`notification_history/${userId}/${notifId}`)
+              .remove();
+            userDeleted++;
+            totalDeleted++;
+          }
+        }
+
+        if (userDeleted > 0) {
+          logger.info(`  🗑️ ${userId}: ${userDeleted} notificações removidas`);
+        }
+      }
+
+      logger.info(`\n✅ Total removido: ${totalDeleted} notificações`);
+    } catch (error) {
+      logger.error(`❌ Erro na limpeza:`, error);
+    }
+  }
+);
+
+export const migrateBlockedUsers = onRequest(
+  { region: "us-central1", cors: true },
+  async (_req, res) => {
+    logger.info("\n🔄 INICIANDO MIGRAÇÃO blocked_users → Map + blocked_by");
+
+    try {
+      const usersSnap = await admin.database().ref("Users").once("value");
+
+      if (!usersSnap.exists()) {
+        res.status(200).send({ message: "Nenhum usuário encontrado" });
+        return;
+      }
+
+      const users = usersSnap.val() as Record<string, any>;
+      const updates: Record<string, any> = {};
+      let migrated = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const [userId, userData] of Object.entries(users)) {
+        try {
+          const rawBlocked = userData?.blocked_users;
+          if (!rawBlocked) { skipped++; continue; }
+
+          // Já está no formato Map correto
+          if (
+            typeof rawBlocked === "object" &&
+            !Array.isArray(rawBlocked) &&
+            Object.values(rawBlocked).every((v) => v === true)
+          ) {
+            // Só garante o blocked_by
+            for (const blockedId of Object.keys(rawBlocked)) {
+              updates[`blocked_by/${blockedId}/${userId}`] = true;
+            }
+            skipped++;
+            continue;
+          }
+
+          // Normaliza List ou Map de strings → Map de booleans
+          let blockedIds: string[] = [];
+          if (Array.isArray(rawBlocked)) {
+            blockedIds = rawBlocked.filter(
+              (v: any) => typeof v === "string" && v.length > 0
+            );
+          } else if (typeof rawBlocked === "object") {
+            blockedIds = Object.values(rawBlocked).filter(
+              (v) => typeof v === "string"
+            ) as string[];
+          }
+
+          if (blockedIds.length === 0) { skipped++; continue; }
+
+          // Converte para Map e popula índice inverso
+          const blockedMap: Record<string, boolean> = {};
+          for (const id of blockedIds) {
+            blockedMap[id] = true;
+            updates[`blocked_by/${id}/${userId}`] = true;
+          }
+          updates[`Users/${userId}/blocked_users`] = blockedMap;
+
+          migrated++;
+          logger.info(`  ✅ ${userId}: ${blockedIds.length} bloqueados migrados`);
+        } catch (err) {
+          errors++;
+          logger.error(`  ❌ Erro em ${userId}:`, err);
+        }
+      }
+
+      // Aplica tudo atomicamente
+      if (Object.keys(updates).length > 0) {
+        await admin.database().ref().update(updates);
+      }
+
+      logger.info(`\n📊 Migração concluída: migrados=${migrated} pulados=${skipped} erros=${errors}`);
+      res.status(200).send({ migrated, skipped, errors });
+    } catch (error) {
+      logger.error("❌ Erro crítico na migração:", error);
+      res.status(500).send({ error: String(error) });
+    }
+  }
 );
 
 // ============================================================

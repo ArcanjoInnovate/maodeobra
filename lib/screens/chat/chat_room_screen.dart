@@ -1,6 +1,7 @@
 // lib/screens/chat_room_screen.dart - VERSÃO OTIMIZADA (ZERO ESPAÇO DESNECESSÁRIO)
 
 import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/services/badge/badge_service.dart';
 import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
 import 'package:dartobra_new/services/chat/chat_service.dart';
@@ -32,6 +33,9 @@ class ChatRoomScreen extends StatefulWidget {
     this.otherUserAvatar,
   }) : super(key: key);
 
+  String get otherUserId =>
+      '${userRole == 'contractor' ? employeeId : contractorId}';
+
   @override
   State<ChatRoomScreen> createState() => _ChatRoomScreenState();
 }
@@ -42,6 +46,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final GlobalKey _inputKey = GlobalKey();
+  static const Color _muted = Color(0xFF6B7280);
+  final String otherUserId = '';
 
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
@@ -364,10 +370,108 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                 Text('Denunciar'),
               ]),
             ),
+            PopupMenuItem<String>(
+              value: 'block',
+              onTap: () {
+              
+                _showBlockDialog();
+              },
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child:
+                        Icon(Icons.lock, color: Colors.red.shade600, size: 17),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Bloquear usuário',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
           ],
         ),
       ],
     );
+  }
+
+  void _showBlockDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.lock, color: Colors.red.shade600, size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Text('Bloquear Usuário',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Você tem certeza que deseja bloquear este usuário? Ele não poderá mais ver suas vagas ou entrar em contato com você.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // fecha o dialog
+
+              final success = await context
+                  .read<BlockProvider>()
+                  .blockUser(widget.otherUserId);
+
+              if (!mounted) return;
+
+              if (success) {
+                _showSuccess('Usuário bloqueado com sucesso!');
+                Navigator.pop(context); // fecha a tela
+              } else {
+                _showError('Erro ao bloquear usuário.');
+              }
+            },
+            child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red.shade700,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   /// ✅ Padding fixo e mínimo — o Column já posiciona o TextField corretamente
@@ -494,13 +598,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
 
                           // ✅ ENVIA ASSINCRONAMENTE em paralelo
                           controller.sendMessage(text).then((_) {
-                            Future.delayed(const Duration(milliseconds: 100), () {
+                            Future.delayed(const Duration(milliseconds: 100),
+                                () {
                               if (mounted && _scrollController.hasClients) {
                                 _scrollToBottom();
                               }
                             });
 
-                            Future.delayed(const Duration(milliseconds: 300), () {
+                            Future.delayed(const Duration(milliseconds: 300),
+                                () {
                               _markAsRead();
                             });
                           }).catchError((e) {
@@ -528,7 +634,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                   ),
                 ),
               ),
-              
             ],
           ),
         ),
@@ -651,8 +756,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
             if (isSentByMe)
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('Deletar',
-                    style: TextStyle(color: Colors.red)),
+                title:
+                    const Text('Deletar', style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   _confirmDelete(message.id);
@@ -676,8 +781,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
               child: const Text('Cancelar')),
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Deletar',
-                  style: TextStyle(color: Colors.red))),
+              child:
+                  const Text('Deletar', style: TextStyle(color: Colors.red))),
         ],
       ),
     );

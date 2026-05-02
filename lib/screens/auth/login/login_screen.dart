@@ -1,4 +1,5 @@
 import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/screens/auth/login/login_controller.dart';
 import 'package:dartobra_new/screens/auth/login/password_recovery_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
@@ -308,6 +309,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
 
     if (!mounted) return;
+    
 
     if (result['success'] == true) {
       final User? user = result['user'] as User?;
@@ -315,7 +317,7 @@ class _LoginScreenState extends State<LoginScreen>
         setState(() => _isLoading = false);
         return;
       }
-
+      await context.read<BlockProvider>().init(user.uid);
       // ✅ CONFIGURA CALLBACKS DE NOTIFICAÇÃO ANTES DE NAVEGAR
       try {
         final userSnapshot = await FirebaseDatabase.instance
@@ -334,6 +336,7 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       // Busca UserModel e navega para a tela correta (ban / suspensão / advertência / home)
+
       await controller.loadUserAndNavigate(context, user.uid);
     } else {
       setState(() => _isLoading = false);

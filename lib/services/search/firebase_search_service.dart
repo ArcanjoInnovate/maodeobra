@@ -12,6 +12,7 @@ class FirebaseSearchServiceServerPaginated {
   final ExpirationService _expirationService = ExpirationService();
 
   Future<PaginatedResult<VacancyModel>> fetchVacanciesPaginated({
+    required Set<String> blockedUserIds,
     int limit = 20,
     String? endAtKey,
     dynamic endAtValue,
@@ -77,7 +78,12 @@ class FirebaseSearchServiceServerPaginated {
             continue;
           }
           
-          // REMOVIDO: Filtro de chat - vagas com chat existente NAO sao mais bloqueadas
+          if (blockedUserIds.isNotEmpty &&
+              vacancy.localId.isNotEmpty &&
+              blockedUserIds.contains(vacancy.localId)) {
+            print('  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
+            continue;
+          }
 
           // PASSOU EM TODOS OS FILTROS!
           vacancies.add(vacancy);
@@ -112,6 +118,7 @@ class FirebaseSearchServiceServerPaginated {
   // BUSCAR PROFISSIONAIS COM PAGINACAO
   // ===============================
   Future<PaginatedResult<ProfessionalModel>> fetchProfessionalsPaginated({
+    required Set<String> blockedUserIds,
     int limit = 20,
     String? endAtKey,
     dynamic endAtValue,
@@ -178,7 +185,12 @@ class FirebaseSearchServiceServerPaginated {
             continue;
           }
           
-          // REMOVIDO: Filtro de chat - profissionais com chat existente NAO sao mais bloqueados
+          if (blockedUserIds.isNotEmpty &&
+              prof.localId.isNotEmpty &&
+              blockedUserIds.contains(prof.localId)) {
+            print('  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
+            continue;
+          }
 
           // PASSOU!
           professionals.add(prof);

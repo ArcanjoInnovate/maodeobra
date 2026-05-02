@@ -1,9 +1,14 @@
+import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
+import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_professional_screen.dart';
+import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui';
 
 class ProfessionalProfileScreen extends StatefulWidget {
@@ -29,6 +34,16 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     with TickerProviderStateMixin {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   bool _isRequesting = false;
+
+  // ID do dono do perfil
+  String get ownerLocalId =>
+      widget.professional['local_id']?.toString() ?? '';
+
+  // ✅ NOVO: Estado para chat existente
+  bool _isCheckingChat = true;
+  String? _existingChatId;
+  String? _ownerRole;
+  String? _myRole;
 
   late AnimationController _heroCtrl;
   late AnimationController _contentCtrl;
@@ -76,6 +91,111 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     Future.delayed(const Duration(milliseconds: 250), () {
       if (mounted) _contentCtrl.forward();
     });
+    
+    // ✅ NOVO: Verificar chat existente
+    _checkExistingChat();
+  }
+
+  // ✅ NOVO: Verificar se já existe chat com o profissional
+  Future<void> _checkExistingChat() async {
+    try {
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+      if (currentUserId == null || ownerLocalId.isEmpty) {
+        setState(() => _isCheckingChat = false);
+        return;
+      }
+
+      // Buscar chats onde eu sou contractor e o profissional é employee
+      final contractorSnapshot = await _database
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(currentUserId)
+          .get();
+
+      if (contractorSnapshot.exists) {
+        final data = contractorSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['employee'] == ownerLocalId) {
+            setState(() {
+              _existingChatId = entry.key.toString();
+              _myRole = 'contractor';
+              _ownerRole = 'employee';
+              _isCheckingChat = false;
+            });
+            return;
+          }
+        }
+      }
+
+      // Buscar chats onde eu sou employee e o profissional é contractor
+      final employeeSnapshot = await _database
+          .child('Chats')
+          .orderByChild('employee')
+          .equalTo(currentUserId)
+          .get();
+
+      if (employeeSnapshot.exists) {
+        final data = employeeSnapshot.value as Map<dynamic, dynamic>;
+        for (var entry in data.entries) {
+          final chatData = entry.value as Map<dynamic, dynamic>;
+          if (chatData['contractor'] == ownerLocalId) {
+            setState(() {
+              _existingChatId = entry.key.toString();
+              _myRole = 'employee';
+              _ownerRole = 'contractor';
+              _isCheckingChat = false;
+            });
+            return;
+          }
+        }
+      }
+
+      setState(() => _isCheckingChat = false);
+    } catch (e) {
+      print('❌ Erro ao verificar chat existente: $e');
+      setState(() => _isCheckingChat = false);
+    }
+  }
+
+  // ✅ NOVO: Abrir chat existente
+  Future<void> _openExistingChat() async {
+    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+
+    try {
+      final userLookup = UserLookupService();
+      final ownerData = await userLookup.getUserData(ownerLocalId);
+
+      if (!mounted) return;
+
+      final contractorId = _myRole == 'contractor' 
+          ? widget.currentUserId 
+          : ownerLocalId;
+      final employeeId = _myRole == 'employee' 
+          ? widget.currentUserId 
+          : ownerLocalId;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChangeNotifierProvider(
+            create: (_) => ChatControllerFinal(),
+            child: ChatRoomScreen(
+              chatId: _existingChatId!,
+              contractorId: contractorId,
+              employeeId: employeeId,
+              userRole: _myRole!,
+              userId: widget.currentUserId,
+              otherUserName: ownerData.name,
+              otherUserAvatar: ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      print('❌ Erro ao abrir chat: $e');
+      _showError('Erro ao abrir conversa. Tente novamente.');
+    }
   }
 
   @override
@@ -163,6 +283,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                 elevation: 3,
                 onSelected: (value) {
                   if (value == 'report') _showReportDialog();
+                  if (value == 'block') _showBlockDialog();
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem<String>(
@@ -181,6 +302,27 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                         ),
                         const SizedBox(width: 12),
                         const Text('Denunciar',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'block',
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.lock,
+                              color: Colors.red.shade600, size: 17),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('Bloquear usuário',
                             style: TextStyle(
                                 fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
@@ -402,7 +544,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Localização pill
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
@@ -429,37 +570,28 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               ),
             ),
           ),
-
-          // ── Informações — cards verticais full-width ─────────────────
           _sectionLabel('INFORMAÇÕES'),
           const SizedBox(height: 12),
           _buildInfoList(p),
           const SizedBox(height: 28),
-          
           if (_hasContactInfo()) ...[
             _sectionLabel('CONTATO'),
             const SizedBox(height: 12),
             _buildContactSection(),
             const SizedBox(height: 28),
           ],
-          
-          // ── Habilidades ───────────────────────────────────────────────
           if (skills.isNotEmpty) ...[
             _sectionLabel('HABILIDADES'),
             const SizedBox(height: 12),
             _buildSkillsSection(skills),
             const SizedBox(height: 28),
           ],
-
-          // ── Sobre ─────────────────────────────────────────────────────
           if (p['summary'] != null && (p['summary'] as String).isNotEmpty) ...[
             _sectionLabel('SOBRE'),
             const SizedBox(height: 12),
             _buildTextCard(p['summary']),
             const SizedBox(height: 28),
           ],
-
-          // ── Experiência ───────────────────────────────────────────────
           if (p['experience'] != null &&
               (p['experience'] as String).isNotEmpty) ...[
             _sectionLabel('EXPERIÊNCIA'),
@@ -590,7 +722,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
         ),
       );
 
-  // ── Info list — COLUNA vertical full-width ────
   Widget _buildInfoList(Map<String, dynamic> p) {
     final items = <Map<String, dynamic>>[
       if (p['legal_type'] != null && (p['legal_type'] as String).isNotEmpty)
@@ -630,7 +761,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
   Widget _infoCard(Map<String, dynamic> item) {
     final Color iconColor = item['color'] as Color;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -691,7 +821,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
-  // ── Skills ────────────────────────────────────────────────────────────────
   Widget _buildSkillsSection(List<String> skills) {
     return Wrap(
       spacing: 8,
@@ -733,7 +862,6 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
-  // ── Text card ─────────────────────────────────────────────────────────────
   Widget _buildTextCard(String text) {
     return Container(
       width: double.infinity,
@@ -756,8 +884,116 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
-  // ── Bottom bar ────────────────────────────────────────────────────────────
+  // ✅ NOVO: Bottom Bar com verificação de chat existente
   Widget _buildBottomBar() {
+    if (_isCheckingChat) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: _border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, -4)),
+          ],
+        ),
+        child: SafeArea(
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: _blue,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Se já existe chat, mostra botão "Abrir Chat"
+    if (_existingChatId != null) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: _border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 16,
+                offset: const Offset(0, -4)),
+          ],
+        ),
+        child: SafeArea(
+          child: Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF10B981),
+                  Color(0xFF059669),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0xFF10B981).withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _openExistingChat,
+                borderRadius: BorderRadius.circular(14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.chat_bubble_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Abrir Chat',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Caso contrário, botão normal de solicitação
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       decoration: BoxDecoration(
@@ -803,7 +1039,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
   }
 
   // ══════════════════════════════
-  // LÓGICA COM NOTIFICAÇÃO
+  // DIÁLOGOS — DENÚNCIA E BLOQUEIO
   // ══════════════════════════════
 
   void _showReportDialog() {
@@ -858,15 +1094,84 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     );
   }
 
+  void _showBlockDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.lock, color: Colors.red.shade600, size: 18),
+            ),
+            const SizedBox(width: 12),
+            const Text('Bloquear Usuário',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Você tem certeza que deseja bloquear este usuário? Ele não poderá mais ver suas vagas ou entrar em contato com você.',
+          style: TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancelar',
+                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+
+              final success = await context
+                  .read<BlockProvider>()
+                  .blockUser(ownerLocalId);
+
+              if (!mounted) return;
+
+              if (success) {
+                _showSuccess('Usuário bloqueado com sucesso!');
+                Navigator.pop(context);
+              } else {
+                _showError('Erro ao bloquear usuário.');
+              }
+            },
+            child: const Text('Bloquear',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red.shade700,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: const Color(0xFF059669),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   void _openReportScreen() {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Você precisa estar logado para denunciar'),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      _showError('Você precisa estar logado para denunciar');
       return;
     }
     Navigator.push(
@@ -883,7 +1188,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
   Future<void> _requestChat() async {
     setState(() => _isRequesting = true);
-    
+
     final validation =
         await ProfileValidationService.validateContractorProfile();
     if (!validation.isValid) {
@@ -894,35 +1199,30 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
     final db = FirebaseDatabase.instance.ref();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    
+
     if (currentUserId == null) {
       setState(() => _isRequesting = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Você precisa estar logado'),
-        backgroundColor: Colors.red.shade700,
-      ));
+      _showError('Você precisa estar logado');
       return;
     }
 
     try {
-      // 1. Busca dados do usuário atual
       final userSnapshot = await db.child('Users/$currentUserId').get();
       String userName = 'Usuário';
       String userAvatar = '';
-      
+
       if (userSnapshot.exists) {
         final userData = Map<String, dynamic>.from(userSnapshot.value as Map);
         userName = userData['Name'] ?? userData['name'] ?? 'Usuário';
         userAvatar = userData['avatar'] ?? '';
       }
 
-      // 2. Verifica se já solicitou
       final requestsRef = db
           .child('professionals')
           .child(widget.professionalId)
           .child('requests');
       final snapshot = await requestsRef.get();
-      
+
       List<dynamic> requestsList = [];
       if (snapshot.exists && snapshot.value is List) {
         requestsList = List.from(snapshot.value as List);
@@ -930,24 +1230,17 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
       if (requestsList.contains(currentUserId)) {
         setState(() => _isRequesting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Você já solicitou chat com este profissional'),
-          backgroundColor: Colors.orange.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ));
+        _showError('Você já solicitou chat com este profissional');
         return;
       }
 
-      // 3. Adiciona à lista de requests
       requestsList.add(currentUserId);
 
-      // 4. Atualiza banco - inclui dados para notificação push
       final updates = <String, dynamic>{};
       updates['professionals/${widget.professionalId}/requests'] = requestsList;
       updates[
-          'professionals/${widget.professionalId}/views/request_views/$currentUserId'] = {
+          'professionals/${widget.professionalId}/views/request_views/$currentUserId'] =
+          {
         'viewed_by_owner': false,
         'requested_at': DateTime.now().millisecondsSinceEpoch,
         'contractor_name': userName,
@@ -956,32 +1249,20 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
       await db.update(updates);
 
-      // user_requests separado para não bloquear a solicitação se as regras não cobrirem este path
       try {
-        await db.child('user_requests/$currentUserId/professionals/${widget.professionalId}').set(true);
+        await db
+            .child(
+                'user_requests/$currentUserId/professionals/${widget.professionalId}')
+            .set(true);
       } catch (_) {}
 
-      
       setState(() => _isRequesting = false);
 
-      // 5. Feedback de sucesso
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Chat solicitado com sucesso!'),
-        backgroundColor: const Color(0xFF059669),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
-      
+      _showSuccess('Chat solicitado com sucesso!');
       Navigator.pop(context);
-      
     } catch (e) {
       setState(() => _isRequesting = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erro ao solicitar chat: $e'),
-        backgroundColor: Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      _showError('Erro ao solicitar chat: $e');
     }
   }
 }

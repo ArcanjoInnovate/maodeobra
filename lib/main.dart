@@ -3,13 +3,13 @@
 import 'dart:io';
 
 import 'package:dartobra_new/controllers/feed_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/screens/auth/login/login_screen.dart';
 import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
 import 'package:dartobra_new/screens/auth/splash/splash_screen.dart';
 import 'package:dartobra_new/screens/home/home_screen.dart';
 import 'package:dartobra_new/screens/screens_init/maintenance_screen/maintenance_screen.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,7 +18,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_app_badger/flutter_app_badger.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -89,6 +88,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late final DatabaseReference _adminRef;
   bool _isInMaintenance = false;
   bool _notificationsInitialized = false;
+  bool _blockProviderInitialized = false;
   String? _currentUserId;
   String? _currentUserRole;
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -108,14 +108,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> clearBadge() async {
     try {
-      if (Platform.isIOS) {
-        await FlutterAppBadger.removeBadge();
-      } else if (Platform.isAndroid) {
-        await FlutterAppBadger.removeBadge();
-      }
-
       await _localNotifications.cancelAll();
-
       print('🧹 Badge limpo');
     } catch (e) {
       print('❌ Erro ao limpar badge: $e');
@@ -175,17 +168,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     });
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FIX: _initializeNotifications agora captura _initialMessage ANTES de
-  // verificar userId, e só marca _notificationsInitialized = true quando
-  // a inicialização completa com sucesso.
-  // ═══════════════════════════════════════════════════════════════════════════
   Future<void> _initializeNotifications() async {
     if (_notificationsInitialized) return;
 
-    // Captura a mensagem inicial ANTES de qualquer verificação de userId.
-    // getInitialMessage() só retorna valor uma única vez (a próxima chamada
-    // retorna null), por isso precisa ser chamado o mais cedo possível.
     _initialMessage ??= await FirebaseMessaging.instance.getInitialMessage();
     if (_initialMessage != null) {
       print(
@@ -195,12 +180,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _currentUserId = await _getCurrentUserId();
     if (_currentUserId == null) {
       print('⚠️ userId nulo — notificações serão inicializadas pelo SplashPage');
-      // NÃO marca _notificationsInitialized = true aqui, permitindo
-      // que reinitializeNotifications() complete a inicialização depois.
       return;
     }
 
-    _notificationsInitialized = true;
+    if (!_blockProviderInitialized && _currentUserId != null) {
+      final blockProvider = Provider.of<BlockProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
+      await blockProvider.init(_currentUserId!);
+      _blockProviderInitialized = true;
+      print('✅ BlockProvider inicializado com userId: $_currentUserId');
+    }
+
+    _notificationsInitialized = true; 
 
     _currentUserRole = await _getUserRole(_currentUserId!);
 
@@ -222,16 +215,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     print('✅ Callbacks configurados: $_currentUserId | $_currentUserRole');
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FIX: Método chamado pelo SplashPage quando o userId fica disponível
-  // e _initializeNotifications() não completou na primeira tentativa.
-  // ═══════════════════════════════════════════════════════════════════════════
   Future<void> reinitializeNotifications(String userId) async {
     if (_notificationsInitialized) return;
 
     print('🔄 Reinicializando notificações com userId: $userId');
     _currentUserId = userId;
     _notificationsInitialized = true;
+    if (!_blockProviderInitialized) {
+      final blockProvider = Provider.of<BlockProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
+      await blockProvider.init(userId);
+      _blockProviderInitialized = true;
+      print('✅ BlockProvider RE-inicializado com userId: $userId');
+    }
 
     _currentUserRole = await _getUserRole(userId);
 
@@ -253,26 +251,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FIX: processInitialMessage agora trata DUAS origens de payload:
-  //
-  //   1. _initialMessage  → FCM direto (app terminado, tap em push FCM).
-  //                         Capturado via getInitialMessage() logo no boot.
-  //
-  //   2. consumePendingPayload() → Notificação local (flutter_local_notifications).
-  //                         O tap dispara _onLocalNotificationTap durante
-  //                         _initLocalNotifications(), quando os callbacks
-  //                         ainda são null. notification_service.dart salva
-  //                         o payload em _pendingPayload; aqui consumimos.
-  //
-  // A ordem importa: FCM primeiro (mais específico), local depois.
-  // Ambos são mutuamente exclusivos na prática — um cold start vem de
-  // apenas uma das duas origens.
-  // ═══════════════════════════════════════════════════════════════════════════
   Future<void> processInitialMessage() async {
     if (_initialMessageProcessed) return;
 
-    // Garante userId e role antes de qualquer navegação.
     if (_currentUserId == null) {
       _currentUserId = await _getCurrentUserId();
       if (_currentUserId == null) {
@@ -284,7 +265,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _currentUserRole = await _getUserRole(_currentUserId!);
     }
 
-    // ── Origem 1: FCM direto ─────────────────────────────────────────────
     if (_initialMessage != null) {
       _initialMessageProcessed = true;
       print('🎯 Processando notificação FCM inicial...');
@@ -292,7 +272,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       return;
     }
 
-    // ── Origem 2: notificação local (tap com app morto) ──────────────────
     final pending = NotificationService().consumePendingPayload();
     if (pending != null) {
       _initialMessageProcessed = true;
@@ -304,7 +283,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     print('ℹ️ processInitialMessage: nenhum payload pendente');
   }
 
-  // ── Despacha o Map<String, dynamic> para a tela correta ─────────────────
   Future<void> _dispatchPayload(Map<String, dynamic> data) async {
     final type = data['type']?.toString() ?? '';
 
@@ -417,7 +395,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => FeedController(), lazy: true)
+        ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
+      ChangeNotifierProvider(create: (_) => BlockProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

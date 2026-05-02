@@ -1,21 +1,18 @@
 // ============================================================
-// worker_profile_activation.dart — VERSÃO COMPLETA MESCLADA
-//
-// Origem das funcionalidades:
-//   • DeletedUserDetector mixin (tempo real)        → PATCH (doc1)
-//   • _WorkerProfileActivationState + notificações  → PATCH (doc1)
-//   • _RequestsTabState com onValue stream          → PATCH (doc1)
-//   • _checkUserStillExists / _showUserNotFoundDialog→ PATCH (doc1)
-//   • _rejectRequest com badge condicional          → PATCH (doc1)
-//   • _UpdateProfileTab completo (expiração, sync)  → COMPLETO (doc2)
-//   • _ConfirmationScreen completo                  → COMPLETO (doc2)
-//   • _RequestDetailsScreen limpo                   → PATCH (doc1)
+// worker_profile_activation.dart — com NotificationHistoryService integrado
+// Alterações:
+//   1. ✅ _createChat      → markAsApproved após criar chat (professionalRequest)
+//   2. ✅ _rejectRequest   → markAsRejected após remover request (professionalRequest)
+//   3. ✅ _blockUser chama _rejectRequest internamente → já coberto
+//   4. ✅ Busca feita por requesterId (contractor localId) + targetId (professionalId)
+//   5. ✅ Falha na notificação nunca bloqueia o fluxo principal
 // ============================================================
 
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:dartobra_new/services/badge/badge_service.dart';
+import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
+import 'package:dartobra_new/features/notifications/services/notification_history_service.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
@@ -146,7 +143,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     super.dispose();
   }
 
-  // ── Notificações ──────────────────────────────────────────────────────────
   void _setupNotificationHandlers() {
     final service = NotificationService();
     service.updateCallbacks(
@@ -175,7 +171,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     debugPrint('✅ [WorkerProfileActivation] Callbacks configurados');
   }
 
-  // ── Verifica perfil existente ─────────────────────────────────────────────
   Future<void> _checkExistingProfile() async {
     try {
       final snapshot = await _database
@@ -222,7 +217,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     }
   }
 
-  // ── Validação ─────────────────────────────────────────────────────────────
   bool _isProfileComplete() {
     if (!widget.finished_basic ||
         !widget.finished_contact ||
@@ -259,8 +253,7 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
       content: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.warning_amber_rounded,
-              color: Colors.white, size: 20),
+          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
         ],
@@ -275,7 +268,6 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
     widget.onProfileIncomplete();
   }
 
-  // ── Ativação ──────────────────────────────────────────────────────────────
   Future<void> _activateProfile() async {
     if (!_isProfileComplete()) {
       _handleProfileIncomplete();
@@ -405,8 +397,8 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation>
       body: SafeArea(
         child: _isCheckingProfile
             ? const Center(
-                child:
-                    CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
+                child: CircularProgressIndicator(
+                    color: _kBlue, strokeWidth: 2.5))
             : _hasProfile
                 ? _ActiveProfileTabs(
                     userName: widget.userName,
@@ -502,7 +494,6 @@ class _InactiveView extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 28),
-          // Card duração
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -546,7 +537,6 @@ class _InactiveView extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 20),
-          // Checklist de requisitos
           if (!isProfileComplete) ...[
             Container(
               width: double.infinity,
@@ -569,7 +559,8 @@ class _InactiveView extends StatelessWidget {
                             color: _kOrange)),
                   ]),
                   const SizedBox(height: 12),
-                  _RequirementItem(label: 'Perfil básico preenchido', ok: true),
+                  _RequirementItem(
+                      label: 'Perfil básico preenchido', ok: true),
                   _RequirementItem(
                       label: 'Habilidades adicionadas', ok: hasSkills),
                   _RequirementItem(
@@ -595,7 +586,8 @@ class _InactiveView extends StatelessWidget {
             iconColor: _kGreen,
             iconBg: _kGreenSoft,
             title: 'Visibilidade',
-            description: 'Seu perfil fica disponível no banco de profissionais',
+            description:
+                'Seu perfil fica disponível no banco de profissionais',
           ),
           const SizedBox(height: 12),
           _FeatureCard(
@@ -859,7 +851,9 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
             indicatorWeight: 2.5,
             indicatorSize: TabBarIndicatorSize.label,
             labelStyle: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w700, letterSpacing: 0.1),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1),
             unselectedLabelStyle:
                 const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             tabs: const [
@@ -927,7 +921,7 @@ class _ActiveBadge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab de Solicitações — stream em tempo real + DeletedUserDetector
+// Tab de Solicitações — COM NotificationHistoryService integrado
 // ─────────────────────────────────────────────────────────────────────────────
 class _RequestsTab extends StatefulWidget {
   final String localId;
@@ -939,6 +933,10 @@ class _RequestsTab extends StatefulWidget {
 
 class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
+  // ✅ Instância do serviço de histórico de notificações
+  final NotificationHistoryService _notificationHistory =
+      NotificationHistoryService();
+
   bool _isLoadingRequests = false;
   bool _isCreatingChat = false;
 
@@ -961,7 +959,44 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
     super.dispose();
   }
 
-  // ── Encontra chave e assina stream ────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // HELPER — busca e marca notificação de tipo professionalRequest
+  // O "ownerId" aqui é o worker (widget.localId).
+  // O "requesterId" é o contractor que enviou a solicitação.
+  // O "targetId" é a chave do perfil profissional (_myProfileKey).
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<void> _updateNotification(
+    String contractorLocalId,
+    Future<bool> Function(String notificationId) action,
+  ) async {
+    if (_myProfileKey == null) return;
+    try {
+      final notifications = await _notificationHistory.getUserNotifications(
+        userId: widget.localId,
+        filterByType: NotificationType.professionalRequest,
+        includeExpired: true,
+      );
+
+      final match = notifications.where(
+        (n) =>
+            n.requesterId == contractorLocalId &&
+            n.targetId == _myProfileKey &&
+            n.status != NotificationStatus.rejected &&
+            n.status != NotificationStatus.approved,
+      );
+
+      if (match.isEmpty) {
+        debugPrint(
+            '⚠️ Nenhuma notificação pendente para $contractorLocalId no perfil $_myProfileKey');
+        return;
+      }
+
+      await action(match.first.id);
+    } catch (e) {
+      debugPrint('⚠️ _updateNotification (worker) falhou (não crítico): $e');
+    }
+  }
+
   Future<void> _findProfileKeyAndSubscribe() async {
     setState(() => _isLoadingRequests = true);
     try {
@@ -994,7 +1029,6 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
     }
   }
 
-  // ── Callback do stream ────────────────────────────────────────────────────
   Future<void> _onProfileSnapshot(DatabaseEvent event) async {
     if (!event.snapshot.exists || event.snapshot.value == null) {
       if (mounted)
@@ -1005,7 +1039,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       return;
     }
 
-    final profileData = Map<String, dynamic>.from(event.snapshot.value as Map);
+    final profileData =
+        Map<String, dynamic>.from(event.snapshot.value as Map);
 
     List<String> requestLocalIds = [];
     final rawRequests = profileData['requests'];
@@ -1047,8 +1082,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
               Map<String, dynamic>.from(userSnapshot.snapshot.value as Map);
           Map<String, dynamic> contractorData = {};
           if (userData['data_contractor'] != null) {
-            contractorData =
-                Map<String, dynamic>.from(userData['data_contractor'] as Map);
+            contractorData = Map<String, dynamic>.from(
+                userData['data_contractor'] as Map);
           }
           bool viewedByOwner = false;
           if (viewsData.containsKey(localId)) {
@@ -1086,26 +1121,31 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       });
   }
 
-  // ── Ações ─────────────────────────────────────────────────────────────────
-  Future<void> _refreshRequests() async => await _findProfileKeyAndSubscribe();
+  Future<void> _refreshRequests() async =>
+      await _findProfileKeyAndSubscribe();
 
   Future<void> _removeRequestFromList(String requestLocalId) async {
     if (_myProfileKey == null) return;
-    final snapshot =
-        await _database.child('professionals/$_myProfileKey/requests').once();
+    final snapshot = await _database
+        .child('professionals/$_myProfileKey/requests')
+        .once();
     if (snapshot.snapshot.value != null) {
       List<dynamic> currentRequests;
       if (snapshot.snapshot.value is List) {
-        currentRequests = List<dynamic>.from(snapshot.snapshot.value as List);
+        currentRequests =
+            List<dynamic>.from(snapshot.snapshot.value as List);
       } else if (snapshot.snapshot.value is Map) {
-        currentRequests = (snapshot.snapshot.value as Map).values.toList();
+        currentRequests =
+            (snapshot.snapshot.value as Map).values.toList();
       } else {
         currentRequests = [];
       }
       currentRequests.remove(requestLocalId);
 
       if (currentRequests.isEmpty) {
-        await _database.child('professionals/$_myProfileKey/requests').remove();
+        await _database
+            .child('professionals/$_myProfileKey/requests')
+            .remove();
       } else {
         await _database
             .child('professionals/$_myProfileKey/requests')
@@ -1116,12 +1156,9 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
           .child(
               'professionals/$_myProfileKey/views/request_views/$requestLocalId')
           .remove();
-
-      // O stream onValue dispara e atualiza _workRequests automaticamente
     }
   }
 
-  /// Decrementa badge de request localmente (fallback ao BadgeHelper)
   Future<void> _decrementRequestBadge(String userId) async {
     try {
       final badgeRef = _database.child('badges/$userId/unread_requests');
@@ -1138,10 +1175,12 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // RECUSAR SOLICITAÇÃO — com markAsRejected
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _rejectRequest(String requestLocalId) async {
     if (_myProfileKey == null) return;
     try {
-      // Verifica se o candidato já foi visualizado antes de remover
       final requestViewSnap = await _database
           .child(
               'professionals/$_myProfileKey/views/request_views/$requestLocalId')
@@ -1150,20 +1189,27 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       bool wasUnviewed = false;
       if (requestViewSnap.snapshot.exists &&
           requestViewSnap.snapshot.value != null) {
-        final viewData =
-            Map<String, dynamic>.from(requestViewSnap.snapshot.value as Map);
+        final viewData = Map<String, dynamic>.from(
+            requestViewSnap.snapshot.value as Map);
         wasUnviewed = viewData['viewed_by_owner'] == false;
       }
 
       await _removeRequestFromList(requestLocalId);
 
-      // Decrementa badge apenas se não havia sido visualizado
       if (wasUnviewed) {
         debugPrint('🔽 Decrementando badge do owner: ${widget.localId}');
         await _decrementRequestBadge(widget.localId);
       } else {
         debugPrint('ℹ️ Candidato já visualizado, badge não alterado');
       }
+
+      // ✅ Marca notificação como recusada (não bloqueia o fluxo se falhar)
+      await _updateNotification(requestLocalId, (notificationId) async {
+        return await _notificationHistory.markAsRejected(
+          ownerId: widget.localId,
+          notificationId: notificationId,
+        );
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1204,7 +1250,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
           Container(
             width: 40,
@@ -1219,7 +1266,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
           const SizedBox(width: 12),
           const Expanded(
             child: Text('Usuário indisponível',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                style:
+                    TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ),
         ]),
         content: Column(
@@ -1249,7 +1297,9 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
                     child: Text(
                       'Este usuário pode ter encerrado sua conta ou está temporariamente indisponível.',
                       style: TextStyle(
-                          fontSize: 13, color: Color(0xFF64748B), height: 1.45),
+                          fontSize: 13,
+                          color: Color(0xFF64748B),
+                          height: 1.45),
                     ),
                   ),
                 ],
@@ -1271,7 +1321,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
                 padding: const EdgeInsets.symmetric(vertical: 13),
               ),
               child: const Text('Entendido',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  style:
+                      TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
           ),
         ],
@@ -1279,6 +1330,9 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ACEITAR / CRIAR CHAT — com markAsApproved
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _createChat(Map<String, dynamic> requestData) async {
     if (_isCreatingChat) return;
     setState(() => _isCreatingChat = true);
@@ -1288,23 +1342,21 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       final exists = await _checkUserStillExists(uid);
 
       if (!exists) {
-        // ── 1. Lê estado do view ANTES de remover (igual ao info_vacancy) ──
         final requestViewSnap = await _database
-            .child('professionals/$_myProfileKey/views/request_views/$uid')
+            .child(
+                'professionals/$_myProfileKey/views/request_views/$uid')
             .once();
 
         bool wasUnviewed = false;
         if (requestViewSnap.snapshot.exists &&
             requestViewSnap.snapshot.value != null) {
-          final viewData =
-              Map<String, dynamic>.from(requestViewSnap.snapshot.value as Map);
+          final viewData = Map<String, dynamic>.from(
+              requestViewSnap.snapshot.value as Map);
           wasUnviewed = viewData['viewed_by_owner'] == false;
         }
 
-        // ── 2. Remove da lista + request_view (stream dispara → card some) ──
         await _removeRequestFromList(uid);
 
-        // ── 3. Decrementa badge somente se não havia sido visualizado ────────
         if (wasUnviewed) {
           debugPrint(
               '🔽 [userNotFound] Decrementando badge: ${widget.localId}');
@@ -1313,7 +1365,6 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
           debugPrint('ℹ️ [userNotFound] Já visualizado, badge inalterado');
         }
 
-        // ── 4. Exibe dialog de usuário indisponível ──────────────────────────
         if (mounted) {
           setState(() => _isCreatingChat = false);
           _showUserNotFoundDialog(
@@ -1322,7 +1373,20 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
         return;
       }
 
-      // ── Usuário existe: fluxo normal de criação do chat ───────────────────
+      // Lê estado do view ANTES de qualquer remoção
+      final requestViewSnap = await _database
+          .child(
+              'professionals/$_myProfileKey/views/request_views/$uid')
+          .once();
+
+      bool wasUnviewed = false;
+      if (requestViewSnap.snapshot.exists &&
+          requestViewSnap.snapshot.value != null) {
+        final viewData = Map<String, dynamic>.from(
+            requestViewSnap.snapshot.value as Map);
+        wasUnviewed = viewData['viewed_by_owner'] == false;
+      }
+
       final DatabaseReference chatRef = _database.child('Chats').push();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
@@ -1344,6 +1408,21 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
 
       await _removeRequestFromList(uid);
 
+      if (wasUnviewed) {
+        debugPrint('🔽 [aceitar] Decrementando badge: ${widget.localId}');
+        await _decrementRequestBadge(widget.localId);
+      } else {
+        debugPrint('ℹ️ [aceitar] Já visualizado, badge inalterado');
+      }
+
+      // ✅ Marca notificação como aprovada (não bloqueia o fluxo se falhar)
+      await _updateNotification(uid, (notificationId) async {
+        return await _notificationHistory.markAsApproved(
+          ownerId: widget.localId,
+          notificationId: notificationId,
+        );
+      });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Row(children: [
@@ -1353,8 +1432,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1364,8 +1443,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
           content: const Text('Erro ao aceitar solicitação'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1380,6 +1459,7 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       MaterialPageRoute(
         builder: (_) => _RequestDetailsScreen(
           requestData: requestData,
+          myUserId: widget.localId,
           onAccept: () {
             Navigator.pop(context);
             _createChat(requestData);
@@ -1388,6 +1468,7 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
             Navigator.pop(context);
             _rejectRequest(requestData['local_id']);
           },
+          onBlock: () {},
         ),
       ),
     );
@@ -1404,7 +1485,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
       onRefresh: _refreshRequests,
       child: _isLoadingRequests
           ? const Center(
-              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
+              child: CircularProgressIndicator(
+                  color: _kBlue, strokeWidth: 2.5))
           : visibleRequests.isEmpty
               ? _EmptyRequests()
               : ListView.builder(
@@ -1414,7 +1496,8 @@ class _RequestsTabState extends State<_RequestsTab> with DeletedUserDetector {
                   itemBuilder: (context, index) => _RequestCard(
                     request: visibleRequests[index],
                     isCreatingChat: _isCreatingChat,
-                    onTap: () => _showRequestDetails(visibleRequests[index]),
+                    onTap: () =>
+                        _showRequestDetails(visibleRequests[index]),
                     onAccept: () => _createChat(visibleRequests[index]),
                     onReject: () =>
                         _rejectRequest(visibleRequests[index]['local_id']),
@@ -1439,7 +1522,8 @@ class _EmptyRequests extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                    color: _kBlueSoft, borderRadius: BorderRadius.circular(24)),
+                    color: _kBlueSoft,
+                    borderRadius: BorderRadius.circular(24)),
                 child:
                     const Icon(Icons.inbox_outlined, size: 40, color: _kBlue),
               ),
@@ -1453,7 +1537,8 @@ class _EmptyRequests extends StatelessWidget {
               const Text(
                 'Empresas poderão te encontrar\ne enviar solicitações por aqui.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: _kTextSub, height: 1.5),
+                style:
+                    TextStyle(fontSize: 14, color: _kTextSub, height: 1.5),
               ),
             ],
           ),
@@ -1517,10 +1602,11 @@ class _RequestCard extends StatelessWidget {
               children: [
                 if (isNew) ...[
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                        color: _kBlue, borderRadius: BorderRadius.circular(8)),
+                        color: _kBlue,
+                        borderRadius: BorderRadius.circular(8)),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1558,8 +1644,9 @@ class _RequestCard extends StatelessWidget {
                           request['name'] ?? 'Nome não informado',
                           style: TextStyle(
                               fontSize: 15,
-                              fontWeight:
-                                  isNew ? FontWeight.w800 : FontWeight.w600,
+                              fontWeight: isNew
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
                               color: _kText),
                         ),
                         if (contractorData['company']
@@ -1664,7 +1751,9 @@ class _ActionButton extends StatelessWidget {
             const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
-                    color: color, fontSize: 14, fontWeight: FontWeight.w700)),
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -1673,7 +1762,7 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab de Atualizar Perfil — implementação completa
+// Tab de Atualizar Perfil — sem alterações funcionais
 // ─────────────────────────────────────────────────────────────────────────────
 class _UpdateProfileTab extends StatefulWidget {
   final String userName;
@@ -1733,38 +1822,22 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   }
 
   Future<void> _loadExpirationInfo() async {
-    if (_professionalId == null || _professionalId!.isEmpty) {
-      debugPrint('⚠️ _professionalId está null ou vazio');
-      return;
-    }
+    if (_professionalId == null || _professionalId!.isEmpty) return;
     try {
       final snapshot =
           await _database.child('professionals/$_professionalId').get();
-
       if (snapshot.exists && snapshot.value != null) {
         final data = Map<String, dynamic>.from(snapshot.value as Map);
         final expiresAt = data['expires_at']?.toString();
-
         if (mounted) {
           setState(() {
             _expiresAt = expiresAt;
             _isExpired = _expirationService.isExpired(expiresAt);
-            _isNearExpiration = _expirationService.isNearExpiration(expiresAt);
+            _isNearExpiration =
+                _expirationService.isNearExpiration(expiresAt);
             _daysLeft = _expirationService.daysUntilExpiration(expiresAt);
           });
-
-          // Debug detalhado
-          debugPrint('═══════════════════════════════════════════════════════');
-          debugPrint('🧪 DEBUG EXPIRAÇÃO - ${DateTime.now()}');
-          debugPrint('   professionalId : $_professionalId');
-          debugPrint('   expires_at     : $expiresAt');
-          debugPrint('   _isExpired     : $_isExpired');
-          debugPrint('   _isNearExp     : $_isNearExpiration');
-          debugPrint('   _daysLeft      : $_daysLeft dias');
-          debugPrint('═══════════════════════════════════════════════════════');
         }
-      } else {
-        debugPrint('⚠️ Perfil profissional não encontrado no Firebase');
       }
     } catch (e) {
       debugPrint('❌ Erro ao carregar expiração: $e');
@@ -1794,8 +1867,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       message = 'Complete todas as seções do perfil antes de sincronizar.';
     } else if (summary.length < _kSummaryMinLength) {
       message =
-          'Descrição profissional muito curta (${summary.length}/$_kSummaryMinLength caracteres). '
-          'Acesse "Editar Perfil" → seção Profissional e preencha corretamente.';
+          'Descrição profissional muito curta (${summary.length}/$_kSummaryMinLength caracteres).';
     } else if (!hasSkills) {
       message = 'Adicione habilidades ao seu perfil antes de sincronizar.';
     } else {
@@ -1815,10 +1887,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       backgroundColor: _kOrange,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 5),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
     ));
-
     widget.onProfileIncomplete();
   }
 
@@ -1841,8 +1913,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
         });
         final resolvedKey = activeKey ?? fallbackKey;
         if (resolvedKey != null) {
-          final profData = Map<String, dynamic>.from(data[resolvedKey] as Map);
-          final status = profData['status']?.toString().toLowerCase() ?? '';
+          final profData =
+              Map<String, dynamic>.from(data[resolvedKey] as Map);
+          final status =
+              profData['status']?.toString().toLowerCase() ?? '';
           setState(() {
             _professionalId = resolvedKey;
             _currentProfessionalIsActive = status == 'active';
@@ -1901,8 +1975,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1913,8 +1987,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           content: Text('Erro ao atualizar perfil: $e'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1944,7 +2018,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     );
   }
 
-  // ── Banner de expiração ───────────────────────────────────────────────────
   Widget _buildExpirationBanner() {
     final bool expired = _isExpired;
     final bool shouldShow = expired || (_isNearExpiration && _daysLeft <= 1);
@@ -1952,7 +2025,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
     if (!shouldShow && !isTestMode) return const SizedBox.shrink();
 
-    // Debug banner para modo de teste quando o perfil parece inconsistente
     if (isTestMode && !shouldShow) {
       return Container(
         margin: const EdgeInsets.only(bottom: 16),
@@ -1990,7 +2062,9 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       Text(
                         'Perfil criado antes do testDate. Ajuste para ver o banner de renovação.',
                         style: TextStyle(
-                            fontSize: 12, color: _kOrange, height: 1.3),
+                            fontSize: 12,
+                            color: _kOrange,
+                            height: 1.3),
                       ),
                     ],
                   ),
@@ -2038,7 +2112,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                           Icon(Icons.check_circle_rounded,
                               color: Colors.white, size: 20),
                           SizedBox(width: 12),
-                          Text('🧪 Perfil ajustado para o tempo de teste!'),
+                          Text(
+                              '🧪 Perfil ajustado para o tempo de teste!'),
                         ]),
                         backgroundColor: _kGreen,
                         behavior: SnackBarBehavior.floating,
@@ -2053,7 +2128,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             borderRadius:
                 const BorderRadius.vertical(bottom: Radius.circular(20)),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -2063,7 +2139,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                           width: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(_kOrange),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(_kOrange),
                           ))
                       : const Icon(Icons.refresh_rounded,
                           size: 18, color: _kOrange),
@@ -2085,17 +2162,14 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       );
     }
 
-    // Banner normal de expiração/renovação
     final Color accent = expired ? _kRed : _kOrange;
     final Color bgColor =
         expired ? const Color(0xFFFEF2F2) : const Color(0xFFFFF7ED);
-
     final String headline = expired
         ? 'Seu perfil expirou'
         : _daysLeft == 1
             ? 'Expira amanhã!'
             : 'Expira em $_daysLeft dias';
-
     final String sub = expired
         ? 'Ele não aparece mais no banco de profissionais. Renove para reativar.'
         : 'Renove agora para continuar visível para empresas.';
@@ -2201,7 +2275,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           borderRadius:
               const BorderRadius.vertical(bottom: Radius.circular(20)),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -2211,14 +2286,19 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                         width: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(accent),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(accent),
                         ))
                     : Icon(Icons.refresh_rounded, size: 17, color: accent),
                 const SizedBox(width: 8),
                 Text(
-                  _isUpdating ? 'Renovando...' : 'Renovar agora (+2 dias)',
+                  _isUpdating
+                      ? 'Renovando...'
+                      : 'Renovar agora (+2 dias)',
                   style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w700, color: accent),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: accent),
                 ),
               ],
             ),
@@ -2231,8 +2311,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   @override
   Widget build(BuildContext context) {
     final skills = (widget.dataWorker['skills'] as List?) ?? [];
-    final profession =
-        widget.dataWorker['profession']?.toString() ?? 'Profissão não definida';
+    final profession = widget.dataWorker['profession']?.toString() ??
+        'Profissão não definida';
     final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
     final summaryOk = summary.length >= _kSummaryMinLength;
     final hasSkills = skills.isNotEmpty;
@@ -2242,7 +2322,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
       child: Column(children: [
-        // ── Avatar + Nome ───────────────────────────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
@@ -2265,18 +2344,17 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                   : null,
               backgroundColor: _kBlueSoft,
               child: widget.userAvatar.isEmpty
-                  ? const Icon(Icons.person_rounded, size: 42, color: _kBlue)
+                  ? const Icon(Icons.person_rounded,
+                      size: 42, color: _kBlue)
                   : null,
             ),
             const SizedBox(height: 14),
-            Text(
-              widget.userName,
-              style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: _kText,
-                  letterSpacing: -0.3),
-            ),
+            Text(widget.userName,
+                style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _kText,
+                    letterSpacing: -0.3)),
             const SizedBox(height: 4),
             Text(profession,
                 style: const TextStyle(fontSize: 14, color: _kTextSub)),
@@ -2284,15 +2362,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             const _ActiveBadge(),
           ]),
         ),
-
         const SizedBox(height: 16),
-
-        // ── Banner de expiração ─────────────────────────────────────────
         if (_expiresAt != null &&
             (_isExpired || (_isNearExpiration && _daysLeft <= 1)))
           _buildExpirationBanner(),
-
-        // ── Alerta perfil incompleto ────────────────────────────────────
         if (!profileComplete) ...[
           Container(
             width: double.infinity,
@@ -2306,7 +2379,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Row(children: [
-                  Icon(Icons.warning_amber_rounded, color: _kOrange, size: 18),
+                  Icon(Icons.warning_amber_rounded,
+                      color: _kOrange, size: 18),
                   SizedBox(width: 8),
                   Text('Perfil incompleto',
                       style: TextStyle(
@@ -2329,7 +2403,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _kOrange.withOpacity(0.2)),
+                      border:
+                          Border.all(color: _kOrange.withOpacity(0.2)),
                     ),
                     child: const Row(children: [
                       Icon(Icons.info_outline, size: 14, color: _kOrange),
@@ -2337,7 +2412,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       Expanded(
                         child: Text(
                           'Acesse "Editar Perfil" → seção Profissional para preencher sua descrição.',
-                          style: TextStyle(fontSize: 12, color: _kOrange),
+                          style:
+                              TextStyle(fontSize: 12, color: _kOrange),
                         ),
                       ),
                     ]),
@@ -2348,8 +2424,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           ),
           const SizedBox(height: 16),
         ],
-
-        // ── Status Control ──────────────────────────────────────────────
         ProfessionalStatusControlWidget(
           initialIsActive: _currentProfessionalIsActive,
           localId: widget.localId,
@@ -2358,10 +2432,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             setState(() => _currentProfessionalIsActive = isNowActive);
           },
         ),
-
         const SizedBox(height: 16),
-
-        // ── Informações do Perfil ───────────────────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(20),
@@ -2396,7 +2467,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       ? 'Pessoa Jurídica'
                       : 'Pessoa Física'),
               if (widget.legalType == 'PJ' &&
-                  widget.dataWorker['company']?.toString().trim().isNotEmpty ==
+                  widget.dataWorker['company']
+                          ?.toString()
+                          .trim()
+                          .isNotEmpty ==
                       true)
                 _InfoRow(
                     icon: Icons.business_outlined,
@@ -2447,9 +2521,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             ],
           ),
         ),
-
         const SizedBox(height: 16),
-
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -2463,14 +2535,13 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             Expanded(
               child: Text(
                 'Sincronize o anúncio com as alterações mais recentes do seu perfil.',
-                style: TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
+                style:
+                    TextStyle(fontSize: 13, color: _kBlue, height: 1.4),
               ),
             ),
           ]),
         ),
-
         const SizedBox(height: 20),
-
         SizedBox(
           width: double.infinity,
           height: 54,
@@ -2489,8 +2560,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                     width: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white)),
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2521,7 +2592,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   }
 }
 
-// ── Debug helper ─────────────────────────────────────────────────────────────
 class _DebugInfoRow extends StatelessWidget {
   final String label;
   final String value;
@@ -2536,10 +2606,14 @@ class _DebugInfoRow extends StatelessWidget {
         children: [
           Text(label,
               style: const TextStyle(
-                  fontSize: 11, color: _kTextSub, fontWeight: FontWeight.w600)),
+                  fontSize: 11,
+                  color: _kTextSub,
+                  fontWeight: FontWeight.w600)),
           Text(value,
               style: const TextStyle(
-                  fontSize: 11, color: _kText, fontWeight: FontWeight.w700)),
+                  fontSize: 11,
+                  color: _kText,
+                  fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -2575,11 +2649,15 @@ class _InfoRow extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: const TextStyle(fontSize: 11, color: _kTextSub)),
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 11, color: _kTextSub)),
             const SizedBox(height: 1),
             Text(value,
                 style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600, color: _kText)),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _kText)),
           ],
         ),
       ]),
@@ -2588,7 +2666,7 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tela de Confirmação (Ativar / Atualizar)
+// Tela de Confirmação
 // ─────────────────────────────────────────────────────────────────────────────
 class _ConfirmationScreen extends StatelessWidget {
   final String userName;
@@ -2654,13 +2732,16 @@ class _ConfirmationScreen extends StatelessWidget {
                 userAvatar.isNotEmpty ? NetworkImage(userAvatar) : null,
             backgroundColor: _kBlueSoft,
             child: userAvatar.isEmpty
-                ? const Icon(Icons.person_rounded, size: 52, color: _kBlue)
+                ? const Icon(Icons.person_rounded,
+                    size: 52, color: _kBlue)
                 : null,
           ),
           const SizedBox(height: 16),
           Text(userName,
               style: const TextStyle(
-                  fontSize: 22, fontWeight: FontWeight.w800, color: _kText)),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: _kText)),
           const SizedBox(height: 6),
           Text(
             isUpdate
@@ -2701,7 +2782,11 @@ class _ConfirmationScreen extends StatelessWidget {
                         ? 'Pessoa Jurídica'
                         : 'Pessoa Física'),
                 if (legalType == 'PJ' &&
-                    dataWorker['company']?.toString().trim().isNotEmpty == true)
+                    dataWorker['company']
+                            ?.toString()
+                            .trim()
+                            .isNotEmpty ==
+                        true)
                   _ConfirmRow(
                       icon: Icons.business_outlined,
                       label: 'Empresa',
@@ -2710,7 +2795,8 @@ class _ConfirmationScreen extends StatelessWidget {
                     icon: Icons.location_on_outlined,
                     label: 'Localização',
                     value: '$userCity, $userState'),
-                if (userTelefone.isNotEmpty && userTelefone != 'Não definido')
+                if (userTelefone.isNotEmpty &&
+                    userTelefone != 'Não definido')
                   _ConfirmRow(
                       icon: Icons.phone_outlined,
                       label: 'Telefone',
@@ -2720,7 +2806,8 @@ class _ConfirmationScreen extends StatelessWidget {
                       icon: Icons.email_outlined,
                       label: 'E-mail de contato',
                       value: userEmail),
-                if (dataWorker['summary']?.toString().isNotEmpty == true) ...[
+                if (dataWorker['summary']?.toString().isNotEmpty ==
+                    true) ...[
                   const SizedBox(height: 4),
                   const Divider(color: _kBorder),
                   const SizedBox(height: 12),
@@ -2861,7 +2948,8 @@ class _ConfirmRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(fontSize: 11, color: _kTextSub)),
+                    style:
+                        const TextStyle(fontSize: 11, color: _kTextSub)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(
@@ -2880,22 +2968,204 @@ class _ConfirmRow extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // Tela de Detalhes da Solicitação
 // ─────────────────────────────────────────────────────────────────────────────
-class _RequestDetailsScreen extends StatelessWidget {
+class _RequestDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> requestData;
+  final String myUserId;
   final VoidCallback onAccept;
   final VoidCallback onReject;
+  final VoidCallback? onBlock;
 
   const _RequestDetailsScreen({
     required this.requestData,
+    required this.myUserId,
     required this.onAccept,
     required this.onReject,
+    this.onBlock,
   });
 
   @override
+  State<_RequestDetailsScreen> createState() =>
+      _RequestDetailsScreenState();
+}
+
+class _RequestDetailsScreenState extends State<_RequestDetailsScreen> {
+  bool _isBlocking = false;
+
+  Future<void> _blockUser() async {
+    final targetId = widget.requestData['local_id'] as String? ?? '';
+    if (targetId.isEmpty) return;
+
+    setState(() => _isBlocking = true);
+
+    try {
+      final success = await UserRelationShipController()
+          .blockUser(widget.myUserId, targetId);
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.block_rounded, color: Colors.white, size: 18),
+            SizedBox(width: 10),
+            Text('Usuário bloqueado com sucesso'),
+          ]),
+          backgroundColor: _kRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+        // onBlock dispara onReject no caller, que chama _rejectRequest
+        // e portanto markAsRejected já é coberto lá
+        widget.onBlock?.call();
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Usuário já estava bloqueado'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erro ao bloquear: $e'),
+          backgroundColor: _kRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isBlocking = false);
+    }
+  }
+
+  void _showBlockConfirmDialog() {
+    final name =
+        widget.requestData['name'] as String? ?? 'este usuário';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: _kRed.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.block_rounded,
+                    size: 34, color: _kRed),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Bloquear usuário',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _kText,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Tem certeza que deseja bloquear $name?\n\n'
+                'A solicitação será removida, o chat entre vocês '
+                'será bloqueado e nenhum de vocês poderá se '
+                'candidatar aos perfis ou vagas um do outro.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Colors.grey.shade600,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: OutlinedButton.styleFrom(
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 13),
+                      side: BorderSide(color: _kBorder),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text(
+                      'Cancelar',
+                      style: TextStyle(
+                          color: _kTextSub,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isBlocking
+                        ? null
+                        : () {
+                            Navigator.of(ctx).pop();
+                            _blockUser();
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _kRed,
+                      foregroundColor: Colors.white,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 13),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _isBlocking
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Bloquear',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15),
+                          ),
+                  ),
+                ),
+              ]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final contractorData =
-        requestData['data_contractor'] as Map<String, dynamic>? ?? {};
-    final String avatar = requestData['avatar']?.toString() ?? '';
+    final contractorData = widget.requestData['data_contractor']
+            as Map<String, dynamic>? ??
+        {};
+    final String avatar = widget.requestData['avatar']?.toString() ?? '';
 
     return Scaffold(
       backgroundColor: _kSurface,
@@ -2921,6 +3191,53 @@ class _RequestDetailsScreen extends StatelessWidget {
           style: TextStyle(
               fontSize: 17, fontWeight: FontWeight.w800, color: _kText),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                  color: _kSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _kBorder)),
+              child: const Icon(Icons.more_vert_rounded,
+                  size: 18, color: _kText),
+            ),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14)),
+            elevation: 4,
+            offset: const Offset(0, 44),
+            onSelected: (value) {
+              if (value == 'block') _showBlockConfirmDialog();
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem<String>(
+                value: 'block',
+                child: Row(children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: _kRed.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.block_rounded,
+                        size: 16, color: _kRed),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Bloquear usuário',
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _kRed),
+                  ),
+                ]),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -2928,21 +3245,24 @@ class _RequestDetailsScreen extends StatelessWidget {
         child: Column(children: [
           CircleAvatar(
             radius: 50,
-            backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+            backgroundImage:
+                avatar.isNotEmpty ? NetworkImage(avatar) : null,
             backgroundColor: _kBlueSoft,
             child: avatar.isEmpty
-                ? const Icon(Icons.business_rounded, size: 50, color: _kBlue)
+                ? const Icon(Icons.business_rounded,
+                    size: 50, color: _kBlue)
                 : null,
           ),
           const SizedBox(height: 16),
           Text(
-            requestData['name'] ?? 'Nome não informado',
+            widget.requestData['name'] ?? 'Nome não informado',
             style: const TextStyle(
                 fontSize: 22, fontWeight: FontWeight.w800, color: _kText),
             textAlign: TextAlign.center,
           ),
           if (contractorData['profession']?.toString() != null &&
-              contractorData['profession'].toString() != 'Não definida') ...[
+              contractorData['profession'].toString() !=
+                  'Não definida') ...[
             const SizedBox(height: 4),
             Text(contractorData['profession'],
                 style: const TextStyle(fontSize: 14, color: _kTextSub)),
@@ -2951,46 +3271,57 @@ class _RequestDetailsScreen extends StatelessWidget {
           _DetailSection(
             title: 'Informações de Contato',
             children: [
-              if (requestData['email']?.toString().isNotEmpty == true)
+              if (widget.requestData['email']?.toString().isNotEmpty ==
+                  true)
                 _DetailRow(
                     icon: Icons.email_outlined,
                     label: 'E-mail',
-                    value: requestData['email']),
-              if (requestData['email_contact']?.toString().isNotEmpty == true)
+                    value: widget.requestData['email']),
+              if (widget.requestData['email_contact']
+                      ?.toString()
+                      .isNotEmpty ==
+                  true)
                 _DetailRow(
                     icon: Icons.alternate_email_rounded,
                     label: 'E-mail de Contato',
-                    value: requestData['email_contact']),
-              if (requestData['telefone']?.toString().isNotEmpty == true &&
-                  requestData['telefone'] != 'Não definido')
+                    value: widget.requestData['email_contact']),
+              if (widget.requestData['telefone']
+                          ?.toString()
+                          .isNotEmpty ==
+                      true &&
+                  widget.requestData['telefone'] != 'Não definido')
                 _DetailRow(
                     icon: Icons.phone_outlined,
                     label: 'Telefone',
-                    value: requestData['telefone']),
+                    value: widget.requestData['telefone']),
               _DetailRow(
                   icon: Icons.location_on_outlined,
                   label: 'Localização',
                   value:
-                      '${requestData['city'] ?? ''}, ${requestData['state'] ?? ''}'),
-              if (requestData['age'] != null)
+                      '${widget.requestData['city'] ?? ''}, ${widget.requestData['state'] ?? ''}'),
+              if (widget.requestData['age'] != null)
                 _DetailRow(
                     icon: Icons.cake_outlined,
                     label: 'Idade',
-                    value: '${requestData['age']} anos'),
+                    value: '${widget.requestData['age']} anos'),
             ],
           ),
           const SizedBox(height: 16),
           _DetailSection(
             title: 'Informações Profissionais',
             children: [
-              if (contractorData['company']?.toString().trim().isNotEmpty ==
+              if (contractorData['company']
+                      ?.toString()
+                      .trim()
+                      .isNotEmpty ==
                   true)
                 _DetailRow(
                     icon: Icons.business_outlined,
                     label: 'Empresa',
                     value: contractorData['company']),
               if (contractorData['profession']?.toString() != null &&
-                  contractorData['profession'].toString() != 'Não definida')
+                  contractorData['profession'].toString() !=
+                      'Não definida')
                 _DetailRow(
                     icon: Icons.work_outline_rounded,
                     label: 'Profissão',
@@ -2998,12 +3329,13 @@ class _RequestDetailsScreen extends StatelessWidget {
               _DetailRow(
                   icon: Icons.badge_outlined,
                   label: 'Tipo',
-                  value: requestData['legalType'] == 'PJ'
+                  value: widget.requestData['legalType'] == 'PJ'
                       ? 'Pessoa Jurídica'
-                      : requestData['legalType'] == 'PF'
+                      : widget.requestData['legalType'] == 'PF'
                           ? 'Pessoa Física'
                           : 'Não definido'),
-              if (contractorData['summary']?.toString().isNotEmpty == true &&
+              if (contractorData['summary']?.toString().isNotEmpty ==
+                      true &&
                   contractorData['summary'] != 'Não definido') ...[
                 const SizedBox(height: 4),
                 const Divider(color: _kBorder),
@@ -3033,7 +3365,7 @@ class _RequestDetailsScreen extends StatelessWidget {
           child: Row(children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: onReject,
+                onPressed: widget.onReject,
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   side: BorderSide(color: _kRed.withOpacity(0.4)),
@@ -3050,7 +3382,7 @@ class _RequestDetailsScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: onAccept,
+                onPressed: widget.onAccept,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kGreen,
                   elevation: 0,
@@ -3099,7 +3431,9 @@ class _DetailSection extends StatelessWidget {
         children: [
           Text(title,
               style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.w800, color: _kText)),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: _kText)),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -3141,7 +3475,8 @@ class _DetailRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(fontSize: 11, color: _kTextSub)),
+                    style:
+                        const TextStyle(fontSize: 11, color: _kTextSub)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(

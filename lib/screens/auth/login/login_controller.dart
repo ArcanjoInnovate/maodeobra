@@ -140,6 +140,7 @@ class LoginController {
     }
 
     if (!context.mounted) return;
+   
     await navigateToNextScreen(context, user);
   }
 
