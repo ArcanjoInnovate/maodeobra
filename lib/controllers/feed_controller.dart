@@ -173,6 +173,7 @@ class FeedController with ChangeNotifier {
     }
   }
 
+  
   Future<void> _loadCities(String uf) async {
     if (uf.isEmpty) {
       _availableCities = [];

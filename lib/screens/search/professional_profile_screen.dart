@@ -2,15 +2,17 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/controllers/feed_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_professional_screen.dart';
+import 'package:dartobra_new/controllers/search_controller.dart';
 import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide SearchController;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -1057,6 +1059,10 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
               if (!mounted) return;
 
               if (success) {
+                try {
+                  context.read<FeedController>().forceRefresh();
+                  context.read<SearchController>().forceRefresh();
+                } catch (_) {}
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context);
               } else {

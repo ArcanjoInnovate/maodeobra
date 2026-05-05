@@ -1,15 +1,15 @@
 // lib/screens/chat_room_screen.dart - VERSÃO OTIMIZADA (ZERO ESPAÇO DESNECESSÁRIO)
 
 import 'package:dartobra_new/controllers/chat_controller.dart';
+import 'package:dartobra_new/controllers/feed_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/core/utils/date_utils.dart';
 import 'package:dartobra_new/models/chat/message_model.dart';
 import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
-import 'package:dartobra_new/services/badge/badge_service.dart';
-import 'package:dartobra_new/services/chat/chat_service.dart';
+import 'package:dartobra_new/controllers/search_controller.dart';
 import 'package:dartobra_new/widgets/chat/message_bubble.dart';
 import 'package:dartobra_new/widgets/common/online_status_indicator.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide SearchController;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -373,7 +373,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
             PopupMenuItem<String>(
               value: 'block',
               onTap: () {
-              
                 _showBlockDialog();
               },
               child: Row(
@@ -445,9 +444,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
 
               if (success) {
                 _showSuccess('Usuário bloqueado com sucesso!');
-                Navigator.pop(context); // fecha a tela
+                try {
+                  context.read<FeedController>().forceRefresh();
+                  context.read<SearchController>().forceRefresh();
+                } catch (_) {}
+                Navigator.pop(context);
               } else {
-                final erro = blockProvider.lastError ?? 'Erro desconhecido'; // ← instância, não estático
+                final erro = blockProvider.lastError ??
+                    'Erro desconhecido'; // ← instância, não estático
                 _showError('Falha: $erro');
               }
             },
