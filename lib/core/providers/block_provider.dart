@@ -28,18 +28,34 @@ class BlockProvider extends ChangeNotifier {
   // ── Init / Logout ─────────────────────────
 
   Future<void> init(String userId) async {
-    if (_myUserId == userId) return;
+    if (_myUserId == userId && _blockedSet.isNotEmpty) {
+      print('⚠️ [BlockProvider] Já inicializado para $userId');
+      return;
+    }
+    
     _myUserId = userId;
-
     _isLoading = true;
     notifyListeners();
 
-    await _reload();
-    _startListeners();
-
-    _isLoading = false;
-    notifyListeners();
+    try {
+      await _reload();
+      _startListeners();
+    } catch (e, stack) {
+      print('❌ [BlockProvider] Erro no init: $e\n$stack');
+      // ✅ Fallback: tentar novamente após 2s
+      await Future.delayed(const Duration(seconds: 2));
+      try {
+        await _reload();
+        _startListeners();
+      } catch (e2) {
+        print('❌ [BlockProvider] Fallback falhou: $e2');
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
+
 
   void logout() {
     _cancelListeners();

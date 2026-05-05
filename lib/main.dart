@@ -102,17 +102,39 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     clearBadge();
-    _listenToMaintenance();
-    
-    // ✅ INICIALIZAÇÃO ROBUSTA DO BLOCKPROVIDER
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeBlockProvider();
-    });
-    
-    // ✅ Inicializa notificações (BlockProvider primeiro)
+    _initializeBlockProvider();
     _initializeNotifications();
+    _listenToMaintenance();
   }
 
+  Future<void> _initializeBlockProvider() async {
+    try {
+      _currentUserId = await _getCurrentUserId();
+      
+      if (_currentUserId == null) {
+        print('⚠️ [BlockProvider] userId nulo no init');
+        return;
+      }
+
+      // Aguardar context estar disponível
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (!mounted) return;
+      
+      final blockProvider = Provider.of<BlockProvider>(
+        navigatorKey.currentContext ?? context,
+        listen: false,
+      );
+      
+      await blockProvider.init(_currentUserId!);
+      _blockProviderInitialized = true;
+      
+      print('✅ [BlockProvider] Inicializado: $_currentUserId');
+    } catch (e, stack) {
+      print('❌ [BlockProvider] Erro: $e\n$stack');
+    }
+  }
+  
   Future<void> clearBadge() async {
     try {
       await _localNotifications.cancelAll();
@@ -133,50 +155,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       print('📱 App retornou ao foreground — zerando badge');
       NotificationService().clearBadge();
-    }
-  }
-
-  // ✅ MÉTODO DEDICADO E ROBUSTO PARA BLOCKPROVIDER
-  Future<void> _initializeBlockProvider() async {
-    if (_blockProviderInitialized) {
-      print('✅ BlockProvider já inicializado');
-      return;
-    }
-    
-    final userId = await _getCurrentUserId();
-    if (userId == null) {
-      print('⚠️ _initializeBlockProvider: userId nulo, retry em 2s...');
-      Future.delayed(const Duration(seconds: 2), _initializeBlockProvider);
-      return;
-    }
-
-    _currentUserId = userId;
-
-    try {
-      final blockProvider = Provider.of<BlockProvider>(context, listen: false);
-      
-      if (!blockProvider.isLoading && blockProvider.blockedSet.isNotEmpty) {
-        print('✅ BlockProvider já inicializado com dados: ${blockProvider.blockedSet.length} usuários');
-        _blockProviderInitialized = true;
-        return;
-      }
-
-      print('🔄 Inicializando BlockProvider com: $userId');
-      await blockProvider.init(userId);
-      
-      _blockProviderInitialized = true;
-      print('✅ BlockProvider inicializado com SUCESSO: $userId');
-      
-      // ✅ DEBUG ESPECÍFICO iOS
-      if (Platform.isIOS) {
-        print('📱 [iOS] BlockProvider OK - Bloqueados: ${blockProvider.blockedSet.length}');
-      }
-      
-    } catch (e, stackTrace) {
-      print('❌ Erro ao inicializar BlockProvider: $e');
-      print('Stack: $stackTrace');
-      // Retry em 3s (máx 3 tentativas)
-      Future.delayed(const Duration(seconds: 3), _initializeBlockProvider);
     }
   }
 
@@ -219,24 +197,33 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     });
   }
 
-  // ✅ SIMPLIFICADA: Notificações dependem do BlockProvider
   Future<void> _initializeNotifications() async {
     if (_notificationsInitialized) return;
 
     _initialMessage ??= await FirebaseMessaging.instance.getInitialMessage();
     if (_initialMessage != null) {
-      print('🚀 [TERMINATED] Notificação inicial: ${_initialMessage!.data}');
+      print(
+          '🚀 [TERMINATED] Notificação inicial capturada: ${_initialMessage!.data}');
     }
 
-    // ✅ Aguarda BlockProvider antes de continuar
-    await _initializeBlockProvider();
-    
+    _currentUserId = await _getCurrentUserId();
     if (_currentUserId == null) {
-      print('⚠️ userId nulo — notificações adiadas');
+      print('⚠️ userId nulo — notificações serão inicializadas pelo SplashPage');
       return;
     }
 
+    if (!_blockProviderInitialized && _currentUserId != null) {
+      final blockProvider = Provider.of<BlockProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
+      await blockProvider.init(_currentUserId!);
+      _blockProviderInitialized = true;
+      print('✅ BlockProvider inicializado com userId: $_currentUserId');
+    }
+
     _notificationsInitialized = true; 
+
     _currentUserRole = await _getUserRole(_currentUserId!);
 
     final service = NotificationService();
@@ -254,38 +241,43 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       },
     );
 
-    print('✅ Notificações inicializadas: $_currentUserId | $_currentUserRole');
+    print('✅ Callbacks configurados: $_currentUserId | $_currentUserRole');
   }
 
   Future<void> reinitializeNotifications(String userId) async {
+    if (_notificationsInitialized) return;
+
     print('🔄 Reinicializando notificações com userId: $userId');
-    
     _currentUserId = userId;
-    
-    // ✅ Re-inicializa BlockProvider se necessário
-    await _initializeBlockProvider();
-    
-    if (!_notificationsInitialized) {
-      _notificationsInitialized = true;
-      _currentUserRole = await _getUserRole(userId);
-
-      final service = NotificationService();
-      await service.initialize(userId);
-
-      service.updateCallbacks(
-        onChatTap: (chatId, senderId) async {
-          print('🔔 onChatTap: $chatId');
-          await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
-        },
-        onRequestTap: (requestType, profileId, vacancyId) async {
-          print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
-          await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
-              requestType, profileId, vacancyId);
-        },
+    _notificationsInitialized = true;
+    if (!_blockProviderInitialized) {
+      final blockProvider = Provider.of<BlockProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
       );
-
-      print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
+      await blockProvider.init(userId);
+      _blockProviderInitialized = true;
+      print('✅ BlockProvider RE-inicializado com userId: $userId');
     }
+
+    _currentUserRole = await _getUserRole(userId);
+
+    final service = NotificationService();
+    await service.initialize(userId);
+
+    service.updateCallbacks(
+      onChatTap: (chatId, senderId) async {
+        print('🔔 onChatTap: $chatId');
+        await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
+      },
+      onRequestTap: (requestType, profileId, vacancyId) async {
+        print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
+        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
+            requestType, profileId, vacancyId);
+      },
+    );
+
+    print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
   }
 
   Future<void> processInitialMessage() async {
@@ -433,7 +425,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
-        ChangeNotifierProvider(create: (_) => BlockProvider()), // ✅ GARANTIDO
+      ChangeNotifierProvider(create: (_) => BlockProvider()),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
