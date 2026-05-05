@@ -9,6 +9,7 @@ import 'package:dartobra_new/models/chat/message_model.dart';
 import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
 import 'package:dartobra_new/widgets/chat/message_bubble.dart';
 import 'package:dartobra_new/widgets/common/online_status_indicator.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -433,26 +434,68 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           ),
           TextButton(
             onPressed: () async {
-              final blockProvider = context.read<BlockProvider>();
-              Navigator.pop(context); // fecha o dialog
+              Navigator.pop(context); // Fecha o dialog
 
-              final success = await context
-                  .read<BlockProvider>()
-                  .blockUser(widget.otherUserId);
+              try {
+                // ✅ CORREÇÃO: Usa a mesma instância do provider
+                final blockProvider = context.read<BlockProvider>();
+                final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
-              if (!mounted) return;
+                if (currentUserId == null) {
+                  if (!mounted) return;
+                  _showError('Usuário não autenticado');
+                  return;
+                }
 
-              if (success) {
-                _showSuccess('Usuário bloqueado com sucesso!');
-                try {
-                  context.read<FeedController>().forceRefresh();
-                  context.read<search.SearchController>().forceRefresh();
-                } catch (_) {}
-                Navigator.pop(context);
-              } else {
-                final erro = blockProvider.lastError ??
-                    'Erro desconhecido'; // ← instância, não estático
-                _showError('Falha: $erro');
+                // ✅ CORREÇÃO: Inicializa se necessário (blockedSet vazio pode significar não inicializado)
+                if (blockProvider.blockedSet.isEmpty &&
+                    !blockProvider.isLoading) {
+                  print('🔄 Inicializando BlockProvider antes de bloquear...');
+                  await blockProvider.init(currentUserId);
+                }
+
+                // ✅ CORREÇÃO: Aguarda um momento para garantir que init completou
+                if (blockProvider.isLoading) {
+                  print('⏳ Aguardando BlockProvider terminar de carregar...');
+                  await Future.delayed(const Duration(milliseconds: 500));
+                }
+
+                final success =
+                    await blockProvider.blockUser(widget.otherUserId);
+
+                if (!mounted) return;
+
+                if (success) {
+                  print('✅ Bloqueio bem-sucedido, atualizando feeds...');
+
+                  // ✅ Atualiza os feeds
+                  try {
+                    context.read<FeedController>().forceRefresh();
+                    context.read<search.SearchController>().forceRefresh();
+                  } catch (e) {
+                    print('⚠️ Erro ao atualizar feeds: $e');
+                  }
+
+                  _showSuccess('Usuário bloqueado com sucesso!');
+
+                  // ✅ Aguarda um pouco para o usuário ver a mensagem
+                  await Future.delayed(const Duration(milliseconds: 500));
+
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                } else {
+                  // ✅ Mostra erro específico
+                  final erro = blockProvider.lastError ??
+                      'Erro desconhecido ao bloquear';
+                  print('❌ Falha ao bloquear: $erro');
+                  _showError('Falha: $erro');
+                }
+              } catch (e, stackTrace) {
+                print('❌ Exceção ao bloquear usuário: $e');
+                print('Stack trace: $stackTrace');
+
+                if (!mounted) return;
+                _showError('Erro inesperado: $e');
               }
             },
             child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
