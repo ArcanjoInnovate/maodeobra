@@ -3,7 +3,17 @@ import 'package:firebase_database/firebase_database.dart';
 class UserRelationShipService {
   final _db = FirebaseDatabase.instance.ref();
 
-  // ── Bloquear ──────────────────────────────────────────────
+  // ── Helper: normaliza valores booleanos do Firebase ──────────
+  // iOS pode retornar int (1) em vez de bool (true)
+  bool _isTruthy(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) return value == 'true' || value == '1';
+    return false;
+  }
+
+  // ── Bloquear ──────────────────────────────────────────────────
 
   /// Todos os IDs bloqueados (eu bloqueei + me bloquearam)
   Future<Set<String>> fetchAllBlockedUsers(String myUserId) async {
@@ -23,42 +33,29 @@ class UserRelationShipService {
     try {
       print('🔄 Tentando bloquear: $myUserId -> $targetUserId');
 
-      // ✅ CORREÇÃO: Verifica nos dois caminhos possíveis
-      final results = await Future.wait([
-        _db.child('Users/$myUserId/blocked_users/$targetUserId').get(),
-        _db.child('Users/$myUserId/blocked_users').child(targetUserId).get(),
-      ]);
+      // ✅ Verifica se já está bloqueado usando _isTruthy (corrige bug iOS)
+      final alreadySnap = await _db
+          .child('Users/$myUserId/blocked_users/$targetUserId')
+          .get();
 
-      final already1 = results[0].exists && results[0].value == true;
-      final already2 = results[1].exists && results[1].value == true;
-
-      if (already1 || already2) {
+      if (alreadySnap.exists && _isTruthy(alreadySnap.value)) {
         print('⚠️ Usuário já bloqueado anteriormente');
         return false;
       }
 
-      // ✅ CORREÇÃO: Usa transação para garantir atomicidade em iOS
+      // ✅ Grava o bloqueio de forma atômica
       final updates = <String, dynamic>{
         'Users/$myUserId/blocked_users/$targetUserId': true,
         'blocked_by/$targetUserId/$myUserId': true,
       };
 
       print('📝 Enviando updates: $updates');
-
-      // ✅ CORREÇÃO: Aguarda a confirmação da escrita
       await _db.update(updates);
 
-      // ✅ VALIDAÇÃO: Verifica se realmente foi gravado
-      await Future.delayed(const Duration(milliseconds: 500));
-      final verification = await _db
-          .child('Users/$myUserId/blocked_users/$targetUserId')
-          .get();
-
-      if (!verification.exists || verification.value != true) {
-        print('❌ FALHA: Bloqueio não foi persistido no Firebase');
-        return false;
-      }
-
+      // ✅ Confia no await do update() — não faz verificação pós-escrita
+      // A verificação anterior causava falso-negativo no iOS porque
+      // o Firebase iOS retorna 1 (int) em vez de true (bool),
+      // fazendo verification.value != true ser sempre true no iOS.
       print('✅ Usuário bloqueado com sucesso');
       return true;
     } catch (e, stackTrace) {
@@ -68,7 +65,7 @@ class UserRelationShipService {
     }
   }
 
-  // ── Desbloquear ───────────────────────────────────────────
+  // ── Desbloquear ───────────────────────────────────────────────
 
   Future<bool> unblockUser(String myUserId, String targetUserId) async {
     try {
@@ -88,32 +85,34 @@ class UserRelationShipService {
     }
   }
 
-  // ── Queries pontuais ──────────────────────────────────────
+  // ── Queries pontuais ──────────────────────────────────────────
 
   /// IDs que eu bloqueei
   Future<Set<String>> fetchUsersIBlocked(String myUserId) async {
     try {
       final snap = await _db.child('Users/$myUserId/blocked_users').get();
-      
+
       if (!snap.exists || snap.value == null) {
         print('ℹ️ fetchUsersIBlocked: Nenhum bloqueio encontrado');
         return {};
       }
 
       final value = snap.value;
-      
-      // ✅ CORREÇÃO: Tratamento robusto para diferentes tipos de dados
-      if (value is Map) {
-        final blocked = value.entries
-            .where((e) => e.value == true)
-            .map((e) => e.key.toString())
-            .toSet();
-        print('ℹ️ fetchUsersIBlocked: ${blocked.length} usuários bloqueados');
-        return blocked;
+
+      // ✅ Garante que é um Map antes de iterar
+      if (value is! Map) {
+        print('⚠️ fetchUsersIBlocked: Formato inesperado: ${value.runtimeType}');
+        return {};
       }
 
-      print('⚠️ fetchUsersIBlocked: Formato de dados inesperado: ${value.runtimeType}');
-      return {};
+      // ✅ Usa _isTruthy para compatibilidade iOS (int 1 == bool true)
+      final blocked = value.entries
+          .where((e) => _isTruthy(e.value))
+          .map((e) => e.key.toString())
+          .toSet();
+
+      print('ℹ️ fetchUsersIBlocked: ${blocked.length} usuários bloqueados');
+      return blocked;
     } catch (e, stackTrace) {
       print('❌ Erro fetchUsersIBlocked: $e');
       print('Stack trace: $stackTrace');
@@ -125,7 +124,7 @@ class UserRelationShipService {
   Future<Set<String>> fetchUsersWhoBlockedMe(String myUserId) async {
     try {
       final snap = await _db.child('blocked_by/$myUserId').get();
-      
+
       if (!snap.exists || snap.value == null) {
         print('ℹ️ fetchUsersWhoBlockedMe: Nenhum bloqueio recebido');
         return {};
@@ -133,18 +132,20 @@ class UserRelationShipService {
 
       final value = snap.value;
 
-      // ✅ CORREÇÃO: Tratamento robusto para diferentes tipos de dados
-      if (value is Map) {
-        final blockedBy = value.entries
-            .where((e) => e.value == true)
-            .map((e) => e.key.toString())
-            .toSet();
-        print('ℹ️ fetchUsersWhoBlockedMe: Bloqueado por ${blockedBy.length} usuários');
-        return blockedBy;
+      // ✅ Garante que é um Map antes de iterar
+      if (value is! Map) {
+        print('⚠️ fetchUsersWhoBlockedMe: Formato inesperado: ${value.runtimeType}');
+        return {};
       }
 
-      print('⚠️ fetchUsersWhoBlockedMe: Formato de dados inesperado: ${value.runtimeType}');
-      return {};
+      // ✅ Usa _isTruthy para compatibilidade iOS (int 1 == bool true)
+      final blockedBy = value.entries
+          .where((e) => _isTruthy(e.value))
+          .map((e) => e.key.toString())
+          .toSet();
+
+      print('ℹ️ fetchUsersWhoBlockedMe: Bloqueado por ${blockedBy.length} usuários');
+      return blockedBy;
     } catch (e, stackTrace) {
       print('❌ Erro fetchUsersWhoBlockedMe: $e');
       print('Stack trace: $stackTrace');
@@ -163,10 +164,14 @@ class UserRelationShipService {
         _db.child('blocked_by/$myUserId/$otherUserId').get(),
       ]);
 
-      final iBlockedThem = results[0].exists && results[0].value == true;
-      final theyBlockedMe = results[1].exists && results[1].value == true;
+      // ✅ Usa _isTruthy para compatibilidade iOS
+      final iBlockedThem =
+          results[0].exists && _isTruthy(results[0].value);
+      final theyBlockedMe =
+          results[1].exists && _isTruthy(results[1].value);
 
-      print('ℹ️ checkRelationship: iBlockedThem=$iBlockedThem, theyBlockedMe=$theyBlockedMe');
+      print(
+          'ℹ️ checkRelationship: iBlockedThem=$iBlockedThem, theyBlockedMe=$theyBlockedMe');
 
       return (
         iBlockedThem: iBlockedThem,
@@ -179,7 +184,7 @@ class UserRelationShipService {
     }
   }
 
-  // ── Streams para o provider ───────────────────────────────
+  // ── Streams para o provider ───────────────────────────────────
 
   Stream<DatabaseEvent> watchIBlocked(String myUserId) =>
       _db.child('Users/$myUserId/blocked_users').onValue;
