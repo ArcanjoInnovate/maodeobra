@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
-import 'package:dartobra_new/features/vacancy/controllers/worker_controller.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_professional_screen.dart';
 import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,12 +21,12 @@ class ProfessionalProfilePage extends StatefulWidget {
   final String reportedId;
 
   const ProfessionalProfilePage({
-    Key? key,
+    super.key,
     required this.professional,
     required this.vacancyId,
     required this.reportId,
     required this.reportedId,
-  }) : super(key: key);
+  });
 
   @override
   State<ProfessionalProfilePage> createState() =>
@@ -188,7 +188,8 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
   // ── Abre chat existente ────────────────────────────────────────────────
   Future<void> _openExistingChat() async {
-    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+    if (_existingChatId == null || _myRole == null || _ownerRole == null)
+      return;
 
     try {
       final currentUserId = FirebaseAuth.instance.currentUser?.uid;
@@ -201,8 +202,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
       final contractorId =
           _myRole == 'contractor' ? currentUserId : ownerLocalId;
-      final employeeId =
-          _myRole == 'employee' ? currentUserId : ownerLocalId;
+      final employeeId = _myRole == 'employee' ? currentUserId : ownerLocalId;
 
       await Navigator.push(
         context,
@@ -463,11 +463,10 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                               CircleAvatar(
                                 radius: 48,
                                 backgroundColor: Colors.white.withOpacity(0.1),
-                                backgroundImage:
-                                    widget.professional.avatar.isNotEmpty
-                                        ? NetworkImage(
-                                            widget.professional.avatar)
-                                        : null,
+                                backgroundImage: widget
+                                        .professional.avatar.isNotEmpty
+                                    ? NetworkImage(widget.professional.avatar)
+                                    : null,
                                 child: widget.professional.avatar.isEmpty
                                     ? const Icon(Icons.person,
                                         size: 48, color: Colors.white)
@@ -910,8 +909,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
         disabledBackgroundColor: _blue.withOpacity(0.6),
         disabledForegroundColor: Colors.white,
         elevation: 0,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -1049,7 +1047,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
               // ✅ Garante que o provider está inicializado
               final blockProvider = context.read<BlockProvider>();
               final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-              
+
               if (currentUserId != null && blockProvider.blockedSet.isEmpty) {
                 await blockProvider.init(currentUserId);
               }
@@ -1062,11 +1060,11 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context);
               } else {
-                _showError('Erro ao bloquear usuário.');
+                final erro = blockProvider.lastError ?? 'Erro desconhecido';
+                _showError('Falha: $erro');
               }
             },
-            child: const Text('Bloquear',
-                style: TextStyle(color: Colors.red)),
+            child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -1146,8 +1144,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
       final updates = <String, dynamic>{};
       updates['professionals/$professionalId/requests'] = requestsList;
       updates[
-              'professionals/$professionalId/views/request_views/$currentUserId'] =
-          {
+          'professionals/$professionalId/views/request_views/$currentUserId'] = {
         'viewed_by_owner': false,
         'requested_at': DateTime.now().millisecondsSinceEpoch,
         'contractor_name': userName,
@@ -1158,8 +1155,7 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
       try {
         await db
-            .child(
-                'user_requests/$currentUserId/professionals/$professionalId')
+            .child('user_requests/$currentUserId/professionals/$professionalId')
             .set(true);
       } catch (_) {}
 

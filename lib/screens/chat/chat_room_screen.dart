@@ -2,16 +2,16 @@
 
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
-import 'package:dartobra_new/services/badge/badge_service.dart';
+import 'package:dartobra_new/core/utils/date_utils.dart';
+import 'package:dartobra_new/models/chat/message_model.dart';
 import 'package:dartobra_new/screens/complaints/complaint_chat_screen.dart';
+import 'package:dartobra_new/services/badge/badge_service.dart';
 import 'package:dartobra_new/services/chat/chat_service.dart';
+import 'package:dartobra_new/widgets/chat/message_bubble.dart';
 import 'package:dartobra_new/widgets/common/online_status_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:dartobra_new/widgets/chat/message_bubble.dart';
-import 'package:dartobra_new/core/utils/date_utils.dart';
-import 'package:dartobra_new/models/chat/message_model.dart';
 
 class ChatRoomScreen extends StatefulWidget {
   final String chatId;
@@ -23,7 +23,7 @@ class ChatRoomScreen extends StatefulWidget {
   final String? otherUserAvatar;
 
   const ChatRoomScreen({
-    Key? key,
+    super.key,
     required this.chatId,
     required this.contractorId,
     required this.employeeId,
@@ -31,10 +31,10 @@ class ChatRoomScreen extends StatefulWidget {
     required this.userRole,
     required this.otherUserName,
     this.otherUserAvatar,
-  }) : super(key: key);
+  });
 
   String get otherUserId =>
-      '${userRole == 'contractor' ? employeeId : contractorId}';
+      userRole == 'contractor' ? employeeId : contractorId;
 
   @override
   State<ChatRoomScreen> createState() => _ChatRoomScreenState();
@@ -434,6 +434,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           ),
           TextButton(
             onPressed: () async {
+              final blockProvider = context.read<BlockProvider>();
               Navigator.pop(context); // fecha o dialog
 
               final success = await context
@@ -446,7 +447,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context); // fecha a tela
               } else {
-                _showError('Erro ao bloquear usuário.');
+                final erro = blockProvider.lastError ?? 'Erro desconhecido'; // ← instância, não estático
+                _showError('Falha: $erro');
               }
             },
             child: const Text('Bloquear', style: TextStyle(color: Colors.red)),

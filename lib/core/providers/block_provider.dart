@@ -60,22 +60,41 @@ class BlockProvider extends ChangeNotifier {
   }
   // ── Ações (delegam ao service, atualizam local imediatamente) ──
 
+  // Adicione esse getter temporário
+  String? _lastError;
+  String? get lastError => _lastError;
+
   Future<bool> blockUser(String targetUserId) async {
-    // ✅ Se não inicializado, tenta pegar userId do Firebase diretamente
+    _lastError = null;
+
     if (_myUserId == null) {
       final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return false;
+      if (currentUser == null) {
+        _lastError = 'Usuário não autenticado';
+        return false;
+      }
       await init(currentUser.uid);
     }
-    
-    if (_myUserId == null) return false;
-    
-    final success = await _service.blockUser(_myUserId!, targetUserId);
-    if (success) {
-      _blockedSet = {..._blockedSet, targetUserId};
-      notifyListeners();
+
+    if (_myUserId == null) {
+      _lastError = 'Falha ao inicializar provider';
+      return false;
     }
-    return success;
+
+    try {
+      final success = await _service.blockUser(_myUserId!, targetUserId);
+      if (!success) {
+        _lastError = 'Já bloqueado ou falha no service';
+      }
+      if (success) {
+        _blockedSet = {..._blockedSet, targetUserId};
+        notifyListeners();
+      }
+      return success;
+    } catch (e) {
+      _lastError = 'Exceção: $e';
+      return false;
+    }
   }
 
   Future<bool> unblockUser(String targetUserId) async {

@@ -1,15 +1,16 @@
+import 'dart:ui';
+
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
 import 'package:dartobra_new/screens/complaints/complaint_professional_screen.dart';
 import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 
 class ProfessionalProfileScreen extends StatefulWidget {
   final Map<String, dynamic> professional;
@@ -36,8 +37,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
   bool _isRequesting = false;
 
   // ID do dono do perfil
-  String get ownerLocalId =>
-      widget.professional['local_id']?.toString() ?? '';
+  String get ownerLocalId => widget.professional['local_id']?.toString() ?? '';
 
   // ✅ NOVO: Estado para chat existente
   bool _isCheckingChat = true;
@@ -91,7 +91,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     Future.delayed(const Duration(milliseconds: 250), () {
       if (mounted) _contentCtrl.forward();
     });
-    
+
     // ✅ NOVO: Verificar chat existente
     _checkExistingChat();
   }
@@ -160,7 +160,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
   // ✅ NOVO: Abrir chat existente
   Future<void> _openExistingChat() async {
-    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+    if (_existingChatId == null || _myRole == null || _ownerRole == null)
+      return;
 
     try {
       final userLookup = UserLookupService();
@@ -168,12 +169,10 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
       if (!mounted) return;
 
-      final contractorId = _myRole == 'contractor' 
-          ? widget.currentUserId 
-          : ownerLocalId;
-      final employeeId = _myRole == 'employee' 
-          ? widget.currentUserId 
-          : ownerLocalId;
+      final contractorId =
+          _myRole == 'contractor' ? widget.currentUserId : ownerLocalId;
+      final employeeId =
+          _myRole == 'employee' ? widget.currentUserId : ownerLocalId;
 
       await Navigator.push(
         context,
@@ -187,7 +186,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               userRole: _myRole!,
               userId: widget.currentUserId,
               otherUserName: ownerData.name,
-              otherUserAvatar: ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
+              otherUserAvatar:
+                  ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
             ),
           ),
         ),
@@ -1131,13 +1131,12 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
               // ✅ Garante que o provider está inicializado
               final blockProvider = context.read<BlockProvider>();
               final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-              
+
               if (currentUserId != null && blockProvider.blockedSet.isEmpty) {
                 await blockProvider.init(currentUserId);
               }
-              final success = await context
-                  .read<BlockProvider>()
-                  .blockUser(ownerLocalId);
+              final success =
+                  await context.read<BlockProvider>().blockUser(ownerLocalId);
 
               if (!mounted) return;
 
@@ -1145,11 +1144,11 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context);
               } else {
-                _showError('Erro ao bloquear usuário.');
+                final erro = blockProvider.lastError ?? 'Erro desconhecido';
+                _showError('Falha: $erro');
               }
             },
-            child: const Text('Bloquear',
-                style: TextStyle(color: Colors.red)),
+            child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -1245,8 +1244,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
       final updates = <String, dynamic>{};
       updates['professionals/${widget.professionalId}/requests'] = requestsList;
       updates[
-          'professionals/${widget.professionalId}/views/request_views/$currentUserId'] =
-          {
+          'professionals/${widget.professionalId}/views/request_views/$currentUserId'] = {
         'viewed_by_owner': false,
         'requested_at': DateTime.now().millisecondsSinceEpoch,
         'contractor_name': userName,

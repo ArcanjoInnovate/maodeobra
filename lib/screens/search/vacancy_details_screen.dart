@@ -1,5 +1,7 @@
 // lib/pages/vacancy_detail_page.dart
 
+import 'dart:ui';
+
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
@@ -8,12 +10,11 @@ import 'package:dartobra_new/screens/complaints/complaint_vacancy_screen.dart';
 import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 
 class VacancyDetailPage extends StatefulWidget {
   final VacancyModel vacancy;
@@ -1231,7 +1232,8 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context);
               } else {
-                _showError('Erro ao bloquear usuário.');
+                final erro = blockProvider.lastError ?? 'Erro desconhecido';
+  _showError('Falha: $erro');
               }
             },
             child: const Text('Bloquear',

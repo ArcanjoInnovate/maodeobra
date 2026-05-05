@@ -1,5 +1,7 @@
 // lib/screens/feed/vacancy_detail.dart
 
+import 'dart:ui';
+
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/screens/chat/chat_room_screen.dart';
@@ -7,12 +9,11 @@ import 'package:dartobra_new/screens/complaints/complaint_vacancy_screen.dart';
 import 'package:dartobra_new/services/chat/user_lookup_service.dart';
 import 'package:dartobra_new/services/vacancy/profile_validation_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 
 class VacancyDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> vacancy;
@@ -41,7 +42,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   bool _isApplying = false;
   int _currentImageIndex = 0;
   late PageController _pageController;
-  
+
   // ✅ NOVO: Estado para chat existente
   bool _isCheckingChat = true;
   String? _existingChatId;
@@ -86,7 +87,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) _contentCtrl.forward();
     });
-    
+
     // ✅ NOVO: Verificar chat existente
     _checkExistingChat();
   }
@@ -155,7 +156,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
 
   // ✅ NOVO: Abrir chat existente
   Future<void> _openExistingChat() async {
-    if (_existingChatId == null || _myRole == null || _ownerRole == null) return;
+    if (_existingChatId == null || _myRole == null || _ownerRole == null)
+      return;
 
     try {
       final userLookup = UserLookupService();
@@ -163,12 +165,10 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
 
       if (!mounted) return;
 
-      final contractorId = _myRole == 'contractor' 
-          ? widget.currentUserId 
-          : ownerLocalId;
-      final employeeId = _myRole == 'employee' 
-          ? widget.currentUserId 
-          : ownerLocalId;
+      final contractorId =
+          _myRole == 'contractor' ? widget.currentUserId : ownerLocalId;
+      final employeeId =
+          _myRole == 'employee' ? widget.currentUserId : ownerLocalId;
 
       await Navigator.push(
         context,
@@ -182,7 +182,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
               userRole: _myRole!,
               userId: widget.currentUserId,
               otherUserName: ownerData.name,
-              otherUserAvatar: ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
+              otherUserAvatar:
+                  ownerData.avatar.isNotEmpty ? ownerData.avatar : null,
             ),
           ),
         ),
@@ -393,9 +394,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
           scale: _heroScale,
           child: FadeTransition(
             opacity: _heroOpacity,
-            child: images.isNotEmpty
-                ? _buildImageHero(images)
-                : _buildIconHero(v),
+            child:
+                images.isNotEmpty ? _buildImageHero(images) : _buildIconHero(v),
           ),
         ),
       ),
@@ -677,8 +677,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
                 color: _blueSurface,
                 borderRadius: BorderRadius.circular(30),
@@ -1238,8 +1237,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Container(
@@ -1272,13 +1270,12 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
               // ✅ Garante que o provider está inicializado
               final blockProvider = context.read<BlockProvider>();
               final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-              
+
               if (currentUserId != null && blockProvider.blockedSet.isEmpty) {
                 await blockProvider.init(currentUserId);
               }
-              final success = await context
-                  .read<BlockProvider>()
-                  .blockUser(ownerLocalId);
+              final success =
+                  await context.read<BlockProvider>().blockUser(ownerLocalId);
 
               if (!mounted) return;
 
@@ -1286,11 +1283,11 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
                 _showSuccess('Usuário bloqueado com sucesso!');
                 Navigator.pop(context);
               } else {
-                _showError('Erro ao bloquear usuário.');
+                final erro = blockProvider.lastError ?? 'Erro desconhecido';
+                _showError('Falha: $erro');
               }
             },
-            child: const Text('Bloquear',
-                style: TextStyle(color: Colors.red)),
+            child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
