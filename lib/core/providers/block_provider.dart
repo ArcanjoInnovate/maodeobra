@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dartobra_new/core/services/user_relationship_service.dart';
@@ -28,34 +29,18 @@ class BlockProvider extends ChangeNotifier {
   // ── Init / Logout ─────────────────────────
 
   Future<void> init(String userId) async {
-    if (_myUserId == userId && _blockedSet.isNotEmpty) {
-      print('⚠️ [BlockProvider] Já inicializado para $userId');
-      return;
-    }
-    
+    if (_myUserId == userId) return;
     _myUserId = userId;
+
     _isLoading = true;
     notifyListeners();
 
-    try {
-      await _reload();
-      _startListeners();
-    } catch (e, stack) {
-      print('❌ [BlockProvider] Erro no init: $e\n$stack');
-      // ✅ Fallback: tentar novamente após 2s
-      await Future.delayed(const Duration(seconds: 2));
-      try {
-        await _reload();
-        _startListeners();
-      } catch (e2) {
-        print('❌ [BlockProvider] Fallback falhou: $e2');
-      }
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
+    await _reload();
+    _startListeners();
 
+    _isLoading = false;
+    notifyListeners();
+  }
 
   void logout() {
     _cancelListeners();
@@ -76,8 +61,15 @@ class BlockProvider extends ChangeNotifier {
   // ── Ações (delegam ao service, atualizam local imediatamente) ──
 
   Future<bool> blockUser(String targetUserId) async {
+    // ✅ Se não inicializado, tenta pegar userId do Firebase diretamente
+    if (_myUserId == null) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return false;
+      await init(currentUser.uid);
+    }
+    
     if (_myUserId == null) return false;
-
+    
     final success = await _service.blockUser(_myUserId!, targetUserId);
     if (success) {
       _blockedSet = {..._blockedSet, targetUserId};

@@ -1046,7 +1046,13 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-
+              // ✅ Garante que o provider está inicializado
+              final blockProvider = context.read<BlockProvider>();
+              final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+              
+              if (currentUserId != null && blockProvider.blockedSet.isEmpty) {
+                await blockProvider.init(currentUserId);
+              }
               final success =
                   await context.read<BlockProvider>().blockUser(ownerLocalId);
 

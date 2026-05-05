@@ -82,10 +82,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     _contentOpacity = Tween<double>(begin: 0.0, end: 1.0)
         .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
 
-     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _initBlockProvider();
-    });
-
     _heroCtrl.forward();
     Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) _contentCtrl.forward();
@@ -1238,21 +1234,6 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   // DIÁLOGOS
   // ══════════════════════════════
 
-  Future<void> _initBlockProvider() async {
-    try {
-      final blockProvider = Provider.of<BlockProvider>(context, listen: false);
-      
-      // Só inicializa se necessário
-      if (blockProvider.isLoading || blockProvider.blockedSet.isEmpty) {
-        print('🔄 [ProfileScreen] Init BlockProvider: ${widget.currentUserId}');
-        await blockProvider.init(widget.currentUserId);
-        print('✅ [ProfileScreen] BlockProvider OK: ${blockProvider.blockedSet.length}');
-      }
-    } catch (e) {
-      print('❌ [ProfileScreen] BlockProvider erro: $e');
-    }
-  }
-  
   void _showBlockDialog() {
     showDialog(
       context: context,
@@ -1288,7 +1269,13 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-
+              // ✅ Garante que o provider está inicializado
+              final blockProvider = context.read<BlockProvider>();
+              final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+              
+              if (currentUserId != null && blockProvider.blockedSet.isEmpty) {
+                await blockProvider.init(currentUserId);
+              }
               final success = await context
                   .read<BlockProvider>()
                   .blockUser(ownerLocalId);

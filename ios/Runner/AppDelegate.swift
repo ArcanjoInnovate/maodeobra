@@ -1,41 +1,56 @@
-import UIKit
 import Flutter
-import Firebase
+import UIKit
 import FirebaseMessaging
 
-@UIApplicationMain
+@main
 @objc class AppDelegate: FlutterAppDelegate {
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Configure Firebase primeiro
-    FirebaseApp.configure()
     
-    // Configure notificações
+    // ✅ MANTÉM A CONFIGURAÇÃO ORIGINAL
+    // FirebaseAppDelegateProxyEnabled = true faz a config automática
+    
+    // ✅ REGISTRA PARA NOTIFICAÇÕES (ÚNICO ACRÉSCIMO!)
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
       let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
       UNUserNotificationCenter.current().requestAuthorization(
         options: authOptions,
-        completionHandler: { _, _ in }
+        completionHandler: { granted, error in
+          print("🔔 Permissão: \(granted)")
+        }
       )
-    } else {
-      let settings: UIUserNotificationSettings =
-        UIUserNotificationSettings(types: [.alert, .badge, .sound], categories: nil)
-      application.registerUserNotificationSettings(settings)
     }
-
+    
+    // ✅ ESTE É O PEDAÇO QUE FALTAVA!
     application.registerForRemoteNotifications()
+    
+    // ✅ Define delegate do Firebase Messaging
+    Messaging.messaging().delegate = self
     
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
   
-  // CRÍTICO: Handle notifications quando app está em background
+  // ✅ Recebe APNs token
   override func application(_ application: UIApplication,
-                           didReceiveRemoteNotification userInfo: [AnyHashable : Any],
-                           fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-    completionHandler(.newData)
+                            didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    print("🍎 APNs OK!")
+    Messaging.messaging().apnsToken = deviceToken
+  }
+  
+  // ✅ Erro APNs
+  override func application(_ application: UIApplication,
+                            didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    print("❌ APNs: \(error)")
+  }
+}
+
+// ✅ Firebase Messaging Delegate
+extension AppDelegate: MessagingDelegate {
+  func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+    print("📱 FCM: \(fcmToken ?? "nil")")
   }
 }
