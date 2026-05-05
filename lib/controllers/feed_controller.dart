@@ -13,39 +13,33 @@ class FeedController with ChangeNotifier {
   final FirebaseFeedService _feedService = FirebaseFeedService();
   String? _currentUserId;
   final IBGEService _ibgeService = IBGEService();
-  late final UserRelationShipController _userController = UserRelationShipController();
+  final UserRelationShipController _userController = UserRelationShipController();
   final ExpirationService _expirationService = ExpirationService();
-  
 
-  // ===============================
-  // STATE
-  // ===============================
+  // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
+  // Antes não existia — o set era criado localmente e descartado logo depois
+  Set<String> _blockedUserIds = {};
+
   FeedMode _feedMode = FeedMode.unified;
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _loadingCities = false;
 
-  // DADOS CARREGADOS - ambos sempre presentes
   List<VacancyModel> _allVacancies = [];
   List<ProfessionalModel> _allProfessionals = [];
-
-  // Lista filtrada de vagas
   List<VacancyModel> _filteredVacancies = [];
 
-  // EXCLUSOES (apenas requests, chat NAO exclui mais)
   Set<String> _requestedVacancyIds = {};
   Set<String> _requestedProfessionalIds = {};
   Set<String> _chatUserIds = {};
   bool _requestsLoaded = false;
   bool _chatsLoaded = false;
 
-  // FILTROS
   String? _filterState;
   String? _filterCity;
   String? _preferredProfession;
   String _searchQuery = '';
 
-  // PAGINACAO - separada por tipo
   bool _hasMoreVacancies = true;
   bool _hasMoreProfessionals = true;
   String? _lastCreatedAt;
@@ -53,35 +47,37 @@ class FeedController with ChangeNotifier {
   String? _lastVacancyKey;
   String? _lastProfessionalKey;
 
-  // ESTADOS/CIDADES DISPONIVEIS
   List<Estado> _availableStates = [];
   List<Cidade> _availableCities = [];
 
-  // ===============================
-  // GETTERS
-  // ===============================
+  // ── Getters ──────────────────────────────────────────────────────────────
+
   FeedMode get feedMode => _feedMode;
   bool get isLoading => _isLoading;
   bool get isLoadingMore => _isLoadingMore;
   bool get loadingCities => _loadingCities;
   bool get hasMore => _hasMoreVacancies || _hasMoreProfessionals;
-
   String? get filterState => _filterState;
   String? get filterCity => _filterCity;
   String? get preferredProfession => _preferredProfession;
   String get searchQuery => _searchQuery;
-
   List<Estado> get availableStates => _availableStates;
   List<Cidade> get availableCities => _availableCities;
-
   List<VacancyModel> get filteredVacancies => _filteredVacancies;
 
-  // CORRIGIDO: Removido bypass por chat - profissionais com chat sao tratados normalmente
+  // ✅ CORREÇÃO: getter agora filtra bloqueados da memória também
+  // Antes: filtrava só requests — bloqueados passavam direto
   List<ProfessionalModel> get filteredProfessionals =>
       _allProfessionals.where((p) {
+        // ← NOVO: remove da memória quem está bloqueado
+        if (_blockedUserIds.isNotEmpty &&
+            p.localId.isNotEmpty &&
+            _blockedUserIds.contains(p.localId)) return false;
+
         if (_currentUserId != null && p.localId == _currentUserId) return true;
-        if (_requestsLoaded && _requestedProfessionalIds.contains(p.localId))
+        if (_requestsLoaded && _requestedProfessionalIds.contains(p.localId)) {
           return false;
+        }
         return true;
       }).toList();
 
@@ -89,7 +85,6 @@ class FeedController with ChangeNotifier {
     final List<dynamic> combined = [];
     final vacancies = filteredVacancies;
     final professionals = filteredProfessionals;
-
     int vi = 0, pi = 0;
     while (vi < vacancies.length || pi < professionals.length) {
       if (vi < vacancies.length) combined.add(vacancies[vi++]);
@@ -103,25 +98,20 @@ class FeedController with ChangeNotifier {
     return '$total itens disponiveis';
   }
 
-  bool get hasActiveFilters {
-    return _filterState != null ||
-        _filterCity != null ||
-        _preferredProfession != null ||
-        _searchQuery.isNotEmpty;
-  }
+  bool get hasActiveFilters =>
+      _filterState != null ||
+      _filterCity != null ||
+      _preferredProfession != null ||
+      _searchQuery.isNotEmpty;
 
-  // ===============================
-  // VERIFICADORES DE REQUEST
-  // ===============================
   bool hasRequestedVacancy(String vacancyId) =>
       _requestedVacancyIds.contains(vacancyId);
 
   bool hasRequestedProfessional(String professionalLocalId) =>
       _requestedProfessionalIds.contains(professionalLocalId);
 
-  // ===============================
-  // INICIALIZACAO
-  // ===============================
+  // ── Inicialização ─────────────────────────────────────────────────────────
+
   Future<void> initialize({
     required FeedMode mode,
     String? initialState,
@@ -142,18 +132,15 @@ class FeedController with ChangeNotifier {
     try {
       await _loadStates();
       if (initialState != null) await _loadCities(initialState);
-      if (_currentUserId != null) {
-        await _userController.fetchAllBlockedUsers(_currentUserId!);
-      }
+
+      // ✅ carrega e SALVA no campo _blockedUserIds
+      await _loadBlockedUsers();
 
       await _loadChats();
       await _loadInitialFeed();
       await _applyFilters();
-      print('Feed unificado inicializado!');
-      print('   Filtros ativos:');
-      print('      - Estado: ${_filterState ?? "Todos"}');
-      print('      - Cidade: ${_filterCity ?? "Todas"}');
-      print('      - Profissao: ${_preferredProfession ?? "Todas"}');
+
+      print('Feed inicializado! Bloqueados: ${_blockedUserIds.length}');
     } catch (e, stack) {
       print('Erro ao inicializar feed: $e\nStack: $stack');
     } finally {
@@ -162,9 +149,22 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // ESTADOS/CIDADES
-  // ===============================
+  // ✅ NOVO: método dedicado para carregar e persistir bloqueados
+  // Centraliza num lugar só — não esquece de salvar nunca mais
+  Future<void> _loadBlockedUsers() async {
+    if (_currentUserId == null) return;
+    try {
+      final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
+      _blockedUserIds = list.toSet();
+      print('✅ _blockedUserIds atualizado: ${_blockedUserIds.length}');
+    } catch (e) {
+      print('❌ Erro ao carregar bloqueados: $e');
+      _blockedUserIds = {};
+    }
+  }
+
+  // ── Estados / Cidades ─────────────────────────────────────────────────────
+
   Future<void> _loadStates() async {
     try {
       _availableStates = await _ibgeService.getEstados();
@@ -173,12 +173,8 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  
   Future<void> _loadCities(String uf) async {
-    if (uf.isEmpty) {
-      _availableCities = [];
-      return;
-    }
+    if (uf.isEmpty) { _availableCities = []; return; }
     _loadingCities = true;
     notifyListeners();
     try {
@@ -191,9 +187,8 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // CHATS
-  // ===============================
+  // ── Chats ─────────────────────────────────────────────────────────────────
+
   Future<void> _loadChats() async {
     if (_chatsLoaded) return;
     try {
@@ -204,9 +199,8 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // REQUESTS (lazy)
-  // ===============================
+  // ── Requests (lazy) ───────────────────────────────────────────────────────
+
   Future<void> ensureRequestsLoaded() async {
     if (_requestsLoaded) return;
     try {
@@ -220,9 +214,8 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // FEED INICIAL
-  // ===============================
+  // ── Feed inicial ──────────────────────────────────────────────────────────
+
   Future<void> _loadInitialFeed() async {
     _allVacancies = [];
     _allProfessionals = [];
@@ -235,9 +228,8 @@ class FeedController with ChangeNotifier {
     await _loadMoreItems();
   }
 
-  // ===============================
-  // PAGINACAO - carrega os DOIS tipos
-  // ===============================
+  // ── Paginação ─────────────────────────────────────────────────────────────
+
   Future<void> loadMoreItems() async {
     if (_isLoadingMore || !hasMore) return;
     await _loadMoreItems();
@@ -249,18 +241,14 @@ class FeedController with ChangeNotifier {
 
     try {
       print('\nCarregando mais itens...');
-      print('   Filtros aplicados:');
-      print('   - Estado: ${_filterState ?? "Todos"}');
-      print('   - Cidade: ${_filterCity ?? "Todas"}');
-      print('   - Profissao: ${_preferredProfession ?? "Todas"}');
+      print('   Bloqueados: ${_blockedUserIds.length}');
 
-      // Busca vagas
+      // ✅ CORREÇÃO: usa _blockedUserIds do campo, não busca do Firebase de novo
+      // Antes: chamava fetchAllBlockedUsers() duas vezes, jogava fora o resultado
+      // e _applyFilters nunca sabia quem estava bloqueado
       if (_hasMoreVacancies) {
-        final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!);
-        final blockedUserIds = blockedList.toSet();
-
         final resultV = await _feedService.fetchVacanciesForFeed(
-          blockedUserIds: blockedUserIds,
+          blockedUserIds: _blockedUserIds,
           filterState: _filterState,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
@@ -277,13 +265,10 @@ class FeedController with ChangeNotifier {
         print('   ${resultV.items.length} vagas carregadas');
       }
 
-      // Busca profissionais
       if (_hasMoreProfessionals) {
-        final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!); // ✅
-        final blockedUserIds = blockedList.toSet();
         final resultP = await _feedService.fetchProfessionalsForFeed(
           filterState: _filterState,
-          blockedUserIds: blockedUserIds,
+          blockedUserIds: _blockedUserIds,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
           chatUserIds: _chatUserIds,
@@ -300,9 +285,8 @@ class FeedController with ChangeNotifier {
       }
 
       print(
-          '   Total no feed: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
+          '   Total: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
 
-      // Reaplica filtros apos carregar mais dados
       await _applyFilters();
     } catch (e) {
       print('Erro ao carregar mais itens: $e');
@@ -312,75 +296,58 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ===============================
-  // UTILITARIOS DE FILTRO
-  // ===============================
+  // ── Filtros ───────────────────────────────────────────────────────────────
+
   bool _matchesVacancy(VacancyModel vacancy, String query) {
     if (query.isEmpty) return true;
-    final lowerQuery = query.toLowerCase();
-    return vacancy.title.toLowerCase().contains(lowerQuery) ||
-        vacancy.profession.toLowerCase().contains(lowerQuery) ||
-        vacancy.description.toLowerCase().contains(lowerQuery);
+    final q = query.toLowerCase();
+    return vacancy.title.toLowerCase().contains(q) ||
+        vacancy.profession.toLowerCase().contains(q) ||
+        vacancy.description.toLowerCase().contains(q);
   }
 
-  // ===============================
-  // FILTROS
-  // ===============================
   Future<void> _applyFilters() async {
-    print('DEBUG - Antes dos filtros: ${_allVacancies.length} vagas totais');
+    print('DEBUG - Vagas na memória: ${_allVacancies.length}');
+    print('DEBUG - Bloqueados no filtro: ${_blockedUserIds.length}');
 
-    // GARANTE DADOS CARREGADOS
     await ensureRequestsLoaded();
     await _loadChats();
 
     _filteredVacancies = _allVacancies.where((vac) {
-      // CORRIGIDO: Removido bypass por chat
-      // Vagas com chat existente agora passam pelos filtros normais
+      // ✅ CORREÇÃO: filtra bloqueados que já estão na memória
+      // Antes: este bloco não existia — server-side filtrava mas memória não
+      if (_blockedUserIds.isNotEmpty &&
+          vac.localId.isNotEmpty &&
+          _blockedUserIds.contains(vac.localId)) return false;
 
-      // 1 - NAO MOSTRA: request pendente
       if (_requestsLoaded && _requestedVacancyIds.contains(vac.id)) {
         return false;
       }
 
-      // 2 - Status invalido
-      final statusLower = (vac.status ?? '').toLowerCase();
-      if (statusLower == 'expirada' || statusLower == 'pausada') {
-        return false;
-      }
+      final statusLower = vac.status.toLowerCase();
+      if (statusLower == 'expirada' || statusLower == 'pausada') return false;
 
-      // 3 - Expirado por data
       if (vac.expiresAt.isNotEmpty &&
-          _expirationService.isExpired(vac.expiresAt)) {
-        return false;
-      }
+          _expirationService.isExpired(vac.expiresAt)) return false;
 
-      // 4 - Filtros de busca
-      if (!_matchesVacancy(vac, _searchQuery)) {
-        return false;
-      }
+      if (!_matchesVacancy(vac, _searchQuery)) return false;
 
-      // 5 - Filtros adicionais: estado, cidade, profissao
       if (_filterState != null &&
           _filterState!.isNotEmpty &&
-          vac.state != _filterState) {
-        return false;
-      }
+          vac.state != _filterState) return false;
+
       if (_filterCity != null &&
           _filterCity!.isNotEmpty &&
-          vac.city != _filterCity) {
-        return false;
-      }
+          vac.city != _filterCity) return false;
+
       if (_preferredProfession != null &&
           _preferredProfession!.isNotEmpty &&
-          vac.profession != _preferredProfession) {
-        return false;
-      }
+          vac.profession != _preferredProfession) return false;
 
       return true;
     }).toList();
 
-    print(
-        'FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visiveis');
+    print('FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visíveis');
     notifyListeners();
   }
 
@@ -389,13 +356,6 @@ class FeedController with ChangeNotifier {
     String? city,
     String? profession,
   }) async {
-    print('\n========================================');
-    print('   APLICANDO FILTROS');
-    print('========================================');
-    print('   Estado: ${state ?? "Todos"}');
-    print('   Cidade: ${city ?? "Todas"}');
-    print('   Profissao: ${profession ?? "Todas"}');
-
     _filterState = state;
     _filterCity = city;
     _preferredProfession = profession;
@@ -408,15 +368,9 @@ class FeedController with ChangeNotifier {
 
     _isLoading = true;
     notifyListeners();
-
-    // Recarrega feed e aplica filtros
     await _loadInitialFeed();
-
     _isLoading = false;
     notifyListeners();
-
-    print('Filtros aplicados com sucesso!');
-    print('========================================\n');
   }
 
   Future<void> setSearchQuery(String query) async {
@@ -425,7 +379,6 @@ class FeedController with ChangeNotifier {
   }
 
   Future<void> clearFilters() async {
-    print('\nLimpando filtros...');
     _filterState = null;
     _filterCity = null;
     _preferredProfession = null;
@@ -436,12 +389,10 @@ class FeedController with ChangeNotifier {
     await _loadInitialFeed();
     _isLoading = false;
     notifyListeners();
-    print('Filtros limpos!\n');
   }
 
-  // ===============================
-  // REFRESH
-  // ===============================
+  // ── Refresh ───────────────────────────────────────────────────────────────
+
   Future<void> forceRefresh() async {
     _requestsLoaded = false;
     _chatsLoaded = false;
@@ -451,10 +402,9 @@ class FeedController with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // ✅ Recarrega bloqueados antes de tudo
-    if (_currentUserId != null) {
-      await _userController.fetchAllBlockedUsers(_currentUserId!);
-    }
+    // ✅ CORREÇÃO: recarrega e SALVA bloqueados antes de tudo
+    // Antes: buscava mas resultado sumia — _applyFilters continuava vazio
+    await _loadBlockedUsers();
 
     await _loadChats();
     await _loadInitialFeed();

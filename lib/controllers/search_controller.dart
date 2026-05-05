@@ -1,5 +1,3 @@
-// lib/controllers/search_controller.dart
-
 import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/services/cache/cache_service.dart';
@@ -19,11 +17,14 @@ class SearchController extends ChangeNotifier {
   final ExpirationService _expirationService = ExpirationService();
   final IBGEService _ibgeService = IBGEService();
   final CacheService _cacheService = CacheService();
-
-  // ✅ IGUAL AO FEEDCONTROLLER — instância local, busca direto do Firebase
-  final UserRelationShipController _userController = UserRelationShipController();
+  final UserRelationShipController _userController =
+      UserRelationShipController();
 
   String? _currentUserId;
+
+  // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
+  // Antes não existia — o set era criado localmente e descartado logo depois
+  Set<String> _blockedUserIds = {};
 
   List<ProfessionalModel> _allProfessionals = [];
   List<VacancyModel> _allVacancies = [];
@@ -59,9 +60,8 @@ class SearchController extends ChangeNotifier {
   List<Cidade> _cidades = [];
   bool _loadingCidades = false;
 
-  // ===============================
-  // GETTERS
-  // ===============================
+  // ── Getters ───────────────────────────────────────────────────────────────
+
   List<ProfessionalModel> get filteredProfessionals => _filteredProfessionals;
   List<VacancyModel> get filteredVacancies => _filteredVacancies;
   List<String> get professions => _professions;
@@ -89,9 +89,8 @@ class SearchController extends ChangeNotifier {
   bool hasRequestedProfessional(String professionalId) =>
       _requestedProfessionalIds.contains(professionalId);
 
-  // ===============================
-  // INICIALIZAR — IGUAL FEEDCONTROLLER
-  // ===============================
+  // ── Inicialização ─────────────────────────────────────────────────────────
+
   Future<void> initialize() async {
     if (_isLoading) return;
 
@@ -105,13 +104,9 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ✅ 1º BLOQUEADOS — igual FeedController
-      if (_currentUserId != null) {
-        await _userController.fetchAllBlockedUsers(_currentUserId!);
-        print('✅ Bloqueados carregados');
-      }
+      // ✅ CORREÇÃO: carrega e SALVA bloqueados no campo
+      await _loadBlockedUsers();
 
-      // Limpa cache para garantir dados frescos
       await _cacheService.clearAll();
 
       if (_professions.isEmpty) {
@@ -119,7 +114,6 @@ class SearchController extends ChangeNotifier {
       }
       if (_estados.isEmpty) {
         _estados = await _ibgeService.getEstados();
-        print('${_estados.length} estados carregados');
       }
 
       await _loadFirstPage();
@@ -133,14 +127,23 @@ class SearchController extends ChangeNotifier {
     }
   }
 
-  // ===============================
-  // PRIMEIRA PAGINA — IGUAL FEEDCONTROLLER
-  // ===============================
+  // ✅ NOVO: método dedicado para carregar e persistir bloqueados
+  Future<void> _loadBlockedUsers() async {
+    if (_currentUserId == null) return;
+    try {
+      final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
+      _blockedUserIds = list.toSet();
+      print('✅ Search _blockedUserIds: ${_blockedUserIds.length}');
+    } catch (e) {
+      print('❌ Erro ao carregar bloqueados no Search: $e');
+      _blockedUserIds = {};
+    }
+  }
+
+  // ── Primeira página ───────────────────────────────────────────────────────
+
   Future<void> _loadFirstPage() async {
-    // ✅ Busca direto do Firebase — igual FeedController
-    final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!);
-    final blockedUserIds = blockedList.toSet();
-    print('_loadFirstPage — ${blockedUserIds.length} bloqueados: $blockedUserIds');
+    print('_loadFirstPage — bloqueados: ${_blockedUserIds.length}');
 
     _lastProfessionalKey = null;
     _lastProfessionalValue = null;
@@ -149,8 +152,9 @@ class SearchController extends ChangeNotifier {
     _hasMoreProfessionals = true;
     _hasMoreVacancies = true;
 
+    // ✅ usa _blockedUserIds do campo — não busca de novo
     final profResult = await _firebaseService.fetchProfessionalsPaginated(
-      blockedUserIds: blockedUserIds,
+      blockedUserIds: _blockedUserIds,
       limit: ITEMS_PER_PAGE,
     );
     _allProfessionals = profResult.items;
@@ -159,7 +163,7 @@ class SearchController extends ChangeNotifier {
     _lastProfessionalValue = profResult.lastValue;
 
     final vacResult = await _firebaseService.fetchVacanciesPaginated(
-      blockedUserIds: blockedUserIds,
+      blockedUserIds: _blockedUserIds,
       limit: ITEMS_PER_PAGE,
     );
     _allVacancies = vacResult.items;
@@ -170,9 +174,8 @@ class SearchController extends ChangeNotifier {
     print('${_allProfessionals.length} profs + ${_allVacancies.length} vagas');
   }
 
-  // ===============================
-  // PAGINACAO — IGUAL FEEDCONTROLLER
-  // ===============================
+  // ── Paginação ─────────────────────────────────────────────────────────────
+
   Future<void> loadMoreItems() async {
     if (_isLoadingMore || !hasMore) return;
 
@@ -180,13 +183,10 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ✅ Busca direto do Firebase — igual FeedController
-      final blockedList = await _userController.fetchAllBlockedUsers(_currentUserId!);
-      final blockedUserIds = blockedList.toSet();
-
+      // ✅ usa _blockedUserIds do campo — não busca de novo
       if (_searchType == SearchType.professionals) {
         final result = await _firebaseService.fetchProfessionalsPaginated(
-          blockedUserIds: blockedUserIds,
+          blockedUserIds: _blockedUserIds,
           limit: ITEMS_PER_PAGE,
           endAtKey: _lastProfessionalKey,
           endAtValue: _lastProfessionalValue,
@@ -197,7 +197,7 @@ class SearchController extends ChangeNotifier {
         _lastProfessionalValue = result.lastValue;
       } else {
         final result = await _firebaseService.fetchVacanciesPaginated(
-          blockedUserIds: blockedUserIds,
+          blockedUserIds: _blockedUserIds,
           limit: ITEMS_PER_PAGE,
           endAtKey: _lastVacancyKey,
           endAtValue: _lastVacancyValue,
@@ -217,9 +217,8 @@ class SearchController extends ChangeNotifier {
     }
   }
 
-  // ===============================
-  // REQUESTS LAZY
-  // ===============================
+  // ── Requests (lazy) ───────────────────────────────────────────────────────
+
   Future<void> ensureRequestsLoaded() async {
     if (_requestsLoaded) return;
     try {
@@ -233,9 +232,8 @@ class SearchController extends ChangeNotifier {
     }
   }
 
-  // ===============================
-  // FILTROS
-  // ===============================
+  // ── Filtros ───────────────────────────────────────────────────────────────
+
   bool _matchesProfessional(ProfessionalModel prof, String query) {
     if (query.isEmpty) return true;
     final q = query.toLowerCase().trim();
@@ -266,9 +264,18 @@ class SearchController extends ChangeNotifier {
   void _applyFilters() {
     ensureRequestsLoaded();
 
+    print('_applyFilters — bloqueados: ${_blockedUserIds.length}');
+
     _filteredProfessionals = _allProfessionals.where((prof) {
-      if (_requestsLoaded && _requestedProfessionalIds.contains(prof.localId))
+      // ✅ CORREÇÃO: filtra bloqueados da memória
+      // Antes: este bloco não existia — server filtrava mas memória não
+      if (_blockedUserIds.isNotEmpty &&
+          prof.localId.isNotEmpty &&
+          _blockedUserIds.contains(prof.localId)) return false;
+
+      if (_requestsLoaded && _requestedProfessionalIds.contains(prof.localId)) {
         return false;
+      }
       if (prof.status.toLowerCase() == 'expired') return false;
       if (!_matchesProfessional(prof, _searchQuery)) return false;
       if (_selectedState != null &&
@@ -287,8 +294,14 @@ class SearchController extends ChangeNotifier {
     }).toList();
 
     _filteredVacancies = _allVacancies.where((vac) {
-      if (_requestsLoaded && _requestedVacancyIds.contains(vac.id))
+      // ✅ CORREÇÃO: filtra bloqueados da memória
+      if (_blockedUserIds.isNotEmpty &&
+          vac.localId.isNotEmpty &&
+          _blockedUserIds.contains(vac.localId)) return false;
+
+      if (_requestsLoaded && _requestedVacancyIds.contains(vac.id)) {
         return false;
+      }
       final statusLower = vac.status.toLowerCase();
       if (statusLower == 'expirada' || statusLower == 'pausada') return false;
       if (vac.expiresAt.isNotEmpty &&
@@ -312,9 +325,8 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ===============================
-  // FILTROS UI
-  // ===============================
+  // ── Filtros UI ────────────────────────────────────────────────────────────
+
   void updateSearchQuery(String query) {
     _searchQuery = query;
     _applyFilters();
@@ -370,19 +382,16 @@ class SearchController extends ChangeNotifier {
     _applyFilters();
   }
 
-  // ===============================
-  // REFRESH — IGUAL FEEDCONTROLLER
-  // ===============================
+  // ── Refresh ───────────────────────────────────────────────────────────────
+
   Future<void> forceRefresh() async {
     _requestsLoaded = false;
     _allProfessionals.clear();
     _allVacancies.clear();
     await _cacheService.clearAll();
 
-    // ✅ Recarrega bloqueados antes de tudo — igual FeedController
-    if (_currentUserId != null) {
-      await _userController.fetchAllBlockedUsers(_currentUserId!);
-    }
+    // ✅ CORREÇÃO: recarrega e SALVA bloqueados antes de tudo
+    await _loadBlockedUsers();
 
     await initialize();
   }
