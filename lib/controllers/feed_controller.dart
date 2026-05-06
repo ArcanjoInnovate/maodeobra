@@ -173,7 +173,12 @@ class FeedController with ChangeNotifier {
       _blockedUserIds = {};
     }
   }
-
+  // Adicione este método no FeedController
+  void addBlockedUser(String userId) {
+    if (userId.isEmpty) return;
+    _blockedUserIds = {..._blockedUserIds, userId};
+    _applyFilters(); // já chama notifyListeners() internamente
+  }
   // ── Estados / Cidades ─────────────────────────────────────────────────────
 
   Future<void> _loadStates() async {

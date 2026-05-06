@@ -1090,10 +1090,21 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     if (!mounted) return;
 
     if (success) {
+      // ✅ Adiciona diretamente nos controllers — evita cache do iOS
       try {
-        context.read<FeedController>().forceRefresh();
-        context.read<search.SearchController>().forceRefresh();
+        context
+            .read<FeedController>()
+            .addBlockedUser(ownerLocalId); // ou widget.otherUserId no chat
+        context.read<search.SearchController>().addBlockedUser(ownerLocalId);
       } catch (_) {}
+
+      // forceRefresh em background (não crítico — só para sincronizar)
+      Future.delayed(const Duration(seconds: 2), () {
+        try {
+          context.read<FeedController>().forceRefresh();
+          context.read<search.SearchController>().forceRefresh();
+        } catch (_) {}
+      });
 
       _showSuccess('Usuário bloqueado com sucesso!');
       await Future.delayed(const Duration(milliseconds: 500));

@@ -138,6 +138,12 @@ class SearchController extends ChangeNotifier {
     }
   }
 
+  // Adicione este método no SearchController
+  void addBlockedUser(String userId) {
+    if (userId.isEmpty) return;
+    _blockedUserIds = {..._blockedUserIds, userId};
+    _applyFilters(); // já chama notifyListeners() internamente
+  }
   // ✅ NOVO: método dedicado para carregar e persistir bloqueados
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
