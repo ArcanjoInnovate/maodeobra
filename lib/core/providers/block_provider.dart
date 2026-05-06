@@ -10,7 +10,7 @@ class BlockProvider extends ChangeNotifier {
   Set<String> _blockedSet = {};
   bool _isLoading = false;
   bool _initialized = false;
-  bool _initSucceeded = false; // distingue init com sucesso de init com erro
+  bool _initSucceeded = false;
   String? _myUserId;
   String? _lastError;
 
@@ -35,7 +35,6 @@ class BlockProvider extends ChangeNotifier {
   Future<void> init(String userId) async {
     // Só ignora se já inicializou COM SUCESSO para este user
     // Se falhou antes (_initSucceeded = false), permite tentar de novo
-    // Isso resolve o problema do iOS onde o init pode falhar na primeira vez
     if (_initialized && _initSucceeded && _myUserId == userId) {
       print('✅ BlockProvider já inicializado com sucesso para $userId');
       return;
@@ -123,11 +122,10 @@ class BlockProvider extends ChangeNotifier {
     // ═══════════════════════════════════════════════════════
     // VERIFICAÇÃO DIRETA NO FIREBASE — não confia no set local
     //
-    // Por que isso é necessário no iOS:
-    // O set local (_blockedSet) pode estar vazio porque o SDK iOS
-    // é mais lento para entregar dados na inicialização.
-    // Se confiarmos só no set local, o iOS passa pela verificação
-    // e tenta bloquear de novo um usuário já bloqueado.
+    // O set local (_blockedSet) pode estar vazio no iOS porque o SDK
+    // é mais lento para entregar dados na inicialização. Se confiarmos
+    // só no set local, o iOS passa pela verificação e tenta bloquear
+    // de novo um usuário já bloqueado.
     //
     // isUserBlocked() faz um .get() direto no nó específico
     // e usa _isTruthy() que trata int(1) como true — fix do iOS.
@@ -147,12 +145,32 @@ class BlockProvider extends ChangeNotifier {
 
     try {
       print('🚫 Bloqueando $targetUserId...');
+
+      // blockUser agora usa set() individual por ref — fix do iOS
+      // ver comentário completo em UserRelationShipService.blockUser()
       final success = await _service.blockUser(_myUserId!, targetUserId);
 
       if (!success) {
-        _lastError = 'Falha ao bloquear no Firebase';
-        notifyListeners();
-        return false;
+        // ═══════════════════════════════════════════════════
+        // FIX iOS — TRATAMENTO DO SILENT FAIL
+        //
+        // No iOS, _service.blockUser() pode retornar false por dois motivos:
+        //   1. Usuário já bloqueado (verificado acima, não chega aqui)
+        //   2. A escrita falhou e a verificação pós-escrita detectou isso
+        //
+        // Quando cai aqui, tentamos uma segunda vez com delay
+        // para dar chance ao SDK iOS de estabilizar a conexão.
+        // ═══════════════════════════════════════════════════
+        print('⚠️ Primeira tentativa falhou — aguardando e tentando novamente (iOS retry)');
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        final retrySuccess = await _service.blockUser(_myUserId!, targetUserId);
+
+        if (!retrySuccess) {
+          _lastError = 'Falha ao bloquear no Firebase. Verifique sua conexão.';
+          notifyListeners();
+          return false;
+        }
       }
 
       // Atualiza local imediatamente para a UI responder rápido
@@ -160,7 +178,7 @@ class BlockProvider extends ChangeNotifier {
       notifyListeners();
 
       // Recarrega do Firebase para sincronizar completamente
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 400));
       await _reload();
       notifyListeners();
 
@@ -179,10 +197,11 @@ class BlockProvider extends ChangeNotifier {
   Future<bool> unblockUser(String targetUserId) async {
     if (_myUserId == null) return false;
     try {
+      // unblockUser agora usa remove() individual — fix do iOS
       final success = await _service.unblockUser(_myUserId!, targetUserId);
       if (success) {
         _blockedSet = _blockedSet.difference({targetUserId});
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 400));
         await _reload();
         notifyListeners();
       }

@@ -36,7 +36,7 @@ class UserRelationShipService {
     }
   }
 
-  // ── Bloquear ──────────────────────────────────────────────
+  // ── Buscar todos os bloqueados ────────────────────────────
 
   Future<Set<String>> fetchAllBlockedUsers(String myUserId) async {
     try {
@@ -51,12 +51,22 @@ class UserRelationShipService {
     }
   }
 
+  // ── Bloquear ──────────────────────────────────────────────
+  //
+  // FIX iOS: NÃO usar _db.update() com paths multi-level (contendo "/").
+  //
+  // O SDK nativo do Firebase iOS silencia escritas via update() com
+  // paths profundos — o await retorna sem exceção mas NADA é gravado
+  // no banco. Android e Web funcionam pois usam a REST API por baixo.
+  //
+  // Solução: usar .child(...).set() individualmente em cada referência.
+  // É mais verboso mas 100% confiável em todas as plataformas.
+  // ─────────────────────────────────────────────────────────
   Future<bool> blockUser(String myUserId, String targetUserId) async {
     try {
       print('🔄 blockUser: $myUserId -> $targetUserId');
 
       // Verifica se já existe antes de gravar
-      // _isTruthy resolve o bug do iOS (int 1 em vez de bool true)
       final alreadySnap = await _db
           .child('Users/$myUserId/blocked_users/$targetUserId')
           .get();
@@ -66,18 +76,28 @@ class UserRelationShipService {
         return false;
       }
 
-      // Grava nos dois caminhos atomicamente
-      // Users/MEU_ID/blocked_users/TARGET_ID = true
-      // blocked_by/TARGET_ID/MEU_ID = true
-      await _db.update({
-        'Users/$myUserId/blocked_users/$targetUserId': true,
-        'blocked_by/$targetUserId/$myUserId': true,
-      });
+      // ✅ FIX iOS: set() individual em cada ref em vez de update() multi-level
+      // update({'path/com/barras': value}) falha silenciosamente no iOS SDK
+      await _db
+          .child('Users/$myUserId/blocked_users/$targetUserId')
+          .set(true);
 
-      // Confia no await — se não lançou exceção, gravou com sucesso
-      // Não fazemos verificação pós-escrita porque o iOS retorna 1
-      // em vez de true, o que causava falso-negativo antes
-      print('✅ Bloqueio gravado com sucesso');
+      await _db
+          .child('blocked_by/$targetUserId/$myUserId')
+          .set(true);
+
+      // ✅ Verificação pós-escrita: confirma que realmente foi gravado
+      // Necessário no iOS onde a escrita pode falhar sem lançar exceção
+      final confirmSnap = await _db
+          .child('Users/$myUserId/blocked_users/$targetUserId')
+          .get();
+
+      if (!confirmSnap.exists || !_isTruthy(confirmSnap.value)) {
+        print('❌ Escrita não confirmada no Firebase (bug iOS silent fail)');
+        return false;
+      }
+
+      print('✅ Bloqueio gravado e confirmado no Firebase');
       return true;
     } catch (e, st) {
       print('❌ blockUser erro: $e\n$st');
@@ -86,14 +106,24 @@ class UserRelationShipService {
   }
 
   // ── Desbloquear ───────────────────────────────────────────
-
+  //
+  // FIX iOS: mesmo motivo do blockUser — usa remove() individual
+  // em vez de update() com valor null, que também falha no iOS.
+  // ─────────────────────────────────────────────────────────
   Future<bool> unblockUser(String myUserId, String targetUserId) async {
     try {
       print('🔄 unblockUser: $myUserId -> $targetUserId');
-      await _db.update({
-        'Users/$myUserId/blocked_users/$targetUserId': null,
-        'blocked_by/$targetUserId/$myUserId': null,
-      });
+
+      // ✅ FIX iOS: remove() individual em cada ref
+      // update({'path': null}) falha silenciosamente no iOS SDK
+      await _db
+          .child('Users/$myUserId/blocked_users/$targetUserId')
+          .remove();
+
+      await _db
+          .child('blocked_by/$targetUserId/$myUserId')
+          .remove();
+
       print('✅ Desbloqueado com sucesso');
       return true;
     } catch (e, st) {
@@ -158,14 +188,14 @@ class UserRelationShipService {
         _db.child('Users/$myUserId/blocked_users/$otherUserId').get(),
         // O outro me bloqueou?
         // blocked_by/MEU_ID/OUTRO_ID
-        // (blocked_by/QUEM_FOI_BLOQUEADO/QUEM_BLOQUEOU)
         _db.child('blocked_by/$myUserId/$otherUserId').get(),
       ]);
 
       final iBlockedThem = results[0].exists && _isTruthy(results[0].value);
       final theyBlockedMe = results[1].exists && _isTruthy(results[1].value);
 
-      print('checkRelationship: iBlockedThem=$iBlockedThem theyBlockedMe=$theyBlockedMe');
+      print(
+          'checkRelationship: iBlockedThem=$iBlockedThem theyBlockedMe=$theyBlockedMe');
       return (iBlockedThem: iBlockedThem, theyBlockedMe: theyBlockedMe);
     } catch (e) {
       print('❌ checkRelationship: $e');
