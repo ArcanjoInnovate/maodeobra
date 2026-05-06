@@ -91,6 +91,8 @@ class SearchController extends ChangeNotifier {
 
   // ── Inicialização ─────────────────────────────────────────────────────────
 
+  // ── Inicialização ─────────────────────────────────────────────────────────
+
   Future<void> initialize() async {
     if (_isLoading) return;
 
@@ -104,21 +106,10 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ✅ CORREÇÃO: carrega e SALVA bloqueados no campo
-      if (_currentUserId != null) {
-        // tenta até 3x com intervalo — iOS pode demorar mais
-        for (int i = 0; i < 3; i++) {
-          final list =
-              await _userController.fetchAllBlockedUsers(_currentUserId!);
-          if (list.isNotEmpty || i == 2) {
-            _blockedUserIds = list.toSet();
-            break;
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-      }
+      // ✅ Carrega bloqueados PRIMEIRO
       await _loadBlockedUsers();
 
+      // ✅ Só depois limpa cache e carrega dados
       await _cacheService.clearAll();
 
       if (_professions.isEmpty) {
