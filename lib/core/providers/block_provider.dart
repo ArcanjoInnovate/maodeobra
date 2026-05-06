@@ -9,17 +9,17 @@ class BlockProvider extends ChangeNotifier {
 
   Set<String> _blockedSet = {};
   bool _isLoading = false;
-  bool _initialized = false; // ✅ flag real de inicialização
+  bool _initialized = false; // ✅ flag real — evita reinit desnecessário
   String? _myUserId;
   String? _lastError;
 
   StreamSubscription<DatabaseEvent>? _iBlockedSub;
   StreamSubscription<DatabaseEvent>? _blockedMeSub;
 
-  // ── Getters ───────────────────────────────────────────────
+  // ── Getters ───────────────────────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
-  bool get isInitialized => _initialized;
+  bool get isInitialized => _initialized; // ✅ exposto para as telas
   Set<String> get blockedSet => Set.unmodifiable(_blockedSet);
   String? get lastError => _lastError;
 
@@ -28,12 +28,14 @@ class BlockProvider extends ChangeNotifier {
   List<T> filterBlocked<T>(List<T> items, String Function(T) getOwnerId) =>
       items.where((item) => !isBlocked(getOwnerId(item))).toList();
 
-  // ── Init ──────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
 
   Future<void> init(String userId) async {
-    // ✅ Se já inicializado com o mesmo user, só atualiza listeners
+    // ✅ Se já inicializado com o mesmo usuário, não faz nada
+    // Isso resolve o bug de bloquear o mesmo usuário duas vezes:
+    // as telas chamavam init() de novo, limpando o _blockedSet interno
     if (_initialized && _myUserId == userId) {
-      print('✅ BlockProvider já inicializado para $userId');
+      print('✅ BlockProvider já inicializado para $userId — ignorando');
       return;
     }
 
@@ -52,6 +54,8 @@ class BlockProvider extends ChangeNotifier {
     } catch (e, st) {
       print('❌ BlockProvider.init erro: $e\n$st');
       _lastError = 'Erro na inicialização: $e';
+      // ✅ Mesmo com erro, marca como inicializado para não ficar em loop
+      _initialized = true;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -74,6 +78,7 @@ class BlockProvider extends ChangeNotifier {
     try {
       await _reload();
     } catch (e) {
+      print('❌ reload erro: $e');
       _lastError = 'Erro ao recarregar: $e';
     } finally {
       _isLoading = false;
@@ -81,13 +86,13 @@ class BlockProvider extends ChangeNotifier {
     }
   }
 
-  // ── blockUser corrigido ───────────────────────────────────
+  // ── blockUser ─────────────────────────────────────────────────────────────
 
   Future<bool> blockUser(String targetUserId) async {
     _lastError = null;
 
-    // Garante inicialização
-    if (_myUserId == null) {
+    // Garante que está inicializado
+    if (!_initialized || _myUserId == null) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) {
         _lastError = 'Usuário não autenticado';
@@ -103,14 +108,13 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
 
-    // ✅ CORREÇÃO BUG DUPLICADO:
-    // Não confia SÓ no _blockedSet local (pode estar desatualizado no iOS)
-    // Verifica direto no Firebase ANTES de gravar
-    print('🔍 Verificando no Firebase se $targetUserId já está bloqueado...');
+    // ✅ Verifica direto no Firebase — não confia só no set local
+    // No iOS o set pode estar desatualizado se a conexão foi lenta
+    print('🔍 Verificando $targetUserId no Firebase...');
     try {
-      final snap = await _service.checkRelationship(_myUserId!, targetUserId);
-      if (snap.iBlockedThem) {
-        print('⚠️ Já bloqueado (confirmado no Firebase)');
+      final rel = await _service.checkRelationship(_myUserId!, targetUserId);
+      if (rel.iBlockedThem) {
+        print('⚠️ Já bloqueado (Firebase confirmou)');
         _lastError = 'Usuário já bloqueado';
         // Sincroniza o set local que estava desatualizado
         if (!_blockedSet.contains(targetUserId)) {
@@ -120,7 +124,7 @@ class BlockProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      print('⚠️ Erro ao verificar relação, prosseguindo: $e');
+      print('⚠️ Erro ao verificar relação: $e — prosseguindo mesmo assim');
     }
 
     try {
@@ -133,16 +137,16 @@ class BlockProvider extends ChangeNotifier {
         return false;
       }
 
-      // Atualiza local imediatamente
+      // Atualiza local imediatamente para UI responder rápido
       _blockedSet = {..._blockedSet, targetUserId};
       notifyListeners();
 
-      // Recarrega para sincronizar completamente
+      // Recarrega do Firebase para garantir consistência
       await Future.delayed(const Duration(milliseconds: 300));
       await _reload();
       notifyListeners();
 
-      print('✅ Bloqueado com sucesso: $targetUserId');
+      print('✅ Bloqueado: $targetUserId');
       return true;
     } catch (e, st) {
       print('❌ Exceção ao bloquear: $e\n$st');
@@ -154,7 +158,6 @@ class BlockProvider extends ChangeNotifier {
 
   Future<bool> unblockUser(String targetUserId) async {
     if (_myUserId == null) return false;
-
     try {
       final success = await _service.unblockUser(_myUserId!, targetUserId);
       if (success) {
@@ -170,18 +173,16 @@ class BlockProvider extends ChangeNotifier {
     }
   }
 
-  // ── Internos ──────────────────────────────────────────────
+  // ── Internos ──────────────────────────────────────────────────────────────
 
   Future<void> _reload() async {
     if (_myUserId == null) return;
-
     final results = await Future.wait([
       _service.fetchUsersIBlocked(_myUserId!),
       _service.fetchUsersWhoBlockedMe(_myUserId!),
     ]);
-
     _blockedSet = {...results[0], ...results[1]};
-    print('📊 _blockedSet atualizado: ${_blockedSet.length}');
+    print('📊 _blockedSet: ${_blockedSet.length} usuários');
   }
 
   void _startListeners() {
@@ -193,7 +194,7 @@ class BlockProvider extends ChangeNotifier {
         await _reload();
         notifyListeners();
       },
-      onError: (e) => print('❌ Stream iBlocked erro: $e'),
+      onError: (e) => print('❌ Stream iBlocked: $e'),
     );
 
     _blockedMeSub = _service.watchBlockedMe(_myUserId!).listen(
@@ -201,7 +202,7 @@ class BlockProvider extends ChangeNotifier {
         await _reload();
         notifyListeners();
       },
-      onError: (e) => print('❌ Stream blockedMe erro: $e'),
+      onError: (e) => print('❌ Stream blockedMe: $e'),
     );
   }
 

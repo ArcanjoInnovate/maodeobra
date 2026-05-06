@@ -103,12 +103,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     clearBadge();
     _listenToMaintenance();
-    
+
     // ✅ INICIALIZAÇÃO ROBUSTA DO BLOCKPROVIDER
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeBlockProvider();
     });
-    
+
     // ✅ Inicializa notificações (BlockProvider primeiro)
     _initializeNotifications();
   }
@@ -138,14 +138,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   // ✅ MÉTODO DEDICADO E ROBUSTO PARA BLOCKPROVIDER
   Future<void> _initializeBlockProvider() async {
-    if (_blockProviderInitialized) {
-      print('✅ BlockProvider já inicializado');
-      return;
-    }
-    
+    if (_blockProviderInitialized) return;
+
     final userId = await _getCurrentUserId();
     if (userId == null) {
-      print('⚠️ _initializeBlockProvider: userId nulo, retry em 2s...');
+      // Tenta de novo em 2s se não tem usuário ainda
       Future.delayed(const Duration(seconds: 2), _initializeBlockProvider);
       return;
     }
@@ -154,28 +151,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     try {
       final blockProvider = Provider.of<BlockProvider>(context, listen: false);
-      
-      if (!blockProvider.isLoading && blockProvider.blockedSet.isNotEmpty) {
-        print('✅ BlockProvider já inicializado com dados: ${blockProvider.blockedSet.length} usuários');
-        _blockProviderInitialized = true;
-        return;
-      }
-
-      print('🔄 Inicializando BlockProvider com: $userId');
-      await blockProvider.init(userId);
-      
+      await blockProvider.init(userId); // ✅ init() agora ignora chamadas duplas
       _blockProviderInitialized = true;
-      print('✅ BlockProvider inicializado com SUCESSO: $userId');
-      
-      // ✅ DEBUG ESPECÍFICO iOS
-      if (Platform.isIOS) {
-        print('📱 [iOS] BlockProvider OK - Bloqueados: ${blockProvider.blockedSet.length}');
-      }
-      
-    } catch (e, stackTrace) {
-      print('❌ Erro ao inicializar BlockProvider: $e');
-      print('Stack: $stackTrace');
-      // Retry em 3s (máx 3 tentativas)
+      print('✅ BlockProvider inicializado no main: $userId');
+    } catch (e) {
+      print('❌ Erro no main BlockProvider: $e');
+      // Tenta de novo em 3s
       Future.delayed(const Duration(seconds: 3), _initializeBlockProvider);
     }
   }
@@ -230,13 +211,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     // ✅ Aguarda BlockProvider antes de continuar
     await _initializeBlockProvider();
-    
+
     if (_currentUserId == null) {
       print('⚠️ userId nulo — notificações adiadas');
       return;
     }
 
-    _notificationsInitialized = true; 
+    _notificationsInitialized = true;
     _currentUserRole = await _getUserRole(_currentUserId!);
 
     final service = NotificationService();
@@ -259,12 +240,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> reinitializeNotifications(String userId) async {
     print('🔄 Reinicializando notificações com userId: $userId');
-    
+
     _currentUserId = userId;
-    
+
     // ✅ Re-inicializa BlockProvider se necessário
     await _initializeBlockProvider();
-    
+
     if (!_notificationsInitialized) {
       _notificationsInitialized = true;
       _currentUserRole = await _getUserRole(userId);
