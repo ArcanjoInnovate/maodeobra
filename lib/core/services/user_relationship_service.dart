@@ -1,3 +1,6 @@
+// lib/core/services/user_relationship_service.dart
+
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 
@@ -16,41 +19,16 @@ class UserRelationShipService {
     return false;
   }
 
-  /// ✅ NOVO: Verifica se o usuário está autenticado e se o token está válido
   Future<String?> _ensureValidAuth() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        print('❌ Usuário não autenticado');
-        return null;
-      }
-
-      // Força refresh do token
+      if (user == null) return null;
       final token = await user.getIdToken(true);
-      if (token == null || token.isEmpty) {
-        print('❌ Token inválido ou vazio');
-        return null;
-      }
-
-      print('✅ Auth válido para: ${user.uid}');
+      if (token == null || token.isEmpty) return null;
       return user.uid;
     } catch (e) {
-      print('❌ Erro ao verificar auth: $e');
+      print('❌ _ensureValidAuth erro: $e');
       return null;
-    }
-  }
-
-  /// ✅ NOVO: Testa conectividade com Firebase
-  Future<bool> _testConnection() async {
-    try {
-      final testRef = _db.child('.info/connected');
-      final snap = await testRef.get();
-      final connected = snap.value == true;
-      print(connected ? '✅ Firebase conectado' : '❌ Firebase desconectado');
-      return connected;
-    } catch (e) {
-      print('❌ Erro ao testar conexão: $e');
-      return false;
     }
   }
 
@@ -63,9 +41,7 @@ class UserRelationShipService {
       final snap = await _db
           .child('Users/$myUserId/blocked_users/$targetUserId')
           .get();
-      final blocked = snap.exists && _isTruthy(snap.value);
-      print('isUserBlocked: $targetUserId = $blocked');
-      return blocked;
+      return snap.exists && _isTruthy(snap.value);
     } catch (e) {
       print('❌ isUserBlocked erro: $e');
       return false;
@@ -73,105 +49,115 @@ class UserRelationShipService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BLOQUEAR - VERSÃO SIMPLIFICADA FOCADA APENAS EM blocked_users
+  // BLOQUEAR — SOLUÇÃO DEFINITIVA PARA iOS
+  //
+  // A MUDANÇA CRÍTICA: Usa onValue (listener) em vez de .get() para confirmar.
+  // O iOS cacheia .get() agressivamente, mas listeners SEMPRE vêm do servidor.
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<bool> blockUser(String myUserId, String targetUserId) async {
     try {
       print('\n═══════════════════════════════════════════════');
       print('🔄 INICIANDO BLOQUEIO');
-      print('   De: $myUserId');
-      print('   Para: $targetUserId');
+      print('   De: $myUserId → Para: $targetUserId');
       print('═══════════════════════════════════════════════');
 
-      // ✅ PASSO 1: Verificar autenticação
+      // PASSO 1: Autenticação
       final authUserId = await _ensureValidAuth();
       if (authUserId == null) {
-        print('❌ FALHA: Autenticação inválida');
+        print('❌ FALHA: Auth inválido');
         return false;
       }
-
       if (authUserId != myUserId) {
-        print('❌ FALHA: UserId não corresponde ao auth ($authUserId != $myUserId)');
+        print('❌ FALHA: UID não confere');
         return false;
       }
 
-      // ✅ PASSO 2: Testar conexão
-      final connected = await _testConnection();
-      if (!connected) {
-        print('❌ FALHA: Sem conexão com Firebase');
-        return false;
-      }
-
-      // ✅ PASSO 3: Verificar se já está bloqueado
-      print('\n📋 Verificando se já bloqueado...');
+      // PASSO 2: Verifica se já está bloqueado (usa .get() aqui porque não é crítico)
       final alreadySnap = await _db
           .child('Users/$myUserId/blocked_users/$targetUserId')
           .get();
-
       if (alreadySnap.exists && _isTruthy(alreadySnap.value)) {
-        print('⚠️ Já bloqueado no Firebase');
+        print('⚠️ Já bloqueado — abortando');
         return false;
       }
-      print('✅ Não está bloqueado, prosseguindo...');
 
-      // ✅ PASSO 4: Escrever no Firebase (APENAS blocked_users)
-      print('\n📝 Escrevendo em Firebase...');
-      print('   Path: Users/$myUserId/blocked_users/$targetUserId');
-      
       final ref = _db.child('Users/$myUserId/blocked_users/$targetUserId');
-      
-      // Aguarda um pouco para garantir que o token está propagado
-      await Future.delayed(const Duration(milliseconds: 300));
-      
-      await ref.set(true);
-      print('✅ set() concluído');
 
-      // ✅ PASSO 5: Verificar se a escrita foi bem-sucedida
-      print('\n🔍 Verificando se escrita foi confirmada...');
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      final confirmSnap = await _db
-          .child('Users/$myUserId/blocked_users/$targetUserId')
-          .get();
+      // PASSO 3: Setup listener ANTES de escrever
+      // Isso garante que vamos receber o update do servidor
+      final Completer<bool> completer = Completer<bool>();
+      late StreamSubscription<DatabaseEvent> subscription;
 
-      if (!confirmSnap.exists) {
-        print('❌ FALHA: Nó não existe após escrita');
-        print('   Possível causa: Firebase Security Rules bloquearam');
-        return false;
-      }
+      subscription = ref.onValue.listen(
+        (event) {
+          if (completer.isCompleted) return;
 
-      if (!_isTruthy(confirmSnap.value)) {
-        print('❌ FALHA: Valor não é truthy (value=${confirmSnap.value})');
-        return false;
-      }
+          final snap = event.snapshot;
+          if (snap.exists && _isTruthy(snap.value)) {
+            print('✅ Listener confirmou escrita do servidor!');
+            completer.complete(true);
+            subscription.cancel();
+          }
+        },
+        onError: (error) {
+          if (!completer.isCompleted) {
+            print('❌ Erro no listener: $error');
+            completer.complete(false);
+            subscription.cancel();
+          }
+        },
+      );
 
-      print('✅ Escrita confirmada!');
-      print('   Value: ${confirmSnap.value}');
-
-      // ✅ OPCIONAL: Tentar escrever em blocked_by (não crítico)
-      print('\n📝 Tentando escrever em blocked_by (não crítico)...');
+      // PASSO 4: Escreve no Firebase
+      print('📝 Executando set()...');
       try {
-        await _db
-            .child('blocked_by/$targetUserId/$myUserId')
-            .set(true);
-        print('✅ blocked_by escrito');
+        await ref.set(true).timeout(const Duration(seconds: 10));
+        print('✅ set() concluído');
+      } on TimeoutException {
+        print('⏱️ Timeout no set()');
+        subscription.cancel();
+        if (!completer.isCompleted) completer.complete(false);
+        return false;
       } catch (e) {
-        print('⚠️ blocked_by falhou (ignorando): $e');
+        print('❌ Erro no set(): $e');
+        subscription.cancel();
+        if (!completer.isCompleted) completer.complete(false);
+        return false;
       }
 
-      print('\n═══════════════════════════════════════════════');
+      // PASSO 5: Aguarda confirmação do listener com timeout
+      print('⏳ Aguardando confirmação do listener...');
+      final confirmed = await completer.future.timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          print('⏱️ Timeout aguardando listener');
+          subscription.cancel();
+          return false;
+        },
+      );
+
+      if (!confirmed) {
+        print('❌ FALHA: Escrita não confirmada pelo servidor');
+        return false;
+      }
+
+      // PASSO 6: blocked_by em paralelo (não crítico)
+      unawaited(
+        _db.child('blocked_by/$targetUserId/$myUserId').set(true).catchError(
+          (e) {
+            print('⚠️ blocked_by falhou (não crítico): $e');
+          },
+        ),
+      );
+
+      print('═══════════════════════════════════════════════');
       print('✅ BLOQUEIO CONCLUÍDO COM SUCESSO');
       print('═══════════════════════════════════════════════\n');
-      
       return true;
 
     } catch (e, st) {
-      print('\n═══════════════════════════════════════════════');
-      print('❌ EXCEÇÃO EM blockUser');
-      print('   Erro: $e');
-      print('   Stack: $st');
-      print('═══════════════════════════════════════════════\n');
+      print('❌ EXCEÇÃO em blockUser: $e\n$st');
       return false;
     }
   }
@@ -182,30 +168,22 @@ class UserRelationShipService {
 
   Future<bool> unblockUser(String myUserId, String targetUserId) async {
     try {
-      print('🔄 unblockUser: $myUserId -> $targetUserId');
-
       final authUserId = await _ensureValidAuth();
-      if (authUserId == null || authUserId != myUserId) {
-        print('❌ Auth inválido para desbloquear');
-        return false;
-      }
+      if (authUserId == null || authUserId != myUserId) return false;
 
       await _db
           .child('Users/$myUserId/blocked_users/$targetUserId')
           .remove();
 
-      try {
-        await _db
-            .child('blocked_by/$targetUserId/$myUserId')
-            .remove();
-      } catch (e) {
-        print('⚠️ blocked_by remove falhou: $e');
-      }
+      unawaited(_db
+          .child('blocked_by/$targetUserId/$myUserId')
+          .remove()
+          .catchError((_) {}));
 
-      print('✅ Desbloqueado com sucesso');
+      print('✅ Desbloqueado: $targetUserId');
       return true;
-    } catch (e, st) {
-      print('❌ unblockUser erro: $e\n$st');
+    } catch (e) {
+      print('❌ unblockUser erro: $e');
       return false;
     }
   }
@@ -231,10 +209,8 @@ class UserRelationShipService {
     try {
       final snap = await _db.child('Users/$myUserId/blocked_users').get();
       if (!snap.exists || snap.value == null) return {};
-
       final value = snap.value;
       if (value is! Map) return {};
-
       return value.entries
           .where((e) => _isTruthy(e.value))
           .map((e) => e.key.toString())
@@ -249,10 +225,8 @@ class UserRelationShipService {
     try {
       final snap = await _db.child('blocked_by/$myUserId').get();
       if (!snap.exists || snap.value == null) return {};
-
       final value = snap.value;
       if (value is! Map) return {};
-
       return value.entries
           .where((e) => _isTruthy(e.value))
           .map((e) => e.key.toString())
@@ -272,11 +246,10 @@ class UserRelationShipService {
         _db.child('Users/$myUserId/blocked_users/$otherUserId').get(),
         _db.child('blocked_by/$myUserId/$otherUserId').get(),
       ]);
-
-      final iBlockedThem = results[0].exists && _isTruthy(results[0].value);
-      final theyBlockedMe = results[1].exists && _isTruthy(results[1].value);
-
-      return (iBlockedThem: iBlockedThem, theyBlockedMe: theyBlockedMe);
+      return (
+        iBlockedThem: results[0].exists && _isTruthy(results[0].value),
+        theyBlockedMe: results[1].exists && _isTruthy(results[1].value),
+      );
     } catch (e) {
       print('❌ checkRelationship: $e');
       return (iBlockedThem: false, theyBlockedMe: false);
