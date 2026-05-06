@@ -119,23 +119,12 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
 
-    // ═══════════════════════════════════════════════════════
-    // VERIFICAÇÃO DIRETA NO FIREBASE — não confia no set local
-    //
-    // O set local (_blockedSet) pode estar vazio no iOS porque o SDK
-    // é mais lento para entregar dados na inicialização. Se confiarmos
-    // só no set local, o iOS passa pela verificação e tenta bloquear
-    // de novo um usuário já bloqueado.
-    //
-    // isUserBlocked() faz um .get() direto no nó específico
-    // e usa _isTruthy() que trata int(1) como true — fix do iOS.
-    // ═══════════════════════════════════════════════════════
-    print('🔍 Verificando se $targetUserId já está bloqueado no Firebase...');
+    // Verificação direta no Firebase (não confia no set local)
+    print('🔍 Verificando se $targetUserId já está bloqueado...');
     final jaExiste = await _service.isUserBlocked(_myUserId!, targetUserId);
     if (jaExiste) {
-      print('⚠️ Já bloqueado — Firebase confirmou');
+      print('⚠️ Já bloqueado');
       _lastError = 'Usuário já bloqueado';
-      // Sincroniza o set local que estava desatualizado
       if (!_blockedSet.contains(targetUserId)) {
         _blockedSet = {..._blockedSet, targetUserId};
         notifyListeners();
@@ -144,43 +133,25 @@ class BlockProvider extends ChangeNotifier {
     }
 
     try {
-      print('🚫 Bloqueando $targetUserId...');
-
-      // blockUser agora usa set() individual por ref — fix do iOS
-      // ver comentário completo em UserRelationShipService.blockUser()
+      // Toda a lógica de retry/timeout/confirmação agora está no serviço
       final success = await _service.blockUser(_myUserId!, targetUserId);
 
       if (!success) {
-        // ═══════════════════════════════════════════════════
-        // FIX iOS — TRATAMENTO DO SILENT FAIL
-        //
-        // No iOS, _service.blockUser() pode retornar false por dois motivos:
-        //   1. Usuário já bloqueado (verificado acima, não chega aqui)
-        //   2. A escrita falhou e a verificação pós-escrita detectou isso
-        //
-        // Quando cai aqui, tentamos uma segunda vez com delay
-        // para dar chance ao SDK iOS de estabilizar a conexão.
-        // ═══════════════════════════════════════════════════
-        print('⚠️ Primeira tentativa falhou — aguardando e tentando novamente (iOS retry)');
-        await Future.delayed(const Duration(milliseconds: 800));
-
-        final retrySuccess = await _service.blockUser(_myUserId!, targetUserId);
-
-        if (!retrySuccess) {
-          _lastError = 'Falha ao bloquear no Firebase. Verifique sua conexão.';
-          notifyListeners();
-          return false;
-        }
+        _lastError =
+            'Falha ao bloquear. Verifique sua conexão e tente novamente.';
+        notifyListeners();
+        return false;
       }
 
       // Atualiza local imediatamente para a UI responder rápido
       _blockedSet = {..._blockedSet, targetUserId};
       notifyListeners();
 
-      // Recarrega do Firebase para sincronizar completamente
-      await Future.delayed(const Duration(milliseconds: 400));
-      await _reload();
-      notifyListeners();
+      // Sincroniza do servidor em background
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        await _reload();
+        notifyListeners();
+      });
 
       print('✅ Bloqueado com sucesso: $targetUserId');
       return true;
@@ -191,7 +162,6 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
   }
-
   // ── unblockUser ───────────────────────────────────────────
 
   Future<bool> unblockUser(String targetUserId) async {
