@@ -40,6 +40,8 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
   String get ownerLocalId => widget.vacancy.localId;
+  final FeedController feedController = FeedController();
+  final searchController = search.SearchController();
 
   bool _isApplying = false;
   int _currentImageIndex = 0;
@@ -1235,6 +1237,8 @@ class _VacancyDetailPageState extends State<VacancyDetailPage>
     }
 
     final blockProvider = context.read<BlockProvider>();
+    feedController.registerWithBlockProvider(blockProvider);
+    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x

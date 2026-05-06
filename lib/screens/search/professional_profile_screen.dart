@@ -56,6 +56,8 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
 
   // ID do dono do perfil
   String get ownerLocalId => widget.professional.localId;
+  final FeedController feedController = FeedController();
+  final searchController = search.SearchController();
 
   bool _isRequesting = false;
   bool _hasAlreadyRequested = false;
@@ -1067,6 +1069,8 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     }
 
     final blockProvider = context.read<BlockProvider>();
+    feedController.registerWithBlockProvider(blockProvider);
+    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x
@@ -1090,30 +1094,28 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
     if (!mounted) return;
 
     if (success) {
-      // ✅ Adiciona diretamente nos controllers — evita cache do iOS
-      try {
-        context
-            .read<FeedController>()
-            .addBlockedUser(ownerLocalId); // ou widget.otherUserId no chat
-        context.read<search.SearchController>().addBlockedUser(ownerLocalId);
-      } catch (_) {}
+  // ✅ Adiciona diretamente nos controllers — evita cache do iOS
+  try {
+    context.read<FeedController>().addBlockedUser(ownerLocalId); // ou widget.otherUserId no chat
+    context.read<search.SearchController>().addBlockedUser(ownerLocalId);
+  } catch (_) {}
 
-      // forceRefresh em background (não crítico — só para sincronizar)
-      Future.delayed(const Duration(seconds: 2), () {
-        try {
-          context.read<FeedController>().forceRefresh();
-          context.read<search.SearchController>().forceRefresh();
-        } catch (_) {}
-      });
+  // forceRefresh em background (não crítico — só para sincronizar)
+  Future.delayed(const Duration(seconds: 2), () {
+    try {
+      context.read<FeedController>().forceRefresh();
+      context.read<search.SearchController>().forceRefresh();
+    } catch (_) {}
+  });
 
-      _showSuccess('Usuário bloqueado com sucesso!');
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (!mounted) return;
-      Navigator.pop(context);
-    } else {
-      final erro = blockProvider.lastError ?? 'Erro desconhecido ao bloquear';
-      _showError('Falha: $erro');
-    }
+  _showSuccess('Usuário bloqueado com sucesso!');
+  await Future.delayed(const Duration(milliseconds: 500));
+  if (!mounted) return;
+  Navigator.pop(context);
+} else {
+  final erro = blockProvider.lastError ?? 'Erro desconhecido ao bloquear';
+  _showError('Falha: $erro');
+}
   }
 
   void _openReportScreen() {

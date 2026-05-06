@@ -49,7 +49,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   final GlobalKey _inputKey = GlobalKey();
   static const Color _muted = Color(0xFF6B7280);
   final String otherUserId = '';
-
+  final FeedController feedController = FeedController();
+  final searchController = search.SearchController();
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
   int _previousMessageCount = 0;
@@ -456,6 +457,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     }
 
     final blockProvider = context.read<BlockProvider>();
+    feedController.registerWithBlockProvider(blockProvider);
+    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x

@@ -413,8 +413,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => BlockProvider()),
         ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
-        ChangeNotifierProvider(create: (_) => BlockProvider()), // ✅ GARANTIDO
+        ChangeNotifierProvider(create: (_) => SearchController(), lazy: true),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

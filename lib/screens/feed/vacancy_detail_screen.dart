@@ -44,6 +44,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
   bool _isApplying = false;
   int _currentImageIndex = 0;
   late PageController _pageController;
+  final FeedController feedController = FeedController();
+  final searchController = search.SearchController();
 
   // ✅ NOVO: Estado para chat existente
   bool _isCheckingChat = true;
@@ -1290,6 +1292,8 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
     }
 
     final blockProvider = context.read<BlockProvider>();
+    feedController.registerWithBlockProvider(blockProvider);
+    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x

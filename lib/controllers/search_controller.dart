@@ -1,4 +1,5 @@
 import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/services/cache/cache_service.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
@@ -22,8 +23,9 @@ class SearchController extends ChangeNotifier {
 
   String? _currentUserId;
 
-  // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
-  // Antes não existia — o set era criado localmente e descartado logo depois
+  // Referência ao BlockProvider para desregistrar callbacks no dispose
+  BlockProvider? _blockProvider;
+
   Set<String> _blockedUserIds = {};
 
   List<ProfessionalModel> _allProfessionals = [];
@@ -89,7 +91,36 @@ class SearchController extends ChangeNotifier {
   bool hasRequestedProfessional(String professionalId) =>
       _requestedProfessionalIds.contains(professionalId);
 
-  // ── Inicialização ─────────────────────────────────────────────────────────
+  // ── Integração com BlockProvider ──────────────────────────────────────────
+
+  /// Chame este método uma única vez após criar o controller,
+  /// passando o BlockProvider do contexto.
+  void registerWithBlockProvider(BlockProvider blockProvider) {
+    if (_blockProvider == blockProvider) return;
+
+    _blockProvider?.unregisterOnBlock(_handleUserBlocked);
+    _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
+
+    _blockProvider = blockProvider;
+    blockProvider.registerOnBlock(_handleUserBlocked);
+    blockProvider.registerOnUnblock(_handleUserUnblocked);
+
+    // Sincroniza estado atual imediatamente
+    _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
+    print('🔗 SearchController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
+  }
+
+  void _handleUserBlocked(String userId) {
+    print('🚫 SearchController: usuário bloqueado: $userId');
+    _blockedUserIds = {..._blockedUserIds, userId};
+    _applyFilters();
+  }
+
+  void _handleUserUnblocked(String userId) {
+    print('✅ SearchController: usuário desbloqueado: $userId');
+    _blockedUserIds = _blockedUserIds.difference({userId});
+    _applyFilters();
+  }
 
   // ── Inicialização ─────────────────────────────────────────────────────────
 
@@ -106,10 +137,14 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ✅ Carrega bloqueados PRIMEIRO
-      await _loadBlockedUsers();
+      // Usa o BlockProvider se já registrado; caso contrário, fallback direto.
+      if (_blockProvider != null) {
+        _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+        print('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
+      } else {
+        await _loadBlockedUsers();
+      }
 
-      // ✅ Só depois limpa cache e carrega dados
       await _cacheService.clearAll();
 
       if (_professions.isEmpty) {
@@ -130,27 +165,27 @@ class SearchController extends ChangeNotifier {
     }
   }
 
-  // Adicione este método no SearchController
+  /// Exposto publicamente para compatibilidade com código existente.
   void addBlockedUser(String userId) {
     if (userId.isEmpty) return;
     _blockedUserIds = {..._blockedUserIds, userId};
-    _applyFilters(); // já chama notifyListeners() internamente
+    _applyFilters();
   }
 
-  // ✅ NOVO: método dedicado para carregar e persistir bloqueados
-  // ✅ CORREÇÃO: não sobrescreve, apenas adiciona novos bloqueados
+  /// Fallback: carrega bloqueados direto do serviço quando
+  /// BlockProvider não está disponível.
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
     try {
-      final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-      // ✅ Mescla com o set existente em vez de sobrescrever
+      final list =
+          await _userController.fetchAllBlockedUsers(_currentUserId!);
       _blockedUserIds = {..._blockedUserIds, ...list};
-      print('✅ _blockedUserIds atualizado: ${_blockedUserIds.length}');
+      print('✅ _blockedUserIds (fallback): ${_blockedUserIds.length}');
     } catch (e) {
-      print('❌ Erro ao carregar bloqueados: $e');
-      // ✅ NÃO zera se der erro — mantém o estado atual
+      print('❌ Erro ao carregar bloqueados (fallback): $e');
     }
   }
+
   // ── Primeira página ───────────────────────────────────────────────────────
 
   Future<void> _loadFirstPage() async {
@@ -163,7 +198,6 @@ class SearchController extends ChangeNotifier {
     _hasMoreProfessionals = true;
     _hasMoreVacancies = true;
 
-    // ✅ usa _blockedUserIds do campo — não busca de novo
     final profResult = await _firebaseService.fetchProfessionalsPaginated(
       blockedUserIds: _blockedUserIds,
       limit: ITEMS_PER_PAGE,
@@ -194,7 +228,6 @@ class SearchController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // ✅ usa _blockedUserIds do campo — não busca de novo
       if (_searchType == SearchType.professionals) {
         final result = await _firebaseService.fetchProfessionalsPaginated(
           blockedUserIds: _blockedUserIds,
@@ -278,8 +311,6 @@ class SearchController extends ChangeNotifier {
     print('_applyFilters — bloqueados: ${_blockedUserIds.length}');
 
     _filteredProfessionals = _allProfessionals.where((prof) {
-      // ✅ CORREÇÃO: filtra bloqueados da memória
-      // Antes: este bloco não existia — server filtrava mas memória não
       if (_blockedUserIds.isNotEmpty &&
           prof.localId.isNotEmpty &&
           _blockedUserIds.contains(prof.localId)) return false;
@@ -305,7 +336,6 @@ class SearchController extends ChangeNotifier {
     }).toList();
 
     _filteredVacancies = _allVacancies.where((vac) {
-      // ✅ CORREÇÃO: filtra bloqueados da memória
       if (_blockedUserIds.isNotEmpty &&
           vac.localId.isNotEmpty &&
           _blockedUserIds.contains(vac.localId)) return false;
@@ -401,9 +431,21 @@ class SearchController extends ChangeNotifier {
     _allVacancies.clear();
     await _cacheService.clearAll();
 
-    // ✅ CORREÇÃO: recarrega e SALVA bloqueados antes de tudo
-    await _loadBlockedUsers();
+    if (_blockProvider != null) {
+      _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+    } else {
+      await _loadBlockedUsers();
+    }
 
     await initialize();
+  }
+
+  // ── Dispose ───────────────────────────────────────────────────────────────
+
+  @override
+  void dispose() {
+    _blockProvider?.unregisterOnBlock(_handleUserBlocked);
+    _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
+    super.dispose();
   }
 }

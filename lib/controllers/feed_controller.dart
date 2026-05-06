@@ -1,4 +1,5 @@
 import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -17,7 +18,9 @@ class FeedController with ChangeNotifier {
       UserRelationShipController();
   final ExpirationService _expirationService = ExpirationService();
 
-  // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
+  // Referência ao BlockProvider para poder desregistrar callbacks no dispose
+  BlockProvider? _blockProvider;
+
   Set<String> _blockedUserIds = {};
 
   FeedMode _feedMode = FeedMode.unified;
@@ -65,7 +68,6 @@ class FeedController with ChangeNotifier {
   List<Cidade> get availableCities => _availableCities;
   List<VacancyModel> get filteredVacancies => _filteredVacancies;
 
-  // ✅ CORREÇÃO: getter agora filtra bloqueados da memória também
   List<ProfessionalModel> get filteredProfessionals =>
       _allProfessionals.where((p) {
         if (_blockedUserIds.isNotEmpty &&
@@ -108,6 +110,43 @@ class FeedController with ChangeNotifier {
   bool hasRequestedProfessional(String professionalLocalId) =>
       _requestedProfessionalIds.contains(professionalLocalId);
 
+  // ── Integração com BlockProvider ──────────────────────────────────────────
+
+  /// Chame este método uma única vez após criar o controller,
+  /// passando o BlockProvider do contexto.
+  /// Exemplo no widget:
+  ///   feedController.registerWithBlockProvider(
+  ///     context.read<BlockProvider>(),
+  ///   );
+  void registerWithBlockProvider(BlockProvider blockProvider) {
+    // Evita registrar duas vezes o mesmo provider
+    if (_blockProvider == blockProvider) return;
+
+    // Remove callbacks do provider anterior se houver
+    _blockProvider?.unregisterOnBlock(_handleUserBlocked);
+    _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
+
+    _blockProvider = blockProvider;
+    blockProvider.registerOnBlock(_handleUserBlocked);
+    blockProvider.registerOnUnblock(_handleUserUnblocked);
+
+    // Sincroniza o estado atual do BlockProvider imediatamente
+    _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
+    print('🔗 FeedController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
+  }
+
+  void _handleUserBlocked(String userId) {
+    print('🚫 FeedController: usuário bloqueado: $userId');
+    _blockedUserIds = {..._blockedUserIds, userId};
+    _applyFilters();
+  }
+
+  void _handleUserUnblocked(String userId) {
+    print('✅ FeedController: usuário desbloqueado: $userId');
+    _blockedUserIds = _blockedUserIds.difference({userId});
+    _applyFilters();
+  }
+
   // ── Inicialização ─────────────────────────────────────────────────────────
 
   Future<void> initialize({
@@ -131,8 +170,14 @@ class FeedController with ChangeNotifier {
       await _loadStates();
       if (initialState != null) await _loadCities(initialState);
 
-      // ✅ CORREÇÃO: Carrega bloqueados UMA VEZ com retry e mesclagem
-      await _loadBlockedUsersWithRetry();
+      // Se já há um BlockProvider registrado, usa o estado atual dele.
+      // Caso contrário, carrega diretamente (fallback para uso sem BlockProvider).
+      if (_blockProvider != null) {
+        _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+        print('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
+      } else {
+        await _loadBlockedUsers();
+      }
 
       await _loadChats();
       await _loadInitialFeed();
@@ -147,48 +192,18 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ✅ NOVO: método consolidado com retry E mesclagem
-  Future<void> _loadBlockedUsersWithRetry() async {
+  /// Fallback: carrega bloqueados direto do serviço quando
+  /// BlockProvider não está disponível.
+  Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
-    
-    print('🔄 Carregando bloqueados com retry...');
-    
-    for (int attempt = 0; attempt < 3; attempt++) {
-      try {
-        final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-        
-        if (list.isNotEmpty) {
-          // ✅ MESCLA em vez de substituir
-          _blockedUserIds = {..._blockedUserIds, ...list};
-          print('✅ Bloqueados carregados (tentativa ${attempt + 1}): ${_blockedUserIds.length}');
-          return;
-        }
-        
-        // Se lista vazia e não é última tentativa, aguarda e tenta de novo
-        if (attempt < 2) {
-          print('⏳ Lista vazia, tentando novamente em 500ms...');
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-      } catch (e) {
-        print('❌ Erro ao carregar bloqueados (tentativa ${attempt + 1}): $e');
-        // Se não for última tentativa, aguarda e tenta de novo
-        if (attempt < 2) {
-          await Future.delayed(const Duration(milliseconds: 500));
-        } else {
-          print('❌ Todas as tentativas falharam, mantendo estado atual');
-        }
-      }
+    try {
+      final list =
+          await _userController.fetchAllBlockedUsers(_currentUserId!);
+      _blockedUserIds = {..._blockedUserIds, ...list};
+      print('✅ Bloqueados carregados (fallback): ${_blockedUserIds.length}');
+    } catch (e) {
+      print('❌ Erro ao carregar bloqueados (fallback): $e');
     }
-    
-    // ✅ Se chegou aqui, todas as 3 tentativas falharam ou retornaram vazio
-    // Mantém o estado atual de _blockedUserIds (não zera)
-    print('⚠️ Não foi possível carregar bloqueados, mantendo ${_blockedUserIds.length} existentes');
-  }
-
-  void addBlockedUser(String userId) {
-    if (userId.isEmpty) return;
-    _blockedUserIds = {..._blockedUserIds, userId};
-    _applyFilters(); // já chama notifyListeners() internamente
   }
 
   // ── Estados / Cidades ─────────────────────────────────────────────────────
@@ -274,7 +289,6 @@ class FeedController with ChangeNotifier {
       print('\nCarregando mais itens...');
       print('   Bloqueados: ${_blockedUserIds.length}');
 
-      // ✅ Usa _blockedUserIds do campo, não busca do Firebase de novo
       if (_hasMoreVacancies) {
         final resultV = await _feedService.fetchVacanciesForFeed(
           blockedUserIds: _blockedUserIds,
@@ -343,7 +357,6 @@ class FeedController with ChangeNotifier {
     await _loadChats();
 
     _filteredVacancies = _allVacancies.where((vac) {
-      // ✅ Filtra bloqueados que já estão na memória
       if (_blockedUserIds.isNotEmpty &&
           vac.localId.isNotEmpty &&
           _blockedUserIds.contains(vac.localId)) return false;
@@ -431,8 +444,11 @@ class FeedController with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // ✅ Recarrega bloqueados com retry antes de tudo
-    await _loadBlockedUsersWithRetry();
+    if (_blockProvider != null) {
+      _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+    } else {
+      await _loadBlockedUsers();
+    }
 
     await _loadChats();
     await _loadInitialFeed();
@@ -440,4 +456,16 @@ class FeedController with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
   }
+
+  // ── Dispose ───────────────────────────────────────────────────────────────
+
+  @override
+  void dispose() {
+    // Remove callbacks para evitar memory leaks
+    _blockProvider?.unregisterOnBlock(_handleUserBlocked);
+    _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
+    super.dispose();
+  }
+
+  void addBlockedUser(String ownerLocalId) {}
 }

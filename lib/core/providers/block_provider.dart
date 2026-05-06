@@ -17,6 +17,45 @@ class BlockProvider extends ChangeNotifier {
   StreamSubscription<DatabaseEvent>? _iBlockedSub;
   StreamSubscription<DatabaseEvent>? _blockedMeSub;
 
+  // ── Callbacks de notificação ──────────────────────────────
+  // Controllers (FeedController, SearchController) registram aqui
+  // para serem notificados imediatamente ao bloquear/desbloquear.
+
+  final List<void Function(String userId)> _onBlockCallbacks = [];
+  final List<void Function(String userId)> _onUnblockCallbacks = [];
+
+  void registerOnBlock(void Function(String userId) callback) {
+    if (!_onBlockCallbacks.contains(callback)) {
+      _onBlockCallbacks.add(callback);
+    }
+  }
+
+  void registerOnUnblock(void Function(String userId) callback) {
+    if (!_onUnblockCallbacks.contains(callback)) {
+      _onUnblockCallbacks.add(callback);
+    }
+  }
+
+  void unregisterOnBlock(void Function(String userId) callback) {
+    _onBlockCallbacks.remove(callback);
+  }
+
+  void unregisterOnUnblock(void Function(String userId) callback) {
+    _onUnblockCallbacks.remove(callback);
+  }
+
+  void _notifyBlock(String userId) {
+    for (final cb in List.of(_onBlockCallbacks)) {
+      cb(userId);
+    }
+  }
+
+  void _notifyUnblock(String userId) {
+    for (final cb in List.of(_onUnblockCallbacks)) {
+      cb(userId);
+    }
+  }
+
   // ── Getters ───────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
@@ -33,14 +72,11 @@ class BlockProvider extends ChangeNotifier {
   // ── Init ──────────────────────────────────────────────────
 
   Future<void> init(String userId) async {
-    // Só ignora se já inicializou COM SUCESSO para este user
-    // Se falhou antes (_initSucceeded = false), permite tentar de novo
     if (_initialized && _initSucceeded && _myUserId == userId) {
       print('✅ BlockProvider já inicializado com sucesso para $userId');
       return;
     }
 
-    // Evita duas inicializações paralelas
     if (_isLoading && _myUserId == userId) {
       print('⏳ BlockProvider já carregando para $userId');
       return;
@@ -64,7 +100,7 @@ class BlockProvider extends ChangeNotifier {
       print('❌ BlockProvider.init erro: $e\n$st');
       _lastError = 'Erro na inicialização: $e';
       _initialized = true;
-      _initSucceeded = false; // falhou — telas podem chamar init de novo
+      _initSucceeded = false;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -73,6 +109,8 @@ class BlockProvider extends ChangeNotifier {
 
   void logout() {
     _cancelListeners();
+    _onBlockCallbacks.clear();
+    _onUnblockCallbacks.clear();
     _blockedSet = {};
     _myUserId = null;
     _lastError = null;
@@ -102,7 +140,6 @@ class BlockProvider extends ChangeNotifier {
   Future<bool> blockUser(String targetUserId) async {
     _lastError = null;
 
-    // Garante inicialização
     if (!_initialized || _myUserId == null) {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) {
@@ -119,7 +156,6 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
 
-    // Verificação direta no Firebase (não confia no set local)
     print('🔍 Verificando se $targetUserId já está bloqueado...');
     final jaExiste = await _service.isUserBlocked(_myUserId!, targetUserId);
     if (jaExiste) {
@@ -133,7 +169,6 @@ class BlockProvider extends ChangeNotifier {
     }
 
     try {
-      // Toda a lógica de retry/timeout/confirmação agora está no serviço
       final success = await _service.blockUser(_myUserId!, targetUserId);
 
       if (!success) {
@@ -143,9 +178,12 @@ class BlockProvider extends ChangeNotifier {
         return false;
       }
 
-      // Atualiza local imediatamente para a UI responder rápido
+      // Atualiza local imediatamente
       _blockedSet = {..._blockedSet, targetUserId};
       notifyListeners();
+
+      // Notifica todos os controllers registrados
+      _notifyBlock(targetUserId);
 
       // Sincroniza do servidor em background
       Future.delayed(const Duration(milliseconds: 500), () async {
@@ -162,15 +200,19 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
   }
+
   // ── unblockUser ───────────────────────────────────────────
 
   Future<bool> unblockUser(String targetUserId) async {
     if (_myUserId == null) return false;
     try {
-      // unblockUser agora usa remove() individual — fix do iOS
       final success = await _service.unblockUser(_myUserId!, targetUserId);
       if (success) {
         _blockedSet = _blockedSet.difference({targetUserId});
+
+        // Notifica todos os controllers registrados
+        _notifyUnblock(targetUserId);
+
         await Future.delayed(const Duration(milliseconds: 400));
         await _reload();
         notifyListeners();

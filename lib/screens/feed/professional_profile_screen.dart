@@ -40,6 +40,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
   // ID do dono do perfil
   String get ownerLocalId => widget.professional['local_id']?.toString() ?? '';
+  final FeedController feedController = FeedController();
+  final searchController = search.SearchController();
 
   // ✅ NOVO: Estado para chat existente
   bool _isCheckingChat = true;
@@ -1151,6 +1153,8 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     }
 
     final blockProvider = context.read<BlockProvider>();
+    feedController.registerWithBlockProvider(blockProvider);
+    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x
