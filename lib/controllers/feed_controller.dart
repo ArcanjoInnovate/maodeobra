@@ -13,7 +13,8 @@ class FeedController with ChangeNotifier {
   final FirebaseFeedService _feedService = FirebaseFeedService();
   String? _currentUserId;
   final IBGEService _ibgeService = IBGEService();
-  final UserRelationShipController _userController = UserRelationShipController();
+  final UserRelationShipController _userController =
+      UserRelationShipController();
   final ExpirationService _expirationService = ExpirationService();
 
   // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
@@ -137,7 +138,8 @@ class FeedController with ChangeNotifier {
       if (_currentUserId != null) {
         // tenta até 3x com intervalo — iOS pode demorar mais
         for (int i = 0; i < 3; i++) {
-          final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
+          final list =
+              await _userController.fetchAllBlockedUsers(_currentUserId!);
           if (list.isNotEmpty || i == 2) {
             _blockedUserIds = list.toSet();
             break;
@@ -162,18 +164,20 @@ class FeedController with ChangeNotifier {
 
   // ✅ NOVO: método dedicado para carregar e persistir bloqueados
   // Centraliza num lugar só — não esquece de salvar nunca mais
+  // ✅ CORREÇÃO: não sobrescreve, apenas adiciona novos bloqueados
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
     try {
       final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-      _blockedUserIds = list.toSet();
+      // ✅ Mescla com o set existente em vez de sobrescrever
+      _blockedUserIds = {..._blockedUserIds, ...list};
       print('✅ _blockedUserIds atualizado: ${_blockedUserIds.length}');
     } catch (e) {
       print('❌ Erro ao carregar bloqueados: $e');
-      _blockedUserIds = {};
+      // ✅ NÃO zera se der erro — mantém o estado atual
     }
   }
-  // Adicione este método no FeedController
+
   void addBlockedUser(String userId) {
     if (userId.isEmpty) return;
     _blockedUserIds = {..._blockedUserIds, userId};
@@ -190,7 +194,10 @@ class FeedController with ChangeNotifier {
   }
 
   Future<void> _loadCities(String uf) async {
-    if (uf.isEmpty) { _availableCities = []; return; }
+    if (uf.isEmpty) {
+      _availableCities = [];
+      return;
+    }
     _loadingCities = true;
     notifyListeners();
     try {
@@ -363,7 +370,8 @@ class FeedController with ChangeNotifier {
       return true;
     }).toList();
 
-    print('FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visíveis');
+    print(
+        'FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visíveis');
     notifyListeners();
   }
 

@@ -106,16 +106,17 @@ class SearchController extends ChangeNotifier {
     try {
       // ✅ CORREÇÃO: carrega e SALVA bloqueados no campo
       if (_currentUserId != null) {
-      // tenta até 3x com intervalo — iOS pode demorar mais
-      for (int i = 0; i < 3; i++) {
-        final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-        if (list.isNotEmpty || i == 2) {
-          _blockedUserIds = list.toSet();
-          break;
+        // tenta até 3x com intervalo — iOS pode demorar mais
+        for (int i = 0; i < 3; i++) {
+          final list =
+              await _userController.fetchAllBlockedUsers(_currentUserId!);
+          if (list.isNotEmpty || i == 2) {
+            _blockedUserIds = list.toSet();
+            break;
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
         }
-        await Future.delayed(const Duration(milliseconds: 500));
       }
-    }
       await _loadBlockedUsers();
 
       await _cacheService.clearAll();
@@ -144,19 +145,21 @@ class SearchController extends ChangeNotifier {
     _blockedUserIds = {..._blockedUserIds, userId};
     _applyFilters(); // já chama notifyListeners() internamente
   }
+
   // ✅ NOVO: método dedicado para carregar e persistir bloqueados
+  // ✅ CORREÇÃO: não sobrescreve, apenas adiciona novos bloqueados
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
     try {
       final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-      _blockedUserIds = list.toSet();
-      print('✅ Search _blockedUserIds: ${_blockedUserIds.length}');
+      // ✅ Mescla com o set existente em vez de sobrescrever
+      _blockedUserIds = {..._blockedUserIds, ...list};
+      print('✅ _blockedUserIds atualizado: ${_blockedUserIds.length}');
     } catch (e) {
-      print('❌ Erro ao carregar bloqueados no Search: $e');
-      _blockedUserIds = {};
+      print('❌ Erro ao carregar bloqueados: $e');
+      // ✅ NÃO zera se der erro — mantém o estado atual
     }
   }
-
   // ── Primeira página ───────────────────────────────────────────────────────
 
   Future<void> _loadFirstPage() async {
