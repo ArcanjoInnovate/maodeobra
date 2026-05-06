@@ -18,7 +18,6 @@ class FeedController with ChangeNotifier {
   final ExpirationService _expirationService = ExpirationService();
 
   // ✅ CORREÇÃO PRINCIPAL: campo que persiste os bloqueados
-  // Antes não existia — o set era criado localmente e descartado logo depois
   Set<String> _blockedUserIds = {};
 
   FeedMode _feedMode = FeedMode.unified;
@@ -67,10 +66,8 @@ class FeedController with ChangeNotifier {
   List<VacancyModel> get filteredVacancies => _filteredVacancies;
 
   // ✅ CORREÇÃO: getter agora filtra bloqueados da memória também
-  // Antes: filtrava só requests — bloqueados passavam direto
   List<ProfessionalModel> get filteredProfessionals =>
       _allProfessionals.where((p) {
-        // ← NOVO: remove da memória quem está bloqueado
         if (_blockedUserIds.isNotEmpty &&
             p.localId.isNotEmpty &&
             _blockedUserIds.contains(p.localId)) return false;
@@ -134,20 +131,8 @@ class FeedController with ChangeNotifier {
       await _loadStates();
       if (initialState != null) await _loadCities(initialState);
 
-      // ✅ carrega e SALVA no campo _blockedUserIds
-      if (_currentUserId != null) {
-        // tenta até 3x com intervalo — iOS pode demorar mais
-        for (int i = 0; i < 3; i++) {
-          final list =
-              await _userController.fetchAllBlockedUsers(_currentUserId!);
-          if (list.isNotEmpty || i == 2) {
-            _blockedUserIds = list.toSet();
-            break;
-          }
-          await Future.delayed(const Duration(milliseconds: 500));
-        }
-      }
-      await _loadBlockedUsers();
+      // ✅ CORREÇÃO: Carrega bloqueados UMA VEZ com retry e mesclagem
+      await _loadBlockedUsersWithRetry();
 
       await _loadChats();
       await _loadInitialFeed();
@@ -162,20 +147,42 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  // ✅ NOVO: método dedicado para carregar e persistir bloqueados
-  // Centraliza num lugar só — não esquece de salvar nunca mais
-  // ✅ CORREÇÃO: não sobrescreve, apenas adiciona novos bloqueados
-  Future<void> _loadBlockedUsers() async {
+  // ✅ NOVO: método consolidado com retry E mesclagem
+  Future<void> _loadBlockedUsersWithRetry() async {
     if (_currentUserId == null) return;
-    try {
-      final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
-      // ✅ Mescla com o set existente em vez de sobrescrever
-      _blockedUserIds = {..._blockedUserIds, ...list};
-      print('✅ _blockedUserIds atualizado: ${_blockedUserIds.length}');
-    } catch (e) {
-      print('❌ Erro ao carregar bloqueados: $e');
-      // ✅ NÃO zera se der erro — mantém o estado atual
+    
+    print('🔄 Carregando bloqueados com retry...');
+    
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
+        
+        if (list.isNotEmpty) {
+          // ✅ MESCLA em vez de substituir
+          _blockedUserIds = {..._blockedUserIds, ...list};
+          print('✅ Bloqueados carregados (tentativa ${attempt + 1}): ${_blockedUserIds.length}');
+          return;
+        }
+        
+        // Se lista vazia e não é última tentativa, aguarda e tenta de novo
+        if (attempt < 2) {
+          print('⏳ Lista vazia, tentando novamente em 500ms...');
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      } catch (e) {
+        print('❌ Erro ao carregar bloqueados (tentativa ${attempt + 1}): $e');
+        // Se não for última tentativa, aguarda e tenta de novo
+        if (attempt < 2) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        } else {
+          print('❌ Todas as tentativas falharam, mantendo estado atual');
+        }
+      }
     }
+    
+    // ✅ Se chegou aqui, todas as 3 tentativas falharam ou retornaram vazio
+    // Mantém o estado atual de _blockedUserIds (não zera)
+    print('⚠️ Não foi possível carregar bloqueados, mantendo ${_blockedUserIds.length} existentes');
   }
 
   void addBlockedUser(String userId) {
@@ -183,6 +190,7 @@ class FeedController with ChangeNotifier {
     _blockedUserIds = {..._blockedUserIds, userId};
     _applyFilters(); // já chama notifyListeners() internamente
   }
+
   // ── Estados / Cidades ─────────────────────────────────────────────────────
 
   Future<void> _loadStates() async {
@@ -266,9 +274,7 @@ class FeedController with ChangeNotifier {
       print('\nCarregando mais itens...');
       print('   Bloqueados: ${_blockedUserIds.length}');
 
-      // ✅ CORREÇÃO: usa _blockedUserIds do campo, não busca do Firebase de novo
-      // Antes: chamava fetchAllBlockedUsers() duas vezes, jogava fora o resultado
-      // e _applyFilters nunca sabia quem estava bloqueado
+      // ✅ Usa _blockedUserIds do campo, não busca do Firebase de novo
       if (_hasMoreVacancies) {
         final resultV = await _feedService.fetchVacanciesForFeed(
           blockedUserIds: _blockedUserIds,
@@ -337,8 +343,7 @@ class FeedController with ChangeNotifier {
     await _loadChats();
 
     _filteredVacancies = _allVacancies.where((vac) {
-      // ✅ CORREÇÃO: filtra bloqueados que já estão na memória
-      // Antes: este bloco não existia — server-side filtrava mas memória não
+      // ✅ Filtra bloqueados que já estão na memória
       if (_blockedUserIds.isNotEmpty &&
           vac.localId.isNotEmpty &&
           _blockedUserIds.contains(vac.localId)) return false;
@@ -426,9 +431,8 @@ class FeedController with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // ✅ CORREÇÃO: recarrega e SALVA bloqueados antes de tudo
-    // Antes: buscava mas resultado sumia — _applyFilters continuava vazio
-    await _loadBlockedUsers();
+    // ✅ Recarrega bloqueados com retry antes de tudo
+    await _loadBlockedUsersWithRetry();
 
     await _loadChats();
     await _loadInitialFeed();
