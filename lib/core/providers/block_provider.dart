@@ -9,70 +9,49 @@ class BlockProvider extends ChangeNotifier {
 
   Set<String> _blockedSet = {};
   bool _isLoading = false;
+  bool _initialized = false; // ✅ flag real de inicialização
   String? _myUserId;
   String? _lastError;
-  int _initAttempts = 0;
-  static const int _maxInitAttempts = 3;
 
   StreamSubscription<DatabaseEvent>? _iBlockedSub;
   StreamSubscription<DatabaseEvent>? _blockedMeSub;
 
-  // ── Getters ───────────────────────────────
+  // ── Getters ───────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
+  bool get isInitialized => _initialized;
   Set<String> get blockedSet => Set.unmodifiable(_blockedSet);
   String? get lastError => _lastError;
 
-  /// true se há qualquer bloqueio (eu bloqueei ou fui bloqueado)
   bool isBlocked(String userId) => _blockedSet.contains(userId);
 
-  /// Filtra qualquer lista removendo usuários bloqueados
   List<T> filterBlocked<T>(List<T> items, String Function(T) getOwnerId) =>
       items.where((item) => !isBlocked(getOwnerId(item))).toList();
 
-  // ── Init / Logout ─────────────────────────
+  // ── Init ──────────────────────────────────────────────────
 
   Future<void> init(String userId) async {
-    print('🔄 BlockProvider.init chamado com userId: $userId');
-    
-    if (_myUserId == userId && _blockedSet.isNotEmpty) {
-      print('✅ BlockProvider já inicializado com este userId: $_myUserId');
+    // ✅ Se já inicializado com o mesmo user, só atualiza listeners
+    if (_initialized && _myUserId == userId) {
+      print('✅ BlockProvider já inicializado para $userId');
       return;
     }
 
+    print('🔄 BlockProvider.init: $userId');
     _myUserId = userId;
-    _initAttempts++;
-
-    if (_initAttempts > _maxInitAttempts) {
-      print('❌ Máximo de tentativas de inicialização atingido: $_maxInitAttempts');
-      _lastError = 'Falha ao inicializar após $_maxInitAttempts tentativas';
-      return;
-    }
-
+    _initialized = false;
     _isLoading = true;
     _lastError = null;
     notifyListeners();
 
     try {
-      print('📥 Carregando lista de bloqueios...');
       await _reload();
-      
-      print('👂 Iniciando listeners em tempo real...');
       _startListeners();
-
-      _initAttempts = 0; // Reset counter on success
-      print('✅ BlockProvider inicializado com sucesso: ${_blockedSet.length} bloqueios');
-    } catch (e, stackTrace) {
-      print('❌ Erro ao inicializar BlockProvider: $e');
-      print('Stack trace: $stackTrace');
+      _initialized = true;
+      print('✅ BlockProvider pronto: ${_blockedSet.length} bloqueados');
+    } catch (e, st) {
+      print('❌ BlockProvider.init erro: $e\n$st');
       _lastError = 'Erro na inicialização: $e';
-      
-      // Retry automático se ainda tiver tentativas
-      if (_initAttempts < _maxInitAttempts) {
-        print('🔄 Tentando novamente em 2 segundos... (tentativa $_initAttempts/$_maxInitAttempts)');
-        await Future.delayed(const Duration(seconds: 2));
-        return init(userId);
-      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -80,32 +59,21 @@ class BlockProvider extends ChangeNotifier {
   }
 
   void logout() {
-    print('👋 BlockProvider logout');
     _cancelListeners();
     _blockedSet = {};
     _myUserId = null;
     _lastError = null;
-    _initAttempts = 0;
+    _initialized = false;
     notifyListeners();
   }
 
-  // recarrega bloqueios do zero (usado após mudanças manuais, tipo bloqueio/desbloqueio)
   Future<void> reload() async {
-    if (_myUserId == null) {
-      print('⚠️ reload: userId nulo');
-      return;
-    }
-    
-    print('🔄 Recarregando bloqueios...');
+    if (_myUserId == null) return;
     _isLoading = true;
     notifyListeners();
-    
     try {
       await _reload();
-      print('✅ Bloqueios recarregados: ${_blockedSet.length} usuários');
-    } catch (e, stackTrace) {
-      print('❌ Erro ao recarregar bloqueios: $e');
-      print('Stack trace: $stackTrace');
+    } catch (e) {
       _lastError = 'Erro ao recarregar: $e';
     } finally {
       _isLoading = false;
@@ -113,66 +81,71 @@ class BlockProvider extends ChangeNotifier {
     }
   }
 
-  // ── Ações (delegam ao service, atualizam local imediatamente) ──
+  // ── blockUser corrigido ───────────────────────────────────
 
   Future<bool> blockUser(String targetUserId) async {
-    print('🚫 Tentando bloquear usuário: $targetUserId');
     _lastError = null;
 
-    // ✅ VALIDAÇÃO: Garante que o provider está inicializado
+    // Garante inicialização
     if (_myUserId == null) {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        print('❌ Usuário não autenticado');
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
         _lastError = 'Usuário não autenticado';
         notifyListeners();
         return false;
       }
-      
-      print('⚠️ BlockProvider não inicializado, inicializando agora...');
-      await init(currentUser.uid);
+      await init(uid);
     }
 
     if (_myUserId == null) {
-      print('❌ Falha ao inicializar BlockProvider');
       _lastError = 'Falha ao inicializar provider';
       notifyListeners();
       return false;
     }
 
-    // ✅ VALIDAÇÃO: Verifica se já está bloqueado localmente
-    if (_blockedSet.contains(targetUserId)) {
-      print('⚠️ Usuário já está na lista de bloqueados localmente');
-      _lastError = 'Usuário já bloqueado';
-      notifyListeners();
-      return false;
+    // ✅ CORREÇÃO BUG DUPLICADO:
+    // Não confia SÓ no _blockedSet local (pode estar desatualizado no iOS)
+    // Verifica direto no Firebase ANTES de gravar
+    print('🔍 Verificando no Firebase se $targetUserId já está bloqueado...');
+    try {
+      final snap = await _service.checkRelationship(_myUserId!, targetUserId);
+      if (snap.iBlockedThem) {
+        print('⚠️ Já bloqueado (confirmado no Firebase)');
+        _lastError = 'Usuário já bloqueado';
+        // Sincroniza o set local que estava desatualizado
+        if (!_blockedSet.contains(targetUserId)) {
+          _blockedSet = {..._blockedSet, targetUserId};
+          notifyListeners();
+        }
+        return false;
+      }
+    } catch (e) {
+      print('⚠️ Erro ao verificar relação, prosseguindo: $e');
     }
 
     try {
-      print('📡 Enviando requisição de bloqueio ao Firebase...');
+      print('🚫 Bloqueando $targetUserId...');
       final success = await _service.blockUser(_myUserId!, targetUserId);
-      
+
       if (!success) {
-        print('❌ Service retornou falha ao bloquear');
         _lastError = 'Falha ao bloquear no Firebase';
         notifyListeners();
         return false;
       }
 
-      // ✅ Atualiza localmente SOMENTE se o service retornou sucesso
-      print('✅ Bloqueio bem-sucedido, atualizando localmente...');
+      // Atualiza local imediatamente
       _blockedSet = {..._blockedSet, targetUserId};
-      
-      // ✅ Aguarda um momento e recarrega para garantir sincronização
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _reload();
-      
       notifyListeners();
-      print('✅ Usuário bloqueado com sucesso: $targetUserId');
+
+      // Recarrega para sincronizar completamente
+      await Future.delayed(const Duration(milliseconds: 300));
+      await _reload();
+      notifyListeners();
+
+      print('✅ Bloqueado com sucesso: $targetUserId');
       return true;
-    } catch (e, stackTrace) {
-      print('❌ Exceção ao bloquear usuário: $e');
-      print('Stack trace: $stackTrace');
+    } catch (e, st) {
+      print('❌ Exceção ao bloquear: $e\n$st');
       _lastError = 'Exceção: $e';
       notifyListeners();
       return false;
@@ -180,113 +153,59 @@ class BlockProvider extends ChangeNotifier {
   }
 
   Future<bool> unblockUser(String targetUserId) async {
-    print('✅ Tentando desbloquear usuário: $targetUserId');
-    
-    if (_myUserId == null) {
-      print('❌ userId nulo ao desbloquear');
-      return false;
-    }
+    if (_myUserId == null) return false;
 
     try {
       final success = await _service.unblockUser(_myUserId!, targetUserId);
-      
       if (success) {
-        print('✅ Desbloqueio bem-sucedido, atualizando localmente...');
         _blockedSet = _blockedSet.difference({targetUserId});
-        
-        // ✅ Aguarda um momento e recarrega para garantir sincronização
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 300));
         await _reload();
-        
         notifyListeners();
-        print('✅ Usuário desbloqueado com sucesso: $targetUserId');
-      } else {
-        print('❌ Falha ao desbloquear no service');
       }
-      
       return success;
-    } catch (e, stackTrace) {
-      print('❌ Exceção ao desbloquear usuário: $e');
-      print('Stack trace: $stackTrace');
+    } catch (e, st) {
+      print('❌ Exceção ao desbloquear: $e\n$st');
       return false;
     }
   }
 
-  // ── Internos ──────────────────────────────
+  // ── Internos ──────────────────────────────────────────────
 
   Future<void> _reload() async {
-    if (_myUserId == null) {
-      print('⚠️ _reload: userId nulo');
-      return;
-    }
+    if (_myUserId == null) return;
 
-    try {
-      print('📥 Buscando bloqueios do Firebase...');
-      final results = await Future.wait([
-        _service.fetchUsersIBlocked(_myUserId!),
-        _service.fetchUsersWhoBlockedMe(_myUserId!),
-      ]);
-      
-      final iBlocked = results[0];
-      final blockedMe = results[1];
-      
-      _blockedSet = {...iBlocked, ...blockedMe};
-      
-      print('📊 Bloqueios carregados:');
-      print('   - Eu bloqueei: ${iBlocked.length}');
-      print('   - Me bloquearam: ${blockedMe.length}');
-      print('   - Total: ${_blockedSet.length}');
-    } catch (e, stackTrace) {
-      print('❌ Erro ao recarregar bloqueios: $e');
-      print('Stack trace: $stackTrace');
-      throw e; // Re-throw para ser capturado pelo caller
-    }
+    final results = await Future.wait([
+      _service.fetchUsersIBlocked(_myUserId!),
+      _service.fetchUsersWhoBlockedMe(_myUserId!),
+    ]);
+
+    _blockedSet = {...results[0], ...results[1]};
+    print('📊 _blockedSet atualizado: ${_blockedSet.length}');
   }
 
   void _startListeners() {
-    print('👂 Iniciando listeners de bloqueio...');
     _cancelListeners();
-    
-    if (_myUserId == null) {
-      print('⚠️ _startListeners: userId nulo');
-      return;
-    }
+    if (_myUserId == null) return;
 
     _iBlockedSub = _service.watchIBlocked(_myUserId!).listen(
-      (event) async {
-        print('🔔 Listener iBlocked disparado');
-        try {
-          await _reload();
-          notifyListeners();
-        } catch (e) {
-          print('❌ Erro no listener iBlocked: $e');
-        }
+      (_) async {
+        await _reload();
+        notifyListeners();
       },
-      onError: (error) {
-        print('❌ Erro no stream iBlocked: $error');
-      },
+      onError: (e) => print('❌ Stream iBlocked erro: $e'),
     );
 
     _blockedMeSub = _service.watchBlockedMe(_myUserId!).listen(
-      (event) async {
-        print('🔔 Listener blockedMe disparado');
-        try {
-          await _reload();
-          notifyListeners();
-        } catch (e) {
-          print('❌ Erro no listener blockedMe: $e');
-        }
+      (_) async {
+        await _reload();
+        notifyListeners();
       },
-      onError: (error) {
-        print('❌ Erro no stream blockedMe: $error');
-      },
+      onError: (e) => print('❌ Stream blockedMe erro: $e'),
     );
-
-    print('✅ Listeners iniciados com sucesso');
   }
 
   void _cancelListeners() {
-    print('🛑 Cancelando listeners...');
     _iBlockedSub?.cancel();
     _blockedMeSub?.cancel();
     _iBlockedSub = null;
@@ -295,7 +214,6 @@ class BlockProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    print('🗑️ BlockProvider dispose');
     _cancelListeners();
     super.dispose();
   }

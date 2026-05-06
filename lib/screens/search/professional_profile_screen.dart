@@ -1034,87 +1034,75 @@ class _ProfessionalProfilePageState extends State<ProfessionalProfilePage>
           ],
         ),
         content: const Text(
-          'Você tem certeza que deseja bloquear este usuário? Ele não poderá mais ver suas vagas ou entrar em contato com você.',
+          'Você tem certeza que deseja bloquear este usuário? '
+          'Ele não poderá mais ver suas vagas ou entrar em contato com você.',
           style: TextStyle(fontSize: 14, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancelar',
-                style: TextStyle(color: _muted, fontWeight: FontWeight.w600)),
+                style: TextStyle(
+                    color: const Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600)),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Fecha o dialog
-
-              try {
-                // ✅ CORREÇÃO: Usa a mesma instância do provider
-                final blockProvider = context.read<BlockProvider>();
-                final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-
-                if (currentUserId == null) {
-                  if (!mounted) return;
-                  _showError('Usuário não autenticado');
-                  return;
-                }
-
-                // ✅ CORREÇÃO: Inicializa se necessário (blockedSet vazio pode significar não inicializado)
-                if (blockProvider.blockedSet.isEmpty &&
-                    !blockProvider.isLoading) {
-                  print('🔄 Inicializando BlockProvider antes de bloquear...');
-                  await blockProvider.init(currentUserId);
-                }
-
-                // ✅ CORREÇÃO: Aguarda um momento para garantir que init completou
-                if (blockProvider.isLoading) {
-                  print('⏳ Aguardando BlockProvider terminar de carregar...');
-                  await Future.delayed(const Duration(milliseconds: 500));
-                }
-
-                // ✅ CORREÇÃO: Usa a MESMA instância (não faz read() novamente)
-                print('🚫 Tentando bloquear: $ownerLocalId');
-                final success = await blockProvider.blockUser(ownerLocalId);
-
-                if (!mounted) return;
-
-                if (success) {
-                  print('✅ Bloqueio bem-sucedido, atualizando feeds...');
-
-                  // ✅ Atualiza os feeds
-                  try {
-                    context.read<FeedController>().forceRefresh();
-                    context.read<search.SearchController>().forceRefresh();
-                  } catch (e) {
-                    print('⚠️ Erro ao atualizar feeds: $e');
-                  }
-
-                  _showSuccess('Usuário bloqueado com sucesso!');
-
-                  // ✅ Aguarda um pouco para o usuário ver a mensagem
-                  await Future.delayed(const Duration(milliseconds: 500));
-
-                  if (!mounted) return;
-                  Navigator.pop(context);
-                } else {
-                  // ✅ Mostra erro específico
-                  final erro = blockProvider.lastError ??
-                      'Erro desconhecido ao bloquear';
-                  print('❌ Falha ao bloquear: $erro');
-                  _showError('Falha: $erro');
-                }
-              } catch (e, stackTrace) {
-                print('❌ Exceção ao bloquear usuário: $e');
-                print('Stack trace: $stackTrace');
-
-                if (!mounted) return;
-                _showError('Erro inesperado: $e');
-              }
+              Navigator.pop(context);
+              await _executeBlock();
             },
             child: const Text('Bloquear', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
+  }
+
+// ✅ Lógica de bloqueio separada e limpa
+  Future<void> _executeBlock() async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) {
+      _showError('Usuário não autenticado');
+      return;
+    }
+
+    final blockProvider = context.read<BlockProvider>();
+
+    // ✅ Só inicializa se NUNCA foi inicializado antes
+    // Não chama init() se já está inicializado — evita o bug de bloquear 2x
+    if (!blockProvider.isInitialized) {
+      await blockProvider.init(currentUserId);
+    }
+
+    // ✅ Aguarda só se estiver carregando no momento
+    if (blockProvider.isLoading) {
+      int attempts = 0;
+      while (blockProvider.isLoading && attempts < 10) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        attempts++;
+      }
+    }
+
+    if (!mounted) return;
+
+    final success = await blockProvider.blockUser(ownerLocalId);
+
+    if (!mounted) return;
+
+    if (success) {
+      try {
+        context.read<FeedController>().forceRefresh();
+        context.read<search.SearchController>().forceRefresh();
+      } catch (_) {}
+
+      _showSuccess('Usuário bloqueado com sucesso!');
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+      Navigator.pop(context);
+    } else {
+      final erro = blockProvider.lastError ?? 'Erro desconhecido ao bloquear';
+      _showError('Falha: $erro');
+    }
   }
 
   void _openReportScreen() {

@@ -134,6 +134,17 @@ class FeedController with ChangeNotifier {
       if (initialState != null) await _loadCities(initialState);
 
       // ✅ carrega e SALVA no campo _blockedUserIds
+      if (_currentUserId != null) {
+        // tenta até 3x com intervalo — iOS pode demorar mais
+        for (int i = 0; i < 3; i++) {
+          final list = await _userController.fetchAllBlockedUsers(_currentUserId!);
+          if (list.isNotEmpty || i == 2) {
+            _blockedUserIds = list.toSet();
+            break;
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
       await _loadBlockedUsers();
 
       await _loadChats();
