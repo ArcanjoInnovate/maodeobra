@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -80,14 +82,16 @@ class FirebaseFeedService {
           if (blockedUserIds.isNotEmpty &&
               vacancy.localId.isNotEmpty &&
               blockedUserIds.contains(vacancy.localId)) {
-            print('  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
+            print(
+                '  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
             continue;
           }
 
           // Filtros de localização e profissão
           if (filterState != null &&
               filterState.isNotEmpty &&
-              vacancy.state.toUpperCase() != filterState.toUpperCase()) continue;
+              vacancy.state.toUpperCase() != filterState.toUpperCase())
+            continue;
 
           if (filterCity != null &&
               filterCity.isNotEmpty &&
@@ -95,7 +99,8 @@ class FirebaseFeedService {
 
           if (preferredProfession != null &&
               preferredProfession.isNotEmpty &&
-              vacancy.profession.toLowerCase() != preferredProfession.toLowerCase()) continue;
+              vacancy.profession.toLowerCase() !=
+                  preferredProfession.toLowerCase()) continue;
 
           vacancies.add(vacancy);
           newLastCreatedAt = vacancy.createdAt;
@@ -153,8 +158,7 @@ class FirebaseFeedService {
       final startTime = DateTime.now();
       int readsEstimated = 0;
 
-      Query query =
-          _database.child('professionals').orderByChild('updated_at');
+      Query query = _database.child('professionals').orderByChild('updated_at');
 
       if (lastUpdatedAt != null && lastKey != null) {
         query = query.endBefore(lastUpdatedAt, key: lastKey);
@@ -199,7 +203,8 @@ class FirebaseFeedService {
           if (blockedUserIds.isNotEmpty &&
               prof.localId.isNotEmpty &&
               blockedUserIds.contains(prof.localId)) {
-            print('  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
+            print(
+                '  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
             continue;
           }
 
@@ -214,7 +219,8 @@ class FirebaseFeedService {
 
           if (preferredProfession != null &&
               preferredProfession.isNotEmpty &&
-              prof.profession.toLowerCase() != preferredProfession.toLowerCase()) continue;
+              prof.profession.toLowerCase() !=
+                  preferredProfession.toLowerCase()) continue;
 
           professionals.add(prof);
           newLastUpdatedAt = prof.updatedAt;
@@ -232,7 +238,8 @@ class FirebaseFeedService {
           professionals.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('${professionals.length} profissionais retornados (de $readsEstimated lidos)');
+      print(
+          '${professionals.length} profissionais retornados (de $readsEstimated lidos)');
       print('========================================\n');
 
       return PaginatedFeedResult(
@@ -263,37 +270,60 @@ class FirebaseFeedService {
   // ═══════════════════════════════════════════════════════════════════════════
   Future<Set<String>> fetchBlockedUserIds() async {
     if (_currentUserId == null) return {};
-
     try {
-      print('Buscando usuarios bloqueados...');
+      final ref = FirebaseDatabase.instance.ref();
 
-      final snapshot = await _database
-          .child('Users/$_currentUserId/blocked_users')
-          .get();
-
-      if (!snapshot.exists || snapshot.value == null) {
-        print('Nenhum usuario bloqueado');
-        return {};
+      // Lê ambos os nós via onValue (evita cache iOS)
+      Future<Set<String>> readViaListener(String path) async {
+        final completer = Completer<Set<String>>();
+        late StreamSubscription<DatabaseEvent> sub;
+        sub = ref.child(path).onValue.listen(
+          (event) {
+            if (completer.isCompleted) return;
+            final value = event.snapshot.value;
+            if (value is! Map) {
+              completer.complete({});
+              sub.cancel();
+              return;
+            }
+            final ids = value.entries
+                .where((e) {
+                  final v = e.value;
+                  return v == true || v == 1 || v == 'true' || v == '1';
+                })
+                .map((e) => e.key.toString())
+                .toSet();
+            completer.complete(ids);
+            sub.cancel();
+          },
+          onError: (_) {
+            if (!completer.isCompleted) {
+              completer.complete({});
+              sub.cancel();
+            }
+          },
+        );
+        return completer.future.timeout(const Duration(seconds: 10),
+            onTimeout: () {
+          sub.cancel();
+          return {};
+        });
       }
 
-      final value = snapshot.value;
+      final results = await Future.wait([
+        readViaListener('Users/$_currentUserId/blocked_users'),
+        readViaListener('blocked_by/$_currentUserId'),
+      ]);
 
-      // Deve ser Map { ID_BLOQUEADO: true, ... }
-      if (value is! Map) {
-        print('⚠️ blocked_users formato inesperado: ${value.runtimeType}');
-        return {};
-      }
-
-      // ✅ KEYS são os IDs — não os values
-      final blockedIds = value.keys.map((k) => k.toString()).toSet();
-      print('${blockedIds.length} usuarios bloqueados: $blockedIds');
-      return blockedIds;
+      final all = {...results[0], ...results[1]};
+      print(
+          '✅ fetchBlockedUserIds: ${all.length} bloqueados (iBlockedThem: ${results[0].length}, blockedMe: ${results[1].length})');
+      return all;
     } catch (e) {
-      print('Erro ao buscar usuarios bloqueados: $e');
+      print('❌ fetchBlockedUserIds: $e');
       return {};
     }
   }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // BUSCAR VAGAS CANDIDATADAS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -323,7 +353,8 @@ class FirebaseFeedService {
         }
 
         final duration = DateTime.now().difference(startTime);
-        print('${requestedIds.length} candidaturas (otimizado) em ${duration.inMilliseconds}ms');
+        print(
+            '${requestedIds.length} candidaturas (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
@@ -348,7 +379,8 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
+      print(
+          '${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
       print('Erro ao buscar candidaturas: $e');
@@ -380,7 +412,8 @@ class FirebaseFeedService {
         }
 
         final duration = DateTime.now().difference(startTime);
-        print('${requestedIds.length} requests profissionais (otimizado) em ${duration.inMilliseconds}ms');
+        print(
+            '${requestedIds.length} requests profissionais (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
@@ -408,7 +441,8 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print('${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
+      print(
+          '${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
       print('Erro ao buscar requests de profissionais: $e');
@@ -507,8 +541,7 @@ class FirebaseFeedService {
     );
   }
 
-  ProfessionalModel _parseProfessional(
-      String key, Map<String, dynamic> data) {
+  ProfessionalModel _parseProfessional(String key, Map<String, dynamic> data) {
     return ProfessionalModel(
       id: key,
       avatar: data['avatar'] ?? '',
@@ -554,9 +587,12 @@ class FirebaseFeedService {
   void _printReadStats(DateTime startTime, int reads) {
     final duration = DateTime.now().difference(startTime);
     final cost = reads * 0.00036;
-    print('Stats: ${duration.inMilliseconds}ms | $reads reads | \$${cost.toStringAsFixed(6)}');
-    if (reads > 50) print('⚠️ Muitos reads — considere mais filtros server-side');
-    if (duration.inMilliseconds > 2000) print('⚠️ Query lenta — verifique índices');
+    print(
+        'Stats: ${duration.inMilliseconds}ms | $reads reads | \$${cost.toStringAsFixed(6)}');
+    if (reads > 50)
+      print('⚠️ Muitos reads — considere mais filtros server-side');
+    if (duration.inMilliseconds > 2000)
+      print('⚠️ Query lenta — verifique índices');
   }
 }
 

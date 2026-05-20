@@ -432,7 +432,7 @@ class SearchController extends ChangeNotifier {
     await _cacheService.clearAll();
 
     if (_blockProvider != null) {
-      _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+      _blockedUserIds = Set.from(_blockProvider!.blockedSet);
     } else {
       await _loadBlockedUsers();
     }

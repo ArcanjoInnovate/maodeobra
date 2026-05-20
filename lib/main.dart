@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:dartobra_new/controllers/feed_controller.dart';
+import 'package:dartobra_new/controllers/search_controller.dart' as app_search;
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/screens/auth/login/login_screen.dart';
 import 'package:dartobra_new/screens/auth/register/onboarding_first/onboarding_first_screen.dart';
@@ -33,22 +34,14 @@ final GlobalKey<_MyAppState> appStateKey = GlobalKey<_MyAppState>();
 Future<String?> _getCurrentUserId() async {
   try {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
-      print('✅ UserID: ${currentUser.uid}');
-      return currentUser.uid;
-    }
+    if (currentUser != null) return currentUser.uid;
 
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('currentUserId');
-    if (userId != null) {
-      print('⚠️ SharedPref UserID: $userId');
-      return userId;
-    }
+    if (userId != null) return userId;
 
     final authBox = await Hive.openBox('auth');
-    final hiveUserId = authBox.get('currentUserId');
-    print('⚠️ Hive UserID: $hiveUserId');
-    return hiveUserId;
+    return authBox.get('currentUserId');
   } catch (e) {
     print('❌ Erro userId: $e');
     return null;
@@ -88,7 +81,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late final DatabaseReference _adminRef;
   bool _isInMaintenance = false;
   bool _notificationsInitialized = false;
-  bool _blockProviderInitialized = false;
   String? _currentUserId;
   String? _currentUserRole;
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -103,20 +95,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     clearBadge();
     _listenToMaintenance();
-
-    // ✅ INICIALIZAÇÃO ROBUSTA DO BLOCKPROVIDER
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeBlockProvider();
-    });
-
-    // ✅ Inicializa notificações (BlockProvider primeiro)
     _initializeNotifications();
   }
 
   Future<void> clearBadge() async {
     try {
       await _localNotifications.cancelAll();
-      print('🧹 Badge limpo');
     } catch (e) {
       print('❌ Erro ao limpar badge: $e');
     }
@@ -131,33 +115,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print('📱 App retornou ao foreground — zerando badge');
       NotificationService().clearBadge();
-    }
-  }
-
-  // ✅ MÉTODO DEDICADO E ROBUSTO PARA BLOCKPROVIDER
-  Future<void> _initializeBlockProvider() async {
-    if (_blockProviderInitialized) return;
-
-    final userId = await _getCurrentUserId();
-    if (userId == null) {
-      // Tenta de novo em 2s se não tem usuário ainda
-      Future.delayed(const Duration(seconds: 2), _initializeBlockProvider);
-      return;
-    }
-
-    _currentUserId = userId;
-
-    try {
-      final blockProvider = Provider.of<BlockProvider>(context, listen: false);
-      await blockProvider.init(userId); // ✅ init() agora ignora chamadas duplas
-      _blockProviderInitialized = true;
-      print('✅ BlockProvider inicializado no main: $userId');
-    } catch (e) {
-      print('❌ Erro no main BlockProvider: $e');
-      // Tenta de novo em 3s
-      Future.delayed(const Duration(seconds: 3), _initializeBlockProvider);
     }
   }
 
@@ -173,8 +131,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final isTester = userId != null && testers.contains(userId);
       final shouldShowMaintenance = isUpdating && !isTester;
 
-      print('🔧 Maintenance: $isUpdating | Tester: $isTester | User: $userId');
-
       if (shouldShowMaintenance == _isInMaintenance) return;
 
       setState(() => _isInMaintenance = shouldShowMaintenance);
@@ -183,13 +139,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (navigator == null) return;
 
       if (shouldShowMaintenance) {
-        print('🚧 Manutenção ativada');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
           (route) => false,
         );
       } else {
-        print('✅ Manutenção desativada');
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const SplashPage()),
           (route) => false,
@@ -200,51 +154,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     });
   }
 
-  // ✅ SIMPLIFICADA: Notificações dependem do BlockProvider
   Future<void> _initializeNotifications() async {
     if (_notificationsInitialized) return;
-
     _initialMessage ??= await FirebaseMessaging.instance.getInitialMessage();
-    if (_initialMessage != null) {
-      print('🚀 [TERMINATED] Notificação inicial: ${_initialMessage!.data}');
-    }
-
-    // ✅ Aguarda BlockProvider antes de continuar
-    await _initializeBlockProvider();
-
-    if (_currentUserId == null) {
-      print('⚠️ userId nulo — notificações adiadas');
-      return;
-    }
-
-    _notificationsInitialized = true;
-    _currentUserRole = await _getUserRole(_currentUserId!);
-
-    final service = NotificationService();
-    await service.initialize(_currentUserId!);
-
-    service.updateCallbacks(
-      onChatTap: (chatId, senderId) async {
-        print('🔔 onChatTap: $chatId');
-        await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
-      },
-      onRequestTap: (requestType, profileId, vacancyId) async {
-        print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
-        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
-            requestType, profileId, vacancyId);
-      },
-    );
-
-    print('✅ Notificações inicializadas: $_currentUserId | $_currentUserRole');
   }
 
   Future<void> reinitializeNotifications(String userId) async {
-    print('🔄 Reinicializando notificações com userId: $userId');
+    print('🔄 Reinicializando notificações: $userId');
 
     _currentUserId = userId;
-
-    // ✅ Re-inicializa BlockProvider se necessário
-    await _initializeBlockProvider();
 
     if (!_notificationsInitialized) {
       _notificationsInitialized = true;
@@ -255,17 +173,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
       service.updateCallbacks(
         onChatTap: (chatId, senderId) async {
-          print('🔔 onChatTap: $chatId');
           await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
         },
         onRequestTap: (requestType, profileId, vacancyId) async {
-          print('🔔 onRequestTap: $requestType | $profileId | $vacancyId');
           await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
               requestType, profileId, vacancyId);
         },
       );
 
-      print('✅ Notificações re-inicializadas: $userId | $_currentUserRole');
+      print('✅ Notificações inicializadas: $userId | $_currentUserRole');
     }
   }
 
@@ -274,10 +190,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     if (_currentUserId == null) {
       _currentUserId = await _getCurrentUserId();
-      if (_currentUserId == null) {
-        print('⚠️ processInitialMessage: userId nulo, abortando');
-        return;
-      }
+      if (_currentUserId == null) return;
     }
     if (_currentUserRole == null) {
       _currentUserRole = await _getUserRole(_currentUserId!);
@@ -285,7 +198,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     if (_initialMessage != null) {
       _initialMessageProcessed = true;
-      print('🎯 Processando notificação FCM inicial...');
       await _dispatchPayload(_initialMessage!.data);
       return;
     }
@@ -293,34 +205,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final pending = NotificationService().consumePendingPayload();
     if (pending != null) {
       _initialMessageProcessed = true;
-      print('🎯 Processando payload local pendente: $pending');
       await _dispatchPayload(pending);
-      return;
     }
-
-    print('ℹ️ processInitialMessage: nenhum payload pendente');
   }
 
   Future<void> _dispatchPayload(Map<String, dynamic> data) async {
     final type = data['type']?.toString() ?? '';
 
-    print('⏳ Aguardando HomeScreen montar...');
     bool homeReady = false;
     for (int i = 0; i < 30; i++) {
       final state = homeScreenKey.currentState;
       if (state != null && state.mounted) {
         homeReady = true;
-        print('✅ HomeScreen montada na tentativa ${i + 1}');
         break;
       }
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
-    if (!homeReady) {
-      print('⚠️ HomeScreen não montou em 9 segundos, abortando navegação');
-      return;
-    }
-
+    if (!homeReady) return;
     await Future.delayed(const Duration(milliseconds: 300));
 
     switch (type) {
@@ -331,15 +233,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           await _safeNavigateChat(chatId, _currentUserId!, _currentUserRole!);
         }
         break;
-
       case 'request':
-        final requestType = data['requestType']?.toString() ?? 'professional';
-        final profileId = data['profileId']?.toString() ?? '';
-        final vacancyId = data['vacancyId']?.toString() ?? '';
-        await _safeNavigateRequest(_currentUserId!, _currentUserRole!,
-            requestType, profileId, vacancyId);
+        await _safeNavigateRequest(
+          _currentUserId!,
+          _currentUserRole!,
+          data['requestType']?.toString() ?? 'professional',
+          data['profileId']?.toString() ?? '',
+          data['vacancyId']?.toString() ?? '',
+        );
         break;
-
       case 'vacancy_request':
         final vacancyId = data['vacancyId']?.toString() ?? '';
         if (vacancyId.isNotEmpty) {
@@ -347,9 +249,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               'vacancy_request', '', vacancyId);
         }
         break;
-
-      default:
-        print('⚠️ Tipo desconhecido: $type');
     }
   }
 
@@ -358,7 +257,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     for (int i = 0; i < 10; i++) {
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
-        print('📱 [tentativa ${i + 1}] Navegando para chat: $chatId');
         await NotificationNavigationService().navigateToChat(
           context: context,
           chatId: chatId,
@@ -369,7 +267,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
       await Future.delayed(const Duration(milliseconds: 200));
     }
-    print('⚠️ FALHOU navegar chat - sem context após 10 tentativas');
   }
 
   Future<void> _safeNavigateRequest(
@@ -382,7 +279,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     for (int i = 0; i < 10; i++) {
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
-        print('📱 [tentativa ${i + 1}] Navegando para request: $requestType');
         await NotificationNavigationService().navigateToRequest(
           context: context,
           userId: userId,
@@ -395,7 +291,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
       await Future.delayed(const Duration(milliseconds: 200));
     }
-    print('⚠️ FALHOU navegar request - sem context após 10 tentativas');
   }
 
   Future<String> _getUserRole(String userId) async {
@@ -404,7 +299,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           await FirebaseDatabase.instance.ref('Users/$userId/activeMode').get();
       return snapshot.value?.toString() ?? 'employee';
     } catch (e) {
-      print('❌ Erro userRole: $e');
       return 'employee';
     }
   }
@@ -413,9 +307,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // ⚠️ ORDEM IMPORTA: BlockProvider primeiro,
+        // depois os controllers que dependem dele.
         ChangeNotifierProvider(create: (_) => BlockProvider()),
         ChangeNotifierProvider(create: (_) => FeedController(), lazy: true),
-        ChangeNotifierProvider(create: (_) => SearchController(), lazy: true),
+        ChangeNotifierProvider(
+            create: (_) => app_search.SearchController(), lazy: true),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

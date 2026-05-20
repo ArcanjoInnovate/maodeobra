@@ -38,9 +38,8 @@ class UserRelationShipService {
 
   Future<bool> isUserBlocked(String myUserId, String targetUserId) async {
     try {
-      final snap = await _db
-          .child('Users/$myUserId/blocked_users/$targetUserId')
-          .get();
+      final snap =
+          await _db.child('Users/$myUserId/blocked_users/$targetUserId').get();
       return snap.exists && _isTruthy(snap.value);
     } catch (e) {
       print('❌ isUserBlocked erro: $e');
@@ -74,9 +73,8 @@ class UserRelationShipService {
       }
 
       // PASSO 2: Verifica se já está bloqueado (usa .get() aqui porque não é crítico)
-      final alreadySnap = await _db
-          .child('Users/$myUserId/blocked_users/$targetUserId')
-          .get();
+      final alreadySnap =
+          await _db.child('Users/$myUserId/blocked_users/$targetUserId').get();
       if (alreadySnap.exists && _isTruthy(alreadySnap.value)) {
         print('⚠️ Já bloqueado — abortando');
         return false;
@@ -155,7 +153,6 @@ class UserRelationShipService {
       print('✅ BLOQUEIO CONCLUÍDO COM SUCESSO');
       print('═══════════════════════════════════════════════\n');
       return true;
-
     } catch (e, st) {
       print('❌ EXCEÇÃO em blockUser: $e\n$st');
       return false;
@@ -171,9 +168,7 @@ class UserRelationShipService {
       final authUserId = await _ensureValidAuth();
       if (authUserId == null || authUserId != myUserId) return false;
 
-      await _db
-          .child('Users/$myUserId/blocked_users/$targetUserId')
-          .remove();
+      await _db.child('Users/$myUserId/blocked_users/$targetUserId').remove();
 
       unawaited(_db
           .child('blocked_by/$targetUserId/$myUserId')
@@ -207,7 +202,11 @@ class UserRelationShipService {
 
   Future<Set<String>> fetchUsersIBlocked(String myUserId) async {
     try {
-      final snap = await _db.child('Users/$myUserId/blocked_users').get();
+      final ref = _db.child('Users/$myUserId/blocked_users');
+      // Força sincronização com servidor antes de ler
+      ref.keepSynced(true);
+      final snap = await ref.get();
+      ref.keepSynced(false);
       if (!snap.exists || snap.value == null) return {};
       final value = snap.value;
       if (value is! Map) return {};
@@ -223,7 +222,10 @@ class UserRelationShipService {
 
   Future<Set<String>> fetchUsersWhoBlockedMe(String myUserId) async {
     try {
-      final snap = await _db.child('blocked_by/$myUserId').get();
+      final ref = _db.child('blocked_by/$myUserId');
+      ref.keepSynced(true);
+      final snap = await ref.get();
+      ref.keepSynced(false);
       if (!snap.exists || snap.value == null) return {};
       final value = snap.value;
       if (value is! Map) return {};

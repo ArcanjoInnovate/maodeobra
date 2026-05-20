@@ -226,14 +226,63 @@ class BlockProvider extends ChangeNotifier {
 
   // ── Internos ──────────────────────────────────────────────
 
+  // Substitui _reload() atual inteiro
   Future<void> _reload() async {
     if (_myUserId == null) return;
+
+    // Usa Completer+onValue em vez de .get() para contornar cache iOS
     final results = await Future.wait([
-      _service.fetchUsersIBlocked(_myUserId!),
-      _service.fetchUsersWhoBlockedMe(_myUserId!),
+      _fetchViaListener('Users/$_myUserId/blocked_users'),
+      _fetchViaListener('blocked_by/$_myUserId'),
     ]);
-    _blockedSet = {...results[0], ...results[1]};
+
+    final iBlocked = _parseBlockedMap(results[0]);
+    final blockedMe = _parseBlockedMap(results[1]);
+    _blockedSet = {...iBlocked, ...blockedMe};
     print('📊 _blockedSet atualizado: ${_blockedSet.length} usuários');
+  }
+
+  Future<dynamic> _fetchViaListener(String path) async {
+    final completer = Completer<dynamic>();
+    late StreamSubscription<DatabaseEvent> sub;
+    sub = FirebaseDatabase.instance.ref().child(path).onValue.listen(
+      (event) {
+        if (!completer.isCompleted) {
+          completer.complete(event.snapshot.value);
+          sub.cancel();
+        }
+      },
+      onError: (e) {
+        if (!completer.isCompleted) {
+          completer.complete(null);
+          sub.cancel();
+        }
+      },
+    );
+    return completer.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        sub.cancel();
+        return null;
+      },
+    );
+  }
+
+  Set<String> _parseBlockedMap(dynamic value) {
+    if (value == null) return {};
+    if (value is! Map) return {};
+    return value.entries
+        .where((e) => _isTruthy(e.value))
+        .map((e) => e.key.toString())
+        .toSet();
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) return value == 'true' || value == '1';
+    return false;
   }
 
   void _startListeners() {

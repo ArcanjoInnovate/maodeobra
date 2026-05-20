@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:dartobra_new/controllers/feed_controller.dart';
+import 'package:dartobra_new/controllers/search_controller.dart' as app_search;
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/core/repositories/user_repository.dart';
 import 'package:dartobra_new/main.dart' as MyApp;
 import 'package:dartobra_new/screens/auth/login/login_controller.dart';
@@ -10,6 +13,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({Key? key}) : super(key: key);
@@ -29,8 +33,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   final UserRepository _repo = UserRepository();
   final LoginController _loginCtrl = LoginController();
 
-  // ── Ciclo de vida ──────────────────────────────────────────────────────────
-
   @override
   void initState() {
     super.initState();
@@ -43,7 +45,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     try {
       if (Platform.isIOS) {
         final iosInfo = await DeviceInfoPlugin().iosInfo;
-        debugPrint('📱 iOS ${iosInfo.systemVersion} - Iniciando permissões...');
+        debugPrint('📱 iOS ${iosInfo.systemVersion}');
 
         final NotificationSettings settings =
             await FirebaseMessaging.instance.requestPermission(
@@ -54,37 +56,21 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         );
         debugPrint('🔔 iOS Notificações: ${settings.authorizationStatus}');
 
-        final statuses = await [
-          Permission.camera,
-          Permission.photos,
-        ].request();
-
-        statuses.forEach((permission, status) {
-          debugPrint('🔐 iOS $permission → $status');
-        });
+        await [Permission.camera, Permission.photos].request();
       } else if (Platform.isAndroid) {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
-        debugPrint(
-            '🤖 Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
+        debugPrint('🤖 Android SDK ${androidInfo.version.sdkInt}');
 
         if (androidInfo.version.sdkInt >= 33) {
-          final notifStatus = await Permission.notification.request();
-          debugPrint('🔔 Android Notificações: $notifStatus');
-        }
-
-        final cameraStatus = await Permission.camera.request();
-        debugPrint('📸 Android Câmera: $cameraStatus');
-
-        if (androidInfo.version.sdkInt >= 33) {
-          final photosStatus = await Permission.photos.request();
-          debugPrint('🖼️ Android Fotos: $photosStatus');
+          await Permission.notification.request();
+          await Permission.photos.request();
         } else {
-          final storageStatus = await Permission.storage.request();
-          debugPrint('💾 Android Storage: $storageStatus');
+          await Permission.storage.request();
         }
+        await Permission.camera.request();
       }
     } catch (e) {
-      debugPrint('⚠️ Erro ao solicitar permissões: $e');
+      debugPrint('⚠️ Erro permissões: $e');
     }
   }
 
@@ -95,8 +81,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _rotateController.dispose();
     super.dispose();
   }
-
-  // ── Animações ──────────────────────────────────────────────────────────────
 
   void _setupAnimations() {
     _logoController = AnimationController(
@@ -124,45 +108,39 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     _logoController.forward();
   }
 
-  // ── Inicialização ──────────────────────────────────────────────────────────
-
   Future<void> _initApp() async {
     try {
       await Future.delayed(const Duration(milliseconds: 1500));
 
       final User? currentUser = _auth.currentUser;
-
       if (currentUser == null) {
         _goToLogin();
         return;
       }
 
       final user = await _repo.fetchUser(currentUser.uid);
-
       if (user == null) {
         await _auth.signOut();
         _goToLogin();
         return;
       }
 
+      // ── PASSO CRÍTICO ──────────────────────────────────────────────────────
+      // Inicializa o BlockProvider e conecta os controllers ANTES de navegar
+      // para a HomeScreen. Isso garante que quando o FeedController e o
+      // SearchController carregarem seus dados, os bloqueados já estão
+      // disponíveis via blockedSet — sem depender de chamada própria ao Firebase.
+      //
+      // No iOS isso é especialmente importante porque o SDK não tem cache
+      // local persistente, e chamadas paralelas ao Firebase podem retornar
+      // vazias se feitas antes da conexão estar estável.
+      await _initBlockProviderAndConnectControllers(currentUser.uid);
+
       await _refreshNotificationCallbacks(currentUser.uid, user.activeMode);
 
       if (!mounted) return;
       await _loginCtrl.navigateToNextScreen(context, user);
 
-      // ═════════════════════════════════════════════════════════════════════
-      // FIX: Aguarda o próximo frame para garantir que a HomeScreen já está
-      // montada na árvore antes de processar qualquer notificação pendente.
-      //
-      // Ordem:
-      //   1. reinitializeNotifications → registra os callbacks no
-      //      NotificationService, resolvendo o race condition do cold start
-      //      (userId nulo quando _initializeNotifications() rodou no main.dart).
-      //   2. processInitialMessage → consome _initialMessage (FCM direto) ou
-      //      consumePendingPayload() (tap em notificação local com app morto),
-      //      agora que os callbacks já estão registrados e a tela de destino
-      //      já está na árvore de widgets.
-      // ═════════════════════════════════════════════════════════════════════
       await WidgetsBinding.instance.endOfFrame;
 
       final appState = MyApp.appStateKey.currentState;
@@ -171,8 +149,51 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         await appState.processInitialMessage();
       }
     } catch (e) {
-      print('❌ Erro: $e');
+      print('❌ Erro splash: $e');
       _goToLogin();
+    }
+  }
+
+  /// Inicializa o BlockProvider com await real e conecta FeedController
+  /// e SearchController via callbacks — tudo antes de exibir o feed.
+  Future<void> _initBlockProviderAndConnectControllers(String userId) async {
+    if (!mounted) return;
+
+    try {
+      final blockProvider = context.read<BlockProvider>();
+
+      // Aguarda com timeout para não travar a splash em caso de falha de rede.
+      // 8 segundos é suficiente para qualquer conexão móvel razoável no iOS.
+      await blockProvider.init(userId).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          print('⚠️ BlockProvider.init timeout — feed carregará sem bloqueados'
+              ' e sincronizará via stream quando a rede responder');
+        },
+      );
+
+      print(
+          '✅ BlockProvider pronto: ${blockProvider.blockedSet.length} bloqueados');
+
+      if (!mounted) return;
+
+      try {
+        context.read<FeedController>().registerWithBlockProvider(blockProvider);
+        print('✅ FeedController registrado no BlockProvider');
+      } catch (e) {
+        print('⚠️ FeedController não disponível ainda: $e');
+      }
+
+      try {
+        context
+            .read<app_search.SearchController>()
+            .registerWithBlockProvider(blockProvider);
+        print('✅ SearchController registrado no BlockProvider');
+      } catch (e) {
+        print('⚠️ SearchController não disponível ainda: $e');
+      }
+    } catch (e) {
+      print('❌ _initBlockProviderAndConnectControllers: $e');
     }
   }
 
@@ -184,7 +205,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       onChatTap: (chatId, senderId) async {
         final context = MyApp.navigatorKey.currentContext;
         if (context == null) return;
-
         await NotificationNavigationService().navigateToChat(
           context: context,
           chatId: chatId,
@@ -195,7 +215,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       onRequestTap: (requestType, profileId, vacancyId) async {
         final context = MyApp.navigatorKey.currentContext;
         if (context == null) return;
-
         await NotificationNavigationService().navigateToRequest(
           context: context,
           userId: userId,
@@ -206,15 +225,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         );
       },
     );
-
-    print('✅ Callbacks atualizados | user: $userId | role: $userRole');
   }
 
   void _goToLogin() {
     if (mounted) Navigator.pushReplacementNamed(context, '/LoginScreen');
   }
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -225,15 +240,14 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF1E3A8A), // Blue 900
-              Color(0xFF3B82F6), // Blue 500
-              Color(0xFF60A5FA), // Blue 400
+              Color(0xFF1E3A8A),
+              Color(0xFF3B82F6),
+              Color(0xFF60A5FA),
             ],
           ),
         ),
         child: Stack(
           children: [
-            // Círculos decorativos de fundo
             Positioned(
               top: -100,
               right: -100,
@@ -258,13 +272,10 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
-            // Conteúdo principal
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo com animação
                   ScaleTransition(
                     scale: _logoAnimation,
                     child: FadeTransition(
@@ -290,10 +301,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 40),
-
-                  // Nome do app
                   FadeTransition(
                     opacity: _logoAnimation,
                     child: Column(
@@ -326,10 +334,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 60),
-
-                  // Loading indicator animado
                   AnimatedBuilder(
                     animation: _rotateController,
                     builder: (context, child) {
@@ -367,8 +372,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                 ],
               ),
             ),
-
-            // Versão do app no rodapé
             Positioned(
               bottom: 40,
               left: 0,

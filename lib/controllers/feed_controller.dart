@@ -170,10 +170,8 @@ class FeedController with ChangeNotifier {
       await _loadStates();
       if (initialState != null) await _loadCities(initialState);
 
-      // Se já há um BlockProvider registrado, usa o estado atual dele.
-      // Caso contrário, carrega diretamente (fallback para uso sem BlockProvider).
       if (_blockProvider != null) {
-        _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+        _blockedUserIds = Set.from(_blockProvider!.blockedSet);
         print('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
       } else {
         await _loadBlockedUsers();
@@ -445,7 +443,7 @@ class FeedController with ChangeNotifier {
     notifyListeners();
 
     if (_blockProvider != null) {
-      _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
+      _blockedUserIds = Set.from(_blockProvider!.blockedSet);
     } else {
       await _loadBlockedUsers();
     }
