@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dartobra_new/core/controllers/user_relationship_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
@@ -7,6 +9,7 @@ import 'package:dartobra_new/services/search/firebase_search_service.dart';
 import 'package:dartobra_new/services/search/ibge_service.dart';
 import 'package:dartobra_new/services/search/professionals_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import '../models/search/vacancy_model.dart';
 
@@ -107,7 +110,8 @@ class SearchController extends ChangeNotifier {
 
     // Sincroniza estado atual imediatamente
     _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
-    print('🔗 SearchController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
+    print(
+        '🔗 SearchController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
   }
 
   void _handleUserBlocked(String userId) {
@@ -127,21 +131,18 @@ class SearchController extends ChangeNotifier {
   Future<void> initialize() async {
     if (_isLoading) return;
 
-    print('\n========================================');
-    print('   INICIALIZANDO SEARCH CONTROLLER');
-    print('========================================');
-
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      // Usa o BlockProvider se já registrado; caso contrário, fallback direto.
+      // ✅ BlockProvider registrado antes de chegar aqui (via SearchPage)
       if (_blockProvider != null) {
-        _blockedUserIds = {..._blockedUserIds, ..._blockProvider!.blockedSet};
-        print('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
+        _blockedUserIds = Set.from(_blockProvider!.blockedSet);
+        print('✅ Bloqueados do BlockProvider: ${_blockedUserIds.length}');
       } else {
+        // Fallback agora usa onValue — sem cache iOS
         await _loadBlockedUsers();
       }
 
@@ -177,15 +178,58 @@ class SearchController extends ChangeNotifier {
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
     try {
-      final list =
-          await _userController.fetchAllBlockedUsers(_currentUserId!);
-      _blockedUserIds = {..._blockedUserIds, ...list};
-      print('✅ _blockedUserIds (fallback): ${_blockedUserIds.length}');
+      final ref = FirebaseDatabase.instance.ref();
+
+      Future<Set<String>> readViaListener(String path) async {
+        final completer = Completer<Set<String>>();
+        late StreamSubscription<DatabaseEvent> sub;
+        sub = ref.child(path).onValue.listen(
+          (event) {
+            if (completer.isCompleted) return;
+            final value = event.snapshot.value;
+            if (value is! Map) {
+              completer.complete({});
+              sub.cancel();
+              return;
+            }
+            final ids = value.entries
+                .where((e) {
+                  final v = e.value;
+                  return v == true || v == 1 || v == 'true' || v == '1';
+                })
+                .map((e) => e.key.toString())
+                .toSet();
+            completer.complete(ids);
+            sub.cancel();
+          },
+          onError: (_) {
+            if (!completer.isCompleted) {
+              completer.complete({});
+              sub.cancel();
+            }
+          },
+        );
+        return completer.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            sub.cancel();
+            return {};
+          },
+        );
+      }
+
+      final results = await Future.wait([
+        readViaListener('Users/$_currentUserId/blocked_users'),
+        readViaListener('blocked_by/$_currentUserId'),
+      ]);
+
+      _blockedUserIds = {..._blockedUserIds, ...results[0], ...results[1]};
+      print(
+          '✅ _loadBlockedUsers (search): ${_blockedUserIds.length} bloqueados');
     } catch (e) {
-      print('❌ Erro ao carregar bloqueados (fallback): $e');
+      print('❌ _loadBlockedUsers (search): $e');
     }
   }
-
   // ── Primeira página ───────────────────────────────────────────────────────
 
   Future<void> _loadFirstPage() async {
@@ -437,9 +481,10 @@ class SearchController extends ChangeNotifier {
       await _loadBlockedUsers();
     }
 
+    // Reseta o guard antes de chamar initialize()
+    _isLoading = false;
     await initialize();
   }
-
   // ── Dispose ───────────────────────────────────────────────────────────────
 
   @override

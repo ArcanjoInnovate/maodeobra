@@ -1,6 +1,7 @@
 // lib/pages/search_page.dart
 
 import 'package:dartobra_new/controllers/search_controller.dart' as search;
+import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
 import 'package:dartobra_new/screens/feed/vacancy_detail_screen.dart';
 import 'package:dartobra_new/screens/search/my_vacancy_details_screen.dart';
@@ -31,7 +32,9 @@ class _SearchPageState extends State<SearchPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final controller = context.read<search.SearchController>();
-      // ✅ Sempre reinicializa — garante bloqueados atualizados
+      final blockProvider = context.read<BlockProvider>();
+
+      controller.registerWithBlockProvider(blockProvider);
       await controller.initialize();
     });
     _scrollController.addListener(_onScroll);
