@@ -275,25 +275,50 @@ class _ContractorProfileViewState extends State<ContractorProfileView> {
         return;
       }
 
-      // Verificar se já existe chat
-      final chatsSnapshot = await _database.child('Chats').get();
+      // Verificar se já existe chat (query indexada em vez de full scan)
+      final chatsSnapshot = await _database
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(widget.myUserId)
+          .get();
 
+      bool chatExists = false;
       if (chatsSnapshot.exists && chatsSnapshot.value != null) {
         final chatsData = _safeMapConvert(chatsSnapshot.value);
-        bool chatExists = false;
-
         for (final chatEntry in chatsData.entries) {
           final chatData = chatEntry.value is Map
               ? _safeMapConvert(chatEntry.value)
               : <String, dynamic>{};
-          if (chatData['contractor']?.toString() == widget.myUserId &&
-              chatData['employee']?.toString() == employeeUid) {
+          if (chatData['employee']?.toString() == employeeUid) {
             chatExists = true;
             break;
           }
         }
+      }
 
-        if (chatExists) {
+      if (!chatExists) {
+        // Verifica também como employee (caso invertido)
+        final reverseSnapshot = await _database
+            .child('Chats')
+            .orderByChild('employee')
+            .equalTo(widget.myUserId)
+            .get();
+
+        if (reverseSnapshot.exists && reverseSnapshot.value != null) {
+          final reverseData = _safeMapConvert(reverseSnapshot.value);
+          for (final chatEntry in reverseData.entries) {
+            final chatData = chatEntry.value is Map
+                ? _safeMapConvert(chatEntry.value)
+                : <String, dynamic>{};
+            if (chatData['contractor']?.toString() == employeeUid) {
+              chatExists = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (chatExists) {
           await _rejectCandidate();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
