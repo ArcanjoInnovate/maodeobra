@@ -12,18 +12,38 @@
         ".read": "auth != null",
         ".write": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
         "isAdmin": {
-          ".write": false
+          ".write": false,
+          ".validate": "newData.isBoolean()"
+        },
+        "Name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 100"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 100"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "email_contact": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "telefone": {
+          ".validate": "newData.isString() && newData.val().length <= 30"
+        },
+        "avatar": {
+          ".validate": "newData.isString() && newData.val().length <= 500"
         },
         "blocked_users": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && auth.uid === $uid",
           "$targetId": {
-            ".validate": "newData.isBoolean()"
+            ".validate": "newData.isBoolean() && $targetId.length >= 20 && $targetId.length <= 128"
           }
         },
         "fcmToken": {
           ".read": "auth != null && auth.uid === $uid",
-          ".write": "auth != null && auth.uid === $uid"
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isString() && newData.val().length <= 500"
         },
         "fcmDebug": {
           ".read": "auth != null && auth.uid === $uid",
@@ -36,6 +56,19 @@
         "penalty_history": {
           ".read": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
           ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true"
+        },
+        "data_worker": {
+          "summary": {
+            ".validate": "newData.isString() && newData.val().length <= 2000"
+          },
+          "profession": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          }
+        },
+        "data_contractor": {
+          "summary": {
+            ".validate": "newData.isString() && newData.val().length <= 2000"
+          }
         }
       }
     },
@@ -45,7 +78,31 @@
         ".read": "auth != null && auth.uid === $userId",
         ".write": "auth != null && auth.uid === $userId",
         "$notificationId": {
-          ".validate": "newData.hasChildren(['type','target_id','requester_id','status','created_at'])"
+          ".validate": "newData.hasChildren(['type','target_id','requester_id','status','created_at'])",
+          "type": {
+            ".validate": "newData.isString() && newData.val().length <= 50"
+          },
+          "target_id": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "requester_id": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "status": {
+            ".validate": "newData.isString() && (newData.val() === 'unviewed' || newData.val() === 'viewed' || newData.val() === 'actioned')"
+          },
+          "created_at": {
+            ".validate": "newData.isString() && newData.val().length <= 50"
+          },
+          "target_title": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "requester_name": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          },
+          "requester_avatar": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          }
         }
       }
     },
@@ -69,12 +126,14 @@
       "$userId": {
         ".read": "auth != null && auth.uid === $userId",
         ".write": "auth != null && auth.uid === $userId",
-        ".validate": "newData.hasChildren(['unread_chats', 'unread_requests'])",
         "unread_chats": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999"
         },
         "unread_requests": {
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999"
+        },
+        "updated_at": {
+          ".validate": "newData.isNumber()"
         }
       }
     },
@@ -94,22 +153,62 @@
       ".indexOn": ["contractor", "email", "created_at", "status", "state", "updated_at", "local_id"],
       "$vacancyId": {
         ".write": "auth != null && (!data.exists() || data.child('local_id').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
-        ".validate": "newData.hasChildren(['title', 'local_id', 'status'])",
+        "title": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+        },
+        "description": {
+          ".validate": "newData.isString() && newData.val().length <= 5000"
+        },
+        "profession": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "state": {
+          ".validate": "newData.isString() && newData.val().length <= 50"
+        },
+        "city": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "salary": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() === 'Aberta' || newData.val() === 'Fechada' || newData.val() === 'Pausada' || newData.val() === 'expired')"
+        },
         "local_id": {
-          ".validate": "newData.val() === auth.uid || data.exists()"
+          ".validate": "newData.isString() && newData.val().length <= 128 && (newData.val() === auth.uid || data.exists())"
         },
         "requests": {
-          "$candidateId": {
-            ".write": "auth != null && auth.uid === $candidateId",
-            ".validate": "newData.isBoolean() || newData.hasChildren()"
+          ".write": "auth != null",
+          "$index": {
+            ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 128"
           }
         },
         "views": {
           "request_views": {
             "$viewerId": {
-              ".write": "auth != null && (auth.uid === $viewerId || data.child('local_id').val() === auth.uid || root.child('vacancy/' + $vacancyId + '/local_id').val() === auth.uid)",
-              ".validate": "newData.hasChildren()"
+              ".write": "auth != null && (auth.uid === $viewerId || root.child('vacancy/' + $vacancyId + '/local_id').val() === auth.uid)",
+              "viewed_by_owner": {
+                ".validate": "newData.isBoolean()"
+              },
+              "applied_at": {
+                ".validate": "newData.isNumber() && newData.val() > 0"
+              },
+              "worker_name": {
+                ".validate": "newData.isString() && newData.val().length <= 100"
+              },
+              "worker_avatar": {
+                ".validate": "newData.isString() && newData.val().length <= 500"
+              }
             }
+          }
+        },
+        "stats": {
+          ".write": "auth != null",
+          "total_applications": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "total_views": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
           }
         }
       }
@@ -117,10 +216,13 @@
 
     "complaints": {
       ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
-      ".write": "auth != null && !data.exists()",
       ".indexOn": ["type"],
       "$complaintId": {
-        ".validate": "newData.hasChildren(['type'])"
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['type'])",
+        "type": {
+          ".validate": "newData.isString() && newData.val().length <= 50"
+        }
       }
     },
 
@@ -133,8 +235,8 @@
     "reporteds_chat": {
       ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
       ".indexOn": ["contractor", "email"],
-      ".write": "auth != null && !data.exists()",
       "$reportId": {
+        ".write": "auth != null && !data.exists()",
         ".validate": "newData.hasChildren()"
       }
     },
@@ -146,7 +248,10 @@
         ".write": "auth != null && (!data.exists() || data.child('denuncianteId').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
         ".validate": "newData.hasChildren(['denuncianteId', 'denunciadoId'])",
         "denuncianteId": {
-          ".validate": "newData.val() === auth.uid"
+          ".validate": "newData.isString() && newData.val() === auth.uid"
+        },
+        "denunciadoId": {
+          ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 128"
         }
       }
     },
@@ -156,22 +261,59 @@
       ".indexOn": ["updated_at", "status", "state", "local_id"],
       "$professionalId": {
         ".write": "auth != null && (!data.exists() || data.child('local_id').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
-        ".validate": "newData.hasChildren(['local_id', 'status'])",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 100"
+        },
+        "profession": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "summary": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "state": {
+          ".validate": "newData.isString() && newData.val().length <= 50"
+        },
+        "city": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() === 'active' || newData.val() === 'paused' || newData.val() === 'expired')"
+        },
         "local_id": {
-          ".validate": "newData.val() === auth.uid || data.exists()"
+          ".validate": "newData.isString() && newData.val().length <= 128 && (newData.val() === auth.uid || data.exists())"
         },
         "requests": {
-          "$candidateId": {
-            ".write": "auth != null && auth.uid === $candidateId",
-            ".validate": "newData.isBoolean() || newData.hasChildren()"
+          ".write": "auth != null",
+          "$index": {
+            ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 128"
           }
         },
         "views": {
           "request_views": {
             "$viewerId": {
               ".write": "auth != null && (auth.uid === $viewerId || root.child('professionals/' + $professionalId + '/local_id').val() === auth.uid)",
-              ".validate": "newData.hasChildren()"
+              "viewed_by_owner": {
+                ".validate": "newData.isBoolean()"
+              },
+              "requested_at": {
+                ".validate": "newData.isNumber() && newData.val() > 0"
+              },
+              "contractor_name": {
+                ".validate": "newData.isString() && newData.val().length <= 100"
+              },
+              "contractor_avatar": {
+                ".validate": "newData.isString() && newData.val().length <= 500"
+              }
             }
+          }
+        },
+        "stats": {
+          ".write": "auth != null",
+          "total_applications": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "total_views": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
           }
         }
       }
@@ -184,10 +326,35 @@
         ".write": "auth != null && (data.child('contractor').val() === auth.uid || data.child('employee').val() === auth.uid || !data.exists())",
         ".validate": "newData.hasChildren(['contractor', 'employee'])",
         "contractor": {
-          ".validate": "(!data.exists() && newData.val() === auth.uid) || newData.val() === data.val()"
+          ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 128 && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())"
         },
         "employee": {
-          ".validate": "!data.exists() || newData.val() === data.val()"
+          ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 128 && (!data.exists() || newData.val() === data.val())"
+        },
+        "block_dialog": {
+          ".validate": "newData.isBoolean()"
+        },
+        "metadata": {
+          "last_message": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "last_sender": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "last_timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "created_at": {
+            ".validate": "newData.isNumber()"
+          }
+        },
+        "unreadCount": {
+          "contractor": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "employee": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          }
         }
       }
     },
@@ -197,7 +364,25 @@
       "$chatId": {
         ".read": "auth != null && (root.child('Chats/' + $chatId + '/contractor').val() === auth.uid || root.child('Chats/' + $chatId + '/employee').val() === auth.uid)",
         ".write": "auth != null && (root.child('Chats/' + $chatId + '/contractor').val() === auth.uid || root.child('Chats/' + $chatId + '/employee').val() === auth.uid)",
-        ".indexOn": ["timestamp", "read_by_contractor", "read_by_employee"]
+        ".indexOn": ["timestamp", "read_by_contractor", "read_by_employee"],
+        "$messageId": {
+          ".validate": "newData.hasChildren(['text', 'sender', 'timestamp']) || newData.hasChild('read_by_contractor') || newData.hasChild('read_by_employee') || newData.hasChild('created_at')",
+          "text": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 5000"
+          },
+          "sender": {
+            ".validate": "newData.isString() && (newData.val() === 'contractor' || newData.val() === 'employee')"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber() && newData.val() > 0"
+          },
+          "read_by_contractor": {
+            ".validate": "newData.isBoolean()"
+          },
+          "read_by_employee": {
+            ".validate": "newData.isBoolean()"
+          }
+        }
       }
     },
 
@@ -207,12 +392,12 @@
         ".write": "auth != null && auth.uid === $userId",
         "vacancies": {
           "$vacancyId": {
-            ".validate": "newData.isBoolean() || newData.hasChildren()"
+            ".validate": "newData.isBoolean()"
           }
         },
         "professionals": {
           "$professionalId": {
-            ".validate": "newData.isBoolean() || newData.hasChildren()"
+            ".validate": "newData.isBoolean()"
           }
         }
       }
@@ -224,6 +409,8 @@
     },
 
     "Notifications": {
+      ".read": false,
+      ".write": false,
       "$uid": {
         ".indexOn": ["target_id", "type", "created_at"]
       }
