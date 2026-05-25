@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,7 +38,7 @@ class FirebaseSearchServiceServerPaginated {
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('Nenhuma vaga encontrada');
+        debugPrint('Nenhuma vaga encontrada');
         _printReadStats(startTime, readsEstimated);
         return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
       }
@@ -74,14 +75,14 @@ class FirebaseSearchServiceServerPaginated {
           // FILTRO 2: NAO EXPIRADA
           final expiresAt = vacancy.expiresAt;
           if (expiresAt.isNotEmpty && _expirationService.isExpired(expiresAt)) {
-            print('  Vaga $key EXCLUIDA NO SERVIDOR - expirada: $expiresAt');
+            debugPrint('  Vaga $key EXCLUIDA NO SERVIDOR - expirada: $expiresAt');
             continue;
           }
           
           if (blockedUserIds.isNotEmpty &&
               vacancy.localId.isNotEmpty &&
               blockedUserIds.contains(vacancy.localId)) {
-            print('  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
+            debugPrint('  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
             continue;
           }
 
@@ -91,14 +92,14 @@ class FirebaseSearchServiceServerPaginated {
           newLastValue = value['created_at'];
           
         } catch (e) {
-          print('Erro ao parsear vaga $key: $e');
+          debugPrint('Erro ao parsear vaga $key: $e');
         }
       }
 
       final hasMore = sortedEntries.length >= fetchLimit && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('${vacancies.length} vagas validas retornadas (de $readsEstimated lidas)');
+      debugPrint('${vacancies.length} vagas validas retornadas (de $readsEstimated lidas)');
 
       return PaginatedResult(
         items: vacancies,
@@ -108,8 +109,8 @@ class FirebaseSearchServiceServerPaginated {
       );
 
     } catch (e, stack) {
-      print('Erro ao buscar vagas: $e');
-      print('Stack: $stack');
+      debugPrint('Erro ao buscar vagas: $e');
+      debugPrint('Stack: $stack');
       return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
     }
   }
@@ -144,7 +145,7 @@ class FirebaseSearchServiceServerPaginated {
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('Nenhum profissional encontrado');
+        debugPrint('Nenhum profissional encontrado');
         _printReadStats(startTime, readsEstimated);
         return PaginatedResult(
           items: [],
@@ -181,14 +182,14 @@ class FirebaseSearchServiceServerPaginated {
           // FILTRO 1: Apenas profissionais "ativos" (exclui 'paused')
           final status = prof.status.toLowerCase();
           if (status != 'active' && status != 'ativo') {
-            print('  Excluindo profissional ${prof.id} - status: $status');
+            debugPrint('  Excluindo profissional ${prof.id} - status: $status');
             continue;
           }
           
           if (blockedUserIds.isNotEmpty &&
               prof.localId.isNotEmpty &&
               blockedUserIds.contains(prof.localId)) {
-            print('  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
+            debugPrint('  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
             continue;
           }
 
@@ -198,17 +199,17 @@ class FirebaseSearchServiceServerPaginated {
           newLastValue = value['updated_at'];
           
         } catch (e) {
-          print('Erro ao parsear profissional $key: $e');
+          debugPrint('Erro ao parsear profissional $key: $e');
         }
       }
 
       final hasMore = sortedEntries.length >= fetchLimit && professionals.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('${professionals.length} profissionais retornados (de $readsEstimated lidos)');
-      print('Taxa aprovacao: ${(professionals.length / readsEstimated * 100).toStringAsFixed(1)}%');
-      print('Tem mais: $hasMore');
-      print('========================================\n');
+      debugPrint('${professionals.length} profissionais retornados (de $readsEstimated lidos)');
+      debugPrint('Taxa aprovacao: ${(professionals.length / readsEstimated * 100).toStringAsFixed(1)}%');
+      debugPrint('Tem mais: $hasMore');
+      debugPrint('========================================\n');
 
       return PaginatedResult(
         items: professionals,
@@ -218,7 +219,7 @@ class FirebaseSearchServiceServerPaginated {
       );
 
     } catch (e, stack) {
-      print('Erro ao buscar profissionais: $e');
+      debugPrint('Erro ao buscar profissionais: $e');
       return PaginatedResult(
         items: [],
         hasMore: false,
@@ -234,11 +235,11 @@ class FirebaseSearchServiceServerPaginated {
   Future<Set<String>> fetchRequestedVacancyIds() async {
     try {
       if (_currentUserId == null) {
-        print('Usuario nao autenticado');
+        debugPrint('Usuario nao autenticado');
         return {};
       }
 
-      print('Buscando vagas ja solicitadas');
+      debugPrint('Buscando vagas ja solicitadas');
       final startTime = DateTime.now();
 
       final snapshot = await _database
@@ -269,12 +270,12 @@ class FirebaseSearchServiceServerPaginated {
       });
 
       final duration = DateTime.now().difference(startTime);
-      print('${requestedVacancies.length} vagas ja solicitadas em ${duration.inMilliseconds}ms');
+      debugPrint('${requestedVacancies.length} vagas ja solicitadas em ${duration.inMilliseconds}ms');
 
       return requestedVacancies;
 
     } catch (e) {
-      print('Erro ao buscar requests de vagas: $e');
+      debugPrint('Erro ao buscar requests de vagas: $e');
       return {};
     }
   }
@@ -285,7 +286,7 @@ class FirebaseSearchServiceServerPaginated {
         return {};
       }
 
-      print('Buscando profissionais ja solicitados');
+      debugPrint('Buscando profissionais ja solicitados');
       final startTime = DateTime.now();
 
       final snapshot = await _database
@@ -319,12 +320,12 @@ class FirebaseSearchServiceServerPaginated {
       });
 
       final duration = DateTime.now().difference(startTime);
-      print('${requestedProfessionals.length} profissionais ja solicitados em ${duration.inMilliseconds}ms');
+      debugPrint('${requestedProfessionals.length} profissionais ja solicitados em ${duration.inMilliseconds}ms');
 
       return requestedProfessionals;
 
     } catch (e) {
-      print('Erro ao buscar requests de profissionais: $e');
+      debugPrint('Erro ao buscar requests de profissionais: $e');
       return {};
     }
   }
@@ -335,11 +336,11 @@ class FirebaseSearchServiceServerPaginated {
   Future<bool> requestProfessionalChat(String professionalId) async {
     try {
       if (_currentUserId == null) {
-        print('Usuario nao autenticado');
+        debugPrint('Usuario nao autenticado');
         return false;
       }
 
-      print('Solicitando chat com profissional: $professionalId');
+      debugPrint('Solicitando chat com profissional: $professionalId');
 
       final requestsRef = _database
           .child('professionals')
@@ -362,15 +363,15 @@ class FirebaseSearchServiceServerPaginated {
       });
 
       if (result.committed) {
-        print('Solicitacao enviada com sucesso');
+        debugPrint('Solicitacao enviada com sucesso');
         return true;
       } else {
-        print('Solicitacao ja existe');
+        debugPrint('Solicitacao ja existe');
         return false;
       }
 
     } catch (e) {
-      print('Erro ao solicitar chat: $e');
+      debugPrint('Erro ao solicitar chat: $e');
       return false;
     }
   }
@@ -378,11 +379,11 @@ class FirebaseSearchServiceServerPaginated {
   Future<bool> requestVacancyChat(String vacancyId) async {
     try {
       if (_currentUserId == null) {
-        print('Usuario nao autenticado');
+        debugPrint('Usuario nao autenticado');
         return false;
       }
 
-      print('Candidatando-se a vaga: $vacancyId');
+      debugPrint('Candidatando-se a vaga: $vacancyId');
 
       final requestsRef = _database
           .child('vacancy')
@@ -405,15 +406,15 @@ class FirebaseSearchServiceServerPaginated {
       });
 
       if (result.committed) {
-        print('Candidatura enviada com sucesso');
+        debugPrint('Candidatura enviada com sucesso');
         return true;
       } else {
-        print('Candidatura ja existe');
+        debugPrint('Candidatura ja existe');
         return false;
       }
 
     } catch (e) {
-      print('Erro ao candidatar: $e');
+      debugPrint('Erro ao candidatar: $e');
       return false;
     }
   }
@@ -441,7 +442,7 @@ class FirebaseSearchServiceServerPaginated {
 
       return false;
     } catch (e) {
-      print('Erro ao verificar request: $e');
+      debugPrint('Erro ao verificar request: $e');
       return false;
     }
   }
@@ -466,7 +467,7 @@ class FirebaseSearchServiceServerPaginated {
 
       return false;
     } catch (e) {
-      print('Erro ao verificar request: $e');
+      debugPrint('Erro ao verificar request: $e');
       return false;
     }
   }
@@ -479,13 +480,13 @@ class FirebaseSearchServiceServerPaginated {
     final duration = DateTime.now().difference(startTime);
     final cost = reads * 0.00036;
     
-    print('Estatisticas:');
-    print('   Tempo: ${duration.inMilliseconds}ms');
-    print('   Reads: $reads');
-    print('   Custo: \$${cost.toStringAsFixed(6)}');
+    debugPrint('Estatisticas:');
+    debugPrint('   Tempo: ${duration.inMilliseconds}ms');
+    debugPrint('   Reads: $reads');
+    debugPrint('   Custo: \$${cost.toStringAsFixed(6)}');
     
     if (reads > 50) {
-      print('   ALERTA: Muitos reads! Considere mais filtros server-side');
+      debugPrint('   ALERTA: Muitos reads! Considere mais filtros server-side');
     }
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dartobra_new/features/user/services/user_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -15,7 +16,7 @@ class UserController {
     
     _blockedUsers = await _userService.fetchBlockedUsers(currentUserId);
     _isLoaded = true;
-    print('${_blockedUsers.length} usuários bloqueados carregados');
+    debugPrint('${_blockedUsers.length} usuários bloqueados carregados');
   }
   
   /// Retorna lista de bloqueados (0 leituras)

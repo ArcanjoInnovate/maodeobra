@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class UserService {
@@ -20,7 +21,7 @@ class UserService {
       }
       return [];
     } catch (e) {
-      print('Erro ao carregar bloqueados: $e');
+      debugPrint('Erro ao carregar bloqueados: $e');
       return [];
     }
   }

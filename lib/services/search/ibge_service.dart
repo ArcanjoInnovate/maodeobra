@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/ibge_service.dart
 
 import 'dart:convert';
@@ -66,7 +67,7 @@ class IBGEService {
         throw Exception('Erro ao buscar estados');
       }
     } catch (e) {
-      print('Erro ao buscar estados: $e');
+      debugPrint('Erro ao buscar estados: $e');
       return [];
     }
   }
@@ -91,7 +92,7 @@ class IBGEService {
         throw Exception('Erro ao buscar cidades');
       }
     } catch (e) {
-      print('Erro ao buscar cidades: $e');
+      debugPrint('Erro ao buscar cidades: $e');
       return [];
     }
   }

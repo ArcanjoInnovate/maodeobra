@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dartobra_new/models/user_model.dart';
 
@@ -14,7 +15,7 @@ class UserRepository {
         snapshot.value as Map<dynamic, dynamic>,
       );
     } catch (e) {
-      print('❌ UserRepository.fetchUser erro: $e');
+      debugPrint('❌ UserRepository.fetchUser erro: $e');
       return null;
     }
   }
@@ -43,10 +44,10 @@ class UserRepository {
           'type': '',
         },
       });
-      print('✅ Advertência removida: $localId');
+      debugPrint('✅ Advertência removida: $localId');
       return true;
     } catch (e) {
-      print('❌ clearWarning erro: $e');
+      debugPrint('❌ clearWarning erro: $e');
       return false;
     }
   }
@@ -66,10 +67,10 @@ class UserRepository {
           'motive': '',
         },
       });
-      print('✅ Suspensão removida: $localId');
+      debugPrint('✅ Suspensão removida: $localId');
       return true;
     } catch (e) {
-      print('❌ clearSuspension erro: $e');
+      debugPrint('❌ clearSuspension erro: $e');
       return false;
     }
   }

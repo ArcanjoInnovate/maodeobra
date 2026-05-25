@@ -41,12 +41,12 @@ class NotificationNavigationService {
     required String userRole,
   }) async {
     try {
-      print(
+      debugPrint(
           '🔔 navigateToChat | chatId=$chatId | userId=$userId | role=$userRole');
 
       final chatSnap = await _database.child('Chats/$chatId').get();
       if (!chatSnap.exists || chatSnap.value == null) {
-        print('⚠️ Chat $chatId não encontrado');
+        debugPrint('⚠️ Chat $chatId não encontrado');
         _showSnack(context, 'Chat não encontrado');
         return;
       }
@@ -56,7 +56,7 @@ class NotificationNavigationService {
       final employeeId = chatData['employee']?.toString() ?? '';
 
       if (contractorId.isEmpty || employeeId.isEmpty) {
-        print('⚠️ Chat $chatId sem contractor/employee');
+        debugPrint('⚠️ Chat $chatId sem contractor/employee');
         _showSnack(context, 'Dados do chat incompletos');
         return;
       }
@@ -103,9 +103,9 @@ class NotificationNavigationService {
         ),
       );
 
-      print('✅ Navegou para ChatRoomScreen: $chatId');
+      debugPrint('✅ Navegou para ChatRoomScreen: $chatId');
     } catch (e) {
-      print('❌ Erro navigateToChat: $e');
+      debugPrint('❌ Erro navigateToChat: $e');
       if (context.mounted) {
         _showSnack(context, 'Erro ao abrir chat');
       }
@@ -125,7 +125,7 @@ class NotificationNavigationService {
     String? vacancyId,
   }) async {
     try {
-      print(
+      debugPrint(
           '🔔 navigateToRequest | type=$requestType | profileId=$profileId | vacancyId=$vacancyId | role=$userRole');
 
       if (requestType == 'vacancy_request' &&
@@ -137,11 +137,11 @@ class NotificationNavigationService {
           profileId.isNotEmpty) {
         await _navigateToWorkerProfile(context, userId);
       } else {
-        print('⚠️ requestType desconhecido ou faltando IDs: $requestType');
+        debugPrint('⚠️ requestType desconhecido ou faltando IDs: $requestType');
         _showSnack(context, 'Não foi possível abrir a solicitação');
       }
     } catch (e) {
-      print('❌ Erro navigateToRequest: $e');
+      debugPrint('❌ Erro navigateToRequest: $e');
       if (context.mounted) {
         _showSnack(context, 'Erro ao abrir solicitação');
       }
@@ -159,7 +159,7 @@ class NotificationNavigationService {
   ) async {
     final vacancySnap = await _database.child('vacancy/$vacancyId').get();
     if (!vacancySnap.exists || vacancySnap.value == null) {
-      print('⚠️ Vaga $vacancyId não encontrada');
+      debugPrint('⚠️ Vaga $vacancyId não encontrada');
       if (context.mounted) _showSnack(context, 'Vaga não encontrada');
       return;
     }
@@ -219,7 +219,7 @@ class NotificationNavigationService {
       ),
     );
 
-    print('✅ Navegou para InfoVacancy: $vacancyId (tab Candidatos)');
+    debugPrint('✅ Navegou para InfoVacancy: $vacancyId (tab Candidatos)');
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -239,21 +239,21 @@ class NotificationNavigationService {
     BuildContext context,
     String userId,
   ) async {
-    print('🔔 _navigateToWorkerProfile: $userId');
+    debugPrint('🔔 _navigateToWorkerProfile: $userId');
 
     for (int i = 0; i < 20; i++) {
       // ✅ Acessa currentState AQUI dentro, a cada tentativa
       final state = homeScreenKey.currentState;
       if (state != null && state.mounted) {
-        print('✅ HomeScreen encontrada na tentativa ${i + 1}');
+        debugPrint('✅ HomeScreen encontrada na tentativa ${i + 1}');
         state.openWorkerProfileTab();
         return;
       }
-      print('⏳ Tentativa ${i + 1}: HomeScreen não montada ainda...');
+      debugPrint('⏳ Tentativa ${i + 1}: HomeScreen não montada ainda...');
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
-    print('⚠️ HomeScreen não encontrada após 20 tentativas');
+    debugPrint('⚠️ HomeScreen não encontrada após 20 tentativas');
   }
 
   // ══════════════════════════════════════════════════════════════════════════

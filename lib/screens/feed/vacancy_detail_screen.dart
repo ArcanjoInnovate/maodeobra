@@ -153,7 +153,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
 
       setState(() => _isCheckingChat = false);
     } catch (e) {
-      print('❌ Erro ao verificar chat existente: $e');
+      debugPrint('❌ Erro ao verificar chat existente: $e');
       setState(() => _isCheckingChat = false);
     }
   }
@@ -193,7 +193,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
         ),
       );
     } catch (e) {
-      print('❌ Erro ao abrir chat: $e');
+      debugPrint('❌ Erro ao abrir chat: $e');
       _showError('Erro ao abrir conversa. Tente novamente.');
     }
   }
@@ -1510,7 +1510,7 @@ class _VacancyDetailsScreenState extends State<VacancyDetailsScreen>
 
       Navigator.pop(context);
     } catch (e, stack) {
-      print('❌ ERRO _applyToVacancy: $e\n$stack');
+      debugPrint('❌ ERRO _applyToVacancy: $e\n$stack');
       setState(() => _isApplying = false);
       _showError('Erro ao enviar candidatura: $e');
     }

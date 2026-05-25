@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/core/services/user_relationship_service.dart
 
 import 'dart:async';
@@ -27,7 +28,7 @@ class UserRelationShipService {
       if (token == null || token.isEmpty) return null;
       return user.uid;
     } catch (e) {
-      print('❌ _ensureValidAuth erro: $e');
+      debugPrint('❌ _ensureValidAuth erro: $e');
       return null;
     }
   }
@@ -42,7 +43,7 @@ class UserRelationShipService {
           await _db.child('Users/$myUserId/blocked_users/$targetUserId').get();
       return snap.exists && _isTruthy(snap.value);
     } catch (e) {
-      print('❌ isUserBlocked erro: $e');
+      debugPrint('❌ isUserBlocked erro: $e');
       return false;
     }
   }
@@ -56,19 +57,19 @@ class UserRelationShipService {
 
   Future<bool> blockUser(String myUserId, String targetUserId) async {
     try {
-      print('\n═══════════════════════════════════════════════');
-      print('🔄 INICIANDO BLOQUEIO');
-      print('   De: $myUserId → Para: $targetUserId');
-      print('═══════════════════════════════════════════════');
+      debugPrint('\n═══════════════════════════════════════════════');
+      debugPrint('🔄 INICIANDO BLOQUEIO');
+      debugPrint('   De: $myUserId → Para: $targetUserId');
+      debugPrint('═══════════════════════════════════════════════');
 
       // PASSO 1: Autenticação
       final authUserId = await _ensureValidAuth();
       if (authUserId == null) {
-        print('❌ FALHA: Auth inválido');
+        debugPrint('❌ FALHA: Auth inválido');
         return false;
       }
       if (authUserId != myUserId) {
-        print('❌ FALHA: UID não confere');
+        debugPrint('❌ FALHA: UID não confere');
         return false;
       }
 
@@ -76,7 +77,7 @@ class UserRelationShipService {
       final alreadySnap =
           await _db.child('Users/$myUserId/blocked_users/$targetUserId').get();
       if (alreadySnap.exists && _isTruthy(alreadySnap.value)) {
-        print('⚠️ Já bloqueado — abortando');
+        debugPrint('⚠️ Já bloqueado — abortando');
         return false;
       }
 
@@ -93,14 +94,14 @@ class UserRelationShipService {
 
           final snap = event.snapshot;
           if (snap.exists && _isTruthy(snap.value)) {
-            print('✅ Listener confirmou escrita do servidor!');
+            debugPrint('✅ Listener confirmou escrita do servidor!');
             completer.complete(true);
             subscription.cancel();
           }
         },
         onError: (error) {
           if (!completer.isCompleted) {
-            print('❌ Erro no listener: $error');
+            debugPrint('❌ Erro no listener: $error');
             completer.complete(false);
             subscription.cancel();
           }
@@ -108,35 +109,35 @@ class UserRelationShipService {
       );
 
       // PASSO 4: Escreve no Firebase
-      print('📝 Executando set()...');
+      debugPrint('📝 Executando set()...');
       try {
         await ref.set(true).timeout(const Duration(seconds: 10));
-        print('✅ set() concluído');
+        debugPrint('✅ set() concluído');
       } on TimeoutException {
-        print('⏱️ Timeout no set()');
+        debugPrint('⏱️ Timeout no set()');
         subscription.cancel();
         if (!completer.isCompleted) completer.complete(false);
         return false;
       } catch (e) {
-        print('❌ Erro no set(): $e');
+        debugPrint('❌ Erro no set(): $e');
         subscription.cancel();
         if (!completer.isCompleted) completer.complete(false);
         return false;
       }
 
       // PASSO 5: Aguarda confirmação do listener com timeout
-      print('⏳ Aguardando confirmação do listener...');
+      debugPrint('⏳ Aguardando confirmação do listener...');
       final confirmed = await completer.future.timeout(
         const Duration(seconds: 8),
         onTimeout: () {
-          print('⏱️ Timeout aguardando listener');
+          debugPrint('⏱️ Timeout aguardando listener');
           subscription.cancel();
           return false;
         },
       );
 
       if (!confirmed) {
-        print('❌ FALHA: Escrita não confirmada pelo servidor');
+        debugPrint('❌ FALHA: Escrita não confirmada pelo servidor');
         return false;
       }
 
@@ -144,17 +145,17 @@ class UserRelationShipService {
       unawaited(
         _db.child('blocked_by/$targetUserId/$myUserId').set(true).catchError(
           (e) {
-            print('⚠️ blocked_by falhou (não crítico): $e');
+            debugPrint('⚠️ blocked_by falhou (não crítico): $e');
           },
         ),
       );
 
-      print('═══════════════════════════════════════════════');
-      print('✅ BLOQUEIO CONCLUÍDO COM SUCESSO');
-      print('═══════════════════════════════════════════════\n');
+      debugPrint('═══════════════════════════════════════════════');
+      debugPrint('✅ BLOQUEIO CONCLUÍDO COM SUCESSO');
+      debugPrint('═══════════════════════════════════════════════\n');
       return true;
     } catch (e, st) {
-      print('❌ EXCEÇÃO em blockUser: $e\n$st');
+      debugPrint('❌ EXCEÇÃO em blockUser: $e\n$st');
       return false;
     }
   }
@@ -175,10 +176,10 @@ class UserRelationShipService {
           .remove()
           .catchError((_) {}));
 
-      print('✅ Desbloqueado: $targetUserId');
+      debugPrint('✅ Desbloqueado: $targetUserId');
       return true;
     } catch (e) {
-      print('❌ unblockUser erro: $e');
+      debugPrint('❌ unblockUser erro: $e');
       return false;
     }
   }
@@ -195,7 +196,7 @@ class UserRelationShipService {
       ]);
       return {...results[0], ...results[1]};
     } catch (e) {
-      print('❌ fetchAllBlockedUsers: $e');
+      debugPrint('❌ fetchAllBlockedUsers: $e');
       return {};
     }
   }
@@ -215,7 +216,7 @@ class UserRelationShipService {
           .map((e) => e.key.toString())
           .toSet();
     } catch (e) {
-      print('❌ fetchUsersIBlocked: $e');
+      debugPrint('❌ fetchUsersIBlocked: $e');
       return {};
     }
   }
@@ -234,7 +235,7 @@ class UserRelationShipService {
           .map((e) => e.key.toString())
           .toSet();
     } catch (e) {
-      print('❌ fetchUsersWhoBlockedMe: $e');
+      debugPrint('❌ fetchUsersWhoBlockedMe: $e');
       return {};
     }
   }
@@ -253,7 +254,7 @@ class UserRelationShipService {
         theyBlockedMe: results[1].exists && _isTruthy(results[1].value),
       );
     } catch (e) {
-      print('❌ checkRelationship: $e');
+      debugPrint('❌ checkRelationship: $e');
       return (iBlockedThem: false, theyBlockedMe: false);
     }
   }

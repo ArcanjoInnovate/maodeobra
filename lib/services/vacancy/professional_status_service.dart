@@ -1,6 +1,7 @@
 // lib/services/professional_status_service.dart
 // 🔄 SERVIÇO DE STATUS DE PERFIS PROFISSIONAIS
 
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -23,25 +24,22 @@ class ProfessionalStatusService {
     required String professionalId,
   }) async {
     if (_currentUserId == null) {
-      print('❌ Usuário não autenticado');
+      debugPrint('❌ Usuário não autenticado');
       return false;
     }
 
     try {
-      print('🔄 Ativando perfil profissional...');
-
-      await _db.child('professionals/$professionalId').update({
-        'status': 'active',
-        'updated_at': DateTime.now().toIso8601String(),
+      // Batch update: 1 write em vez de 3
+      await _db.update({
+        'professionals/$professionalId/status': 'active',
+        'professionals/$professionalId/updated_at': DateTime.now().toIso8601String(),
+        'Users/$localId/isActive': true,
+        'Users/$localId/data_worker/activated': true,
       });
 
-      await _db.child('Users/$localId/isActive').set(true);
-      await _db.child('Users/$localId/data_worker/activated').set(true);
-
-      print('✅ Perfil profissional ativado com sucesso!');
       return true;
     } catch (e) {
-      print('❌ Erro ao ativar perfil profissional: $e');
+      debugPrint('Erro ao ativar perfil profissional: $e');
       return false;
     }
   }
@@ -54,25 +52,22 @@ class ProfessionalStatusService {
     required String professionalId,
   }) async {
     if (_currentUserId == null) {
-      print('❌ Usuário não autenticado');
+      debugPrint('❌ Usuário não autenticado');
       return false;
     }
 
     try {
-      print('⏸️ Pausando perfil profissional...');
-
-      await _db.child('professionals/$professionalId').update({
-        'status': 'paused',
-        'updated_at': DateTime.now().toIso8601String(),
+      // Batch update: 1 write em vez de 3
+      await _db.update({
+        'professionals/$professionalId/status': 'paused',
+        'professionals/$professionalId/updated_at': DateTime.now().toIso8601String(),
+        'Users/$localId/isActive': false,
+        'Users/$localId/data_worker/activated': false,
       });
 
-      await _db.child('Users/$localId/isActive').set(false);
-      await _db.child('Users/$localId/data_worker/activated').set(false);
-
-      print('✅ Perfil profissional pausado com sucesso!');
       return true;
     } catch (e) {
-      print('❌ Erro ao pausar perfil profissional: $e');
+      debugPrint('Erro ao pausar perfil profissional: $e');
       return false;
     }
   }
@@ -136,7 +131,7 @@ class ProfessionalStatusService {
             : 'Perfil profissional pausado',
       );
     } catch (e) {
-      print('❌ Erro ao verificar status: $e');
+      debugPrint('❌ Erro ao verificar status: $e');
       return ProfessionalStatus(
         isActive: false,
         professionalId: null,

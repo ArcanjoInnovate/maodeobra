@@ -43,7 +43,7 @@ Future<String?> _getCurrentUserId() async {
     final authBox = await Hive.openBox('auth');
     return authBox.get('currentUserId');
   } catch (e) {
-    print('❌ Erro userId: $e');
+    debugPrint('❌ Erro userId: $e');
     return null;
   }
 }
@@ -102,7 +102,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     try {
       await _localNotifications.cancelAll();
     } catch (e) {
-      print('❌ Erro ao limpar badge: $e');
+      debugPrint('❌ Erro ao limpar badge: $e');
     }
   }
 
@@ -150,7 +150,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         );
       }
     }, onError: (error) {
-      print('❌ Erro listener manutenção: $error');
+      debugPrint('❌ Erro listener manutenção: $error');
     });
   }
 
@@ -160,7 +160,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   Future<void> reinitializeNotifications(String userId) async {
-    print('🔄 Reinicializando notificações: $userId');
+    debugPrint('🔄 Reinicializando notificações: $userId');
 
     _currentUserId = userId;
 
@@ -181,7 +181,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         },
       );
 
-      print('✅ Notificações inicializadas: $userId | $_currentUserRole');
+      debugPrint('✅ Notificações inicializadas: $userId | $_currentUserRole');
     }
   }
 

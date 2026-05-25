@@ -274,7 +274,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         ),
       );
     } catch (e) {
-      print('❌ Erro ao abrir chat: $e');
+      debugPrint('❌ Erro ao abrir chat: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -782,7 +782,7 @@ class _ChatListTile extends StatelessWidget {
     final otherParticipant = chat.participants[otherRole];
 
     if (otherParticipant == null) {
-      print(
+      debugPrint(
           '⚠️ Participante não encontrado para role: $otherRole no chat: ${chat.chatId}');
       return const SizedBox.shrink();
     }

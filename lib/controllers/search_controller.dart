@@ -110,18 +110,18 @@ class SearchController extends ChangeNotifier {
 
     // Sincroniza estado atual imediatamente
     _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
-    print(
+    debugPrint(
         '🔗 SearchController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
   }
 
   void _handleUserBlocked(String userId) {
-    print('🚫 SearchController: usuário bloqueado: $userId');
+    debugPrint('🚫 SearchController: usuário bloqueado: $userId');
     _blockedUserIds = {..._blockedUserIds, userId};
     _applyFilters();
   }
 
   void _handleUserUnblocked(String userId) {
-    print('✅ SearchController: usuário desbloqueado: $userId');
+    debugPrint('✅ SearchController: usuário desbloqueado: $userId');
     _blockedUserIds = _blockedUserIds.difference({userId});
     _applyFilters();
   }
@@ -140,7 +140,7 @@ class SearchController extends ChangeNotifier {
       // ✅ BlockProvider registrado antes de chegar aqui (via SearchPage)
       if (_blockProvider != null) {
         _blockedUserIds = Set.from(_blockProvider!.blockedSet);
-        print('✅ Bloqueados do BlockProvider: ${_blockedUserIds.length}');
+        debugPrint('✅ Bloqueados do BlockProvider: ${_blockedUserIds.length}');
       } else {
         // Fallback agora usa onValue — sem cache iOS
         await _loadBlockedUsers();
@@ -159,7 +159,7 @@ class SearchController extends ChangeNotifier {
       _applyFilters();
     } catch (e, stack) {
       _errorMessage = 'Erro ao carregar: $e';
-      print('Erro: $e\nStack: $stack');
+      debugPrint('Erro: $e\nStack: $stack');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -224,16 +224,16 @@ class SearchController extends ChangeNotifier {
       ]);
 
       _blockedUserIds = {..._blockedUserIds, ...results[0], ...results[1]};
-      print(
+      debugPrint(
           '✅ _loadBlockedUsers (search): ${_blockedUserIds.length} bloqueados');
     } catch (e) {
-      print('❌ _loadBlockedUsers (search): $e');
+      debugPrint('❌ _loadBlockedUsers (search): $e');
     }
   }
   // ── Primeira página ───────────────────────────────────────────────────────
 
   Future<void> _loadFirstPage() async {
-    print('_loadFirstPage — bloqueados: ${_blockedUserIds.length}');
+    debugPrint('_loadFirstPage — bloqueados: ${_blockedUserIds.length}');
 
     _lastProfessionalKey = null;
     _lastProfessionalValue = null;
@@ -260,7 +260,7 @@ class SearchController extends ChangeNotifier {
     _lastVacancyKey = vacResult.lastKey;
     _lastVacancyValue = vacResult.lastValue;
 
-    print('${_allProfessionals.length} profs + ${_allVacancies.length} vagas');
+    debugPrint('${_allProfessionals.length} profs + ${_allVacancies.length} vagas');
   }
 
   // ── Paginação ─────────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ class SearchController extends ChangeNotifier {
 
       _applyFilters();
     } catch (e) {
-      print('Erro loadMore: $e');
+      debugPrint('Erro loadMore: $e');
     } finally {
       _isLoadingMore = false;
       notifyListeners();
@@ -316,7 +316,7 @@ class SearchController extends ChangeNotifier {
       _requestsLoaded = true;
       _applyFilters();
     } catch (e) {
-      print('Erro requests: $e');
+      debugPrint('Erro requests: $e');
     }
   }
 
@@ -352,7 +352,7 @@ class SearchController extends ChangeNotifier {
   void _applyFilters() {
     ensureRequestsLoaded();
 
-    print('_applyFilters — bloqueados: ${_blockedUserIds.length}');
+    debugPrint('_applyFilters — bloqueados: ${_blockedUserIds.length}');
 
     _filteredProfessionals = _allProfessionals.where((prof) {
       if (_blockedUserIds.isNotEmpty &&

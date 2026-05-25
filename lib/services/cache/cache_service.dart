@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/cache/cache_service.dart
 
 import 'package:hive_flutter/hive_flutter.dart';
@@ -31,9 +32,9 @@ class CacheService {
       await box.put('data', jsonEncode(professionals));
       await metadataBox.put('professionals_timestamp', DateTime.now().millisecondsSinceEpoch);
       
-      print('💾 ${professionals.length} profissionais salvos no cache');
+      debugPrint('💾 ${professionals.length} profissionais salvos no cache');
     } catch (e) {
-      print('❌ Erro ao salvar cache de profissionais: $e');
+      debugPrint('❌ Erro ao salvar cache de profissionais: $e');
     }
   }
 
@@ -50,7 +51,7 @@ class CacheService {
       final timestamp = metadataBox.get('professionals_timestamp');
       
       if (timestamp == null) {
-        print('ℹ️ Cache de profissionais vazio');
+        debugPrint('ℹ️ Cache de profissionais vazio');
         return null;
       }
       
@@ -58,7 +59,7 @@ class CacheService {
       final ageMinutes = age ~/ (1000 * 60);
       
       if (ageMinutes > maxAgeMinutes) {
-        print('⏰ Cache de profissionais expirado ($ageMinutes min)');
+        debugPrint('⏰ Cache de profissionais expirado ($ageMinutes min)');
         return null;
       }
       
@@ -68,11 +69,11 @@ class CacheService {
       final List<dynamic> decoded = jsonDecode(data);
       final professionals = decoded.cast<Map<String, dynamic>>();
       
-      print('📖 ${professionals.length} profissionais carregados do cache ($ageMinutes min)');
+      debugPrint('📖 ${professionals.length} profissionais carregados do cache ($ageMinutes min)');
       return professionals;
       
     } catch (e) {
-      print('❌ Erro ao carregar cache de profissionais: $e');
+      debugPrint('❌ Erro ao carregar cache de profissionais: $e');
       return null;
     }
   }
@@ -89,9 +90,9 @@ class CacheService {
       await box.put('data', jsonEncode(vacancies));
       await metadataBox.put('vacancies_timestamp', DateTime.now().millisecondsSinceEpoch);
       
-      print('💾 ${vacancies.length} vagas salvas no cache');
+      debugPrint('💾 ${vacancies.length} vagas salvas no cache');
     } catch (e) {
-      print('❌ Erro ao salvar cache de vagas: $e');
+      debugPrint('❌ Erro ao salvar cache de vagas: $e');
     }
   }
 
@@ -108,7 +109,7 @@ class CacheService {
       final timestamp = metadataBox.get('vacancies_timestamp');
       
       if (timestamp == null) {
-        print('ℹ️ Cache de vagas vazio');
+        debugPrint('ℹ️ Cache de vagas vazio');
         return null;
       }
       
@@ -116,7 +117,7 @@ class CacheService {
       final ageMinutes = age ~/ (1000 * 60);
       
       if (ageMinutes > maxAgeMinutes) {
-        print('⏰ Cache de vagas expirado ($ageMinutes min)');
+        debugPrint('⏰ Cache de vagas expirado ($ageMinutes min)');
         return null;
       }
       
@@ -126,11 +127,11 @@ class CacheService {
       final List<dynamic> decoded = jsonDecode(data);
       final vacancies = decoded.cast<Map<String, dynamic>>();
       
-      print('📖 ${vacancies.length} vagas carregadas do cache ($ageMinutes min)');
+      debugPrint('📖 ${vacancies.length} vagas carregadas do cache ($ageMinutes min)');
       return vacancies;
       
     } catch (e) {
-      print('❌ Erro ao carregar cache de vagas: $e');
+      debugPrint('❌ Erro ao carregar cache de vagas: $e');
       return null;
     }
   }
@@ -143,9 +144,9 @@ class CacheService {
       await Hive.box(PROFESSIONALS_BOX).clear();
       await Hive.box(VACANCIES_BOX).clear();
       await Hive.box(METADATA_BOX).clear();
-      print('🗑️ Cache limpo');
+      debugPrint('🗑️ Cache limpo');
     } catch (e) {
-      print('❌ Erro ao limpar cache: $e');
+      debugPrint('❌ Erro ao limpar cache: $e');
     }
   }
 
@@ -153,9 +154,9 @@ class CacheService {
     try {
       await Hive.box(PROFESSIONALS_BOX).clear();
       await Hive.box(METADATA_BOX).delete('professionals_timestamp');
-      print('🗑️ Cache de profissionais limpo');
+      debugPrint('🗑️ Cache de profissionais limpo');
     } catch (e) {
-      print('❌ Erro ao limpar cache de profissionais: $e');
+      debugPrint('❌ Erro ao limpar cache de profissionais: $e');
     }
   }
 
@@ -163,9 +164,9 @@ class CacheService {
     try {
       await Hive.box(VACANCIES_BOX).clear();
       await Hive.box(METADATA_BOX).delete('vacancies_timestamp');
-      print('🗑️ Cache de vagas limpo');
+      debugPrint('🗑️ Cache de vagas limpo');
     } catch (e) {
-      print('❌ Erro ao limpar cache de vagas: $e');
+      debugPrint('❌ Erro ao limpar cache de vagas: $e');
     }
   }
 }

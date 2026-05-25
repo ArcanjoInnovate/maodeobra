@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // ignore_for_file: unused_import
 
 import 'package:firebase_database/firebase_database.dart';
@@ -102,7 +103,7 @@ class UserLookupService {
 
       return userData;
     } catch (e) {
-      print('Erro ao buscar usuário $userId: $e');
+      debugPrint('Erro ao buscar usuário $userId: $e');
       return _defaultUser;
     }
   }

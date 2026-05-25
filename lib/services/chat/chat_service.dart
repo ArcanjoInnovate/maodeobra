@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/chat/chat_service.dart
 
 // ignore_for_file: unused_field, unnecessary_cast
@@ -81,7 +82,7 @@ class ChatServiceFinal {
       _firebase.setOnDisconnect(statusPath, 'offline');
       _firebase.setOnDisconnect(lastSeenPath, now);
     } catch (e) {
-      print('❌ Erro ao marcar online: $e');
+      debugPrint('❌ Erro ao marcar online: $e');
     }
   }
 
@@ -101,7 +102,7 @@ class ChatServiceFinal {
       _activeChat = null;
       _userRole = null;
     } catch (e) {
-      print('❌ Erro ao marcar offline: $e');
+      debugPrint('❌ Erro ao marcar offline: $e');
     }
   }
 
@@ -143,7 +144,7 @@ class ChatServiceFinal {
         lastTimestamp: now,
       );
 
-      print('✅ Mensagem enviada: $messageId');
+      debugPrint('✅ Mensagem enviada: $messageId');
       return messageId;
     } catch (e) {
       throw Exception('Erro ao enviar mensagem: $e');
@@ -162,7 +163,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
     });
     
   } catch (e) {
-    print('❌ Erro ao incrementar unreadCount: $e');
+    debugPrint('❌ Erro ao incrementar unreadCount: $e');
   }
 }
 
@@ -207,10 +208,10 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
         if (value is Map) {
           try {
             final msg = Message.fromMap(key, value);
-            print('📩 Mensagem $key | read_by_contractor=${msg.readByContractor} | read_by_employee=${msg.readByEmployee}');
+            debugPrint('📩 Mensagem $key | read_by_contractor=${msg.readByContractor} | read_by_employee=${msg.readByEmployee}');
             messages.add(msg);
           } catch (e) {
-            print('⚠️ Erro ao parsear mensagem $key: $e');
+            debugPrint('⚠️ Erro ao parsear mensagem $key: $e');
           }
         }
       });
@@ -218,7 +219,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
       messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
       return messages;
     } catch (e) {
-      print('❌ Erro ao carregar mensagens iniciais: $e');
+      debugPrint('❌ Erro ao carregar mensagens iniciais: $e');
       return [];
     }
   }
@@ -252,7 +253,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
           controller.add(currentMessages);
         }
       } catch (e) {
-        print('❌ Erro ao processar nova mensagem: $e');
+        debugPrint('❌ Erro ao processar nova mensagem: $e');
       }
     });
 
@@ -276,10 +277,10 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
           currentMessages[index] = updatedMessage;
           _messagesCache[chatId] = currentMessages;
           controller.add(List.from(currentMessages));
-          print('🔄 Mensagem atualizada: ${updatedMessage.id} | read_by_contractor=${updatedMessage.readByContractor} | read_by_employee=${updatedMessage.readByEmployee}');
+          debugPrint('🔄 Mensagem atualizada: ${updatedMessage.id} | read_by_contractor=${updatedMessage.readByContractor} | read_by_employee=${updatedMessage.readByEmployee}');
         }
       } catch (e) {
-        print('❌ Erro ao processar mudança de mensagem: $e');
+        debugPrint('❌ Erro ao processar mudança de mensagem: $e');
       }
     });
 
@@ -317,7 +318,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
           try {
             messages.add(Message.fromMap(key, value));
           } catch (e) {
-            print('⚠️ Erro ao parsear mensagem antiga: $e');
+            debugPrint('⚠️ Erro ao parsear mensagem antiga: $e');
           }
         }
       });
@@ -329,7 +330,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
 
       return messages;
     } catch (e) {
-      print('❌ Erro ao carregar mensagens antigas: $e');
+      debugPrint('❌ Erro ao carregar mensagens antigas: $e');
       return [];
     }
   }
@@ -348,7 +349,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
   /// Agora: uma única chamada centralizada, recalcula apenas para o usuário atual
   Future<void> markAsRead(String chatId, String userRole) async {
     try {
-      print('📖 markAsRead | chat=$chatId | role=$userRole');
+      debugPrint('📖 markAsRead | chat=$chatId | role=$userRole');
 
       // Pega o userId do role atual para recalcular o badge
       final chatSnapshot = await _firebase.chatRef(chatId).get();
@@ -364,9 +365,9 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
       // ✅ Delega para BadgeHelper que centraliza toda a lógica
       await BadgeHelper.markChatAsRead(chatId, userId, userRole);
       
-      print('✅ markAsRead concluído');
+      debugPrint('✅ markAsRead concluído');
     } catch (e) {
-      print('❌ Erro em markAsRead: $e');
+      debugPrint('❌ Erro em markAsRead: $e');
     }
   }
   // ========================================
@@ -391,7 +392,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
           }
         }
       } catch (e) {
-        print('❌ Erro ao processar status: $e');
+        debugPrint('❌ Erro ao processar status: $e');
       }
       return ParticipantData(
         status: 'offline',
@@ -428,7 +429,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
         'last_timestamp': lastTimestamp,
       });
     } catch (e) {
-      print('❌ Erro ao atualizar metadata: $e');
+      debugPrint('❌ Erro ao atualizar metadata: $e');
     }
   }
 
@@ -458,7 +459,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
             try {
               chats.add(Chat.fromMap(chatId, chatData));
             } catch (e) {
-              print('❌ Erro ao parsear chat $chatId: $e');
+              debugPrint('❌ Erro ao parsear chat $chatId: $e');
             }
           }
         });
@@ -468,7 +469,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
 
         return chats;
       } catch (e) {
-        print('❌ Erro ao processar lista de chats: $e');
+        debugPrint('❌ Erro ao processar lista de chats: $e');
         return <Chat>[];
       }
     });
@@ -483,7 +484,7 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
     _activeListeners.clear();
     _activeChat = null;
     _userRole = null;
-    print('🧹 Chat listeners cancelados');
+    debugPrint('🧹 Chat listeners cancelados');
   }
 
   void clearChatCache(String chatId) {

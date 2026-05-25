@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/services_vacancy/vacancy_service.dart
 
 import 'dart:async';
@@ -57,7 +58,7 @@ class VacancyService {
       _userVacanciesCache[localId] = vacancies;
       return _filterExpiredVacancies(vacancies, includeExpired);
     } catch (e) {
-      print('❌ getUserVacancies erro: $e');
+      debugPrint('❌ getUserVacancies erro: $e');
       return [];
     }
   }
@@ -146,7 +147,7 @@ class VacancyService {
       }
       return null;
     } catch (e) {
-      print('❌ getVacancy erro: $e');
+      debugPrint('❌ getVacancy erro: $e');
       return null;
     }
   }
@@ -213,7 +214,7 @@ class VacancyService {
 
       return candidates;
     } catch (e) {
-      print('❌ getCandidates erro: $e');
+      debugPrint('❌ getCandidates erro: $e');
       return [];
     }
   }
@@ -236,10 +237,10 @@ class VacancyService {
       _vacancyCache[vacancyId] = vacancyData;
       _userVacanciesCache.remove(vacancyData['local_id']);
       
-      print('✅ Vaga criada com expiração em 2 dias: ${vacancyData['expires_at']}');
+      debugPrint('✅ Vaga criada com expiração em 2 dias: ${vacancyData['expires_at']}');
       return vacancyId;
     } catch (e) {
-      print('❌ createVacancy erro: $e');
+      debugPrint('❌ createVacancy erro: $e');
       return null;
     }
   }
@@ -259,7 +260,7 @@ class VacancyService {
       if (localId != null) _userVacanciesCache.remove(localId);
       return true;
     } catch (e) {
-      print('❌ updateVacancy erro: $e');
+      debugPrint('❌ updateVacancy erro: $e');
       return false;
     }
   }
@@ -269,7 +270,7 @@ class VacancyService {
   // ════════════════════════════════════════════════
 
   Future<bool> deleteVacancy(String vacancyId, String ownerLocalId) async {
-    print('🗑️ deleteVacancy chamado — vaga: $vacancyId  dono: $ownerLocalId');
+    debugPrint('🗑️ deleteVacancy chamado — vaga: $vacancyId  dono: $ownerLocalId');
 
     try {
       final viewsSnap = await _database
@@ -280,7 +281,7 @@ class VacancyService {
 
       if (viewsSnap.exists && viewsSnap.value != null) {
         final raw = viewsSnap.value;
-        print('📋 request_views raw: $raw');
+        debugPrint('📋 request_views raw: $raw');
 
         Map<dynamic, dynamic> views = {};
         if (raw is Map) {
@@ -291,7 +292,7 @@ class VacancyService {
           if (entry.value is Map) {
             final v = Map<String, dynamic>.from(entry.value as Map);
             final viewedByOwner = v['viewed_by_owner'];
-            print(
+            debugPrint(
                 '   candidato ${entry.key}: viewed_by_owner = $viewedByOwner');
             if (viewedByOwner == false || viewedByOwner == null) {
               unviewedCount++;
@@ -299,13 +300,13 @@ class VacancyService {
           }
         }
       } else {
-        print('📋 request_views: nó vazio ou inexistente');
+        debugPrint('📋 request_views: nó vazio ou inexistente');
       }
 
-      print('📊 Candidaturas não vistas: $unviewedCount');
+      debugPrint('📊 Candidaturas não vistas: $unviewedCount');
 
       await _database.child('vacancy/$vacancyId').remove();
-      print('✅ Vaga $vacancyId deletada do Firebase');
+      debugPrint('✅ Vaga $vacancyId deletada do Firebase');
 
       _vacancyCache.remove(vacancyId);
       _userVacanciesCache.remove(ownerLocalId);
@@ -313,13 +314,13 @@ class VacancyService {
       if (unviewedCount > 0) {
         await _decrementOwnerBadge(ownerLocalId, unviewedCount);
       } else {
-        print('ℹ️ Nenhuma candidatura não vista — badge não alterado');
+        debugPrint('ℹ️ Nenhuma candidatura não vista — badge não alterado');
       }
 
       return true;
     } catch (e, stack) {
-      print('❌ deleteVacancy erro: $e');
-      print('$stack');
+      debugPrint('❌ deleteVacancy erro: $e');
+      debugPrint('$stack');
       return false;
     }
   }
@@ -356,10 +357,10 @@ class VacancyService {
         }
       }
 
-      print('✅ toggleVacancyStatus: $currentStatus → $newStatus');
+      debugPrint('✅ toggleVacancyStatus: $currentStatus → $newStatus');
       return newStatus;
     } catch (e) {
-      print('❌ toggleVacancyStatus erro: $e');
+      debugPrint('❌ toggleVacancyStatus erro: $e');
       return null;
     }
   }
@@ -387,7 +388,7 @@ class VacancyService {
       
       return success;
     } catch (e) {
-      print('❌ renewVacancy erro: $e');
+      debugPrint('❌ renewVacancy erro: $e');
       return false;
     }
   }
@@ -426,7 +427,7 @@ class VacancyService {
 
   Future<void> _decrementOwnerBadge(
       String ownerLocalId, int count) async {
-    print(
+    debugPrint(
         '🔔 _decrementOwnerBadge — userId: $ownerLocalId  decremento: $count');
 
     try {
@@ -434,7 +435,7 @@ class VacancyService {
           _database.child('badges/$ownerLocalId/unread_requests');
 
       final snap = await badgeRef.get();
-      print('📊 Badge snapshot exists: ${snap.exists}  value: ${snap.value}');
+      debugPrint('📊 Badge snapshot exists: ${snap.exists}  value: ${snap.value}');
 
       int current = 0;
       if (snap.exists && snap.value != null) {
@@ -442,13 +443,13 @@ class VacancyService {
       }
 
       final newValue = (current - count).clamp(0, 9999);
-      print('🔔 Badge: $current → $newValue');
+      debugPrint('🔔 Badge: $current → $newValue');
 
       await badgeRef.set(newValue);
-      print('✅ Badge gravado: $newValue');
+      debugPrint('✅ Badge gravado: $newValue');
     } catch (e, stack) {
-      print('❌ _decrementOwnerBadge erro: $e');
-      print('$stack');
+      debugPrint('❌ _decrementOwnerBadge erro: $e');
+      debugPrint('$stack');
     }
   }
 
@@ -470,7 +471,7 @@ class VacancyService {
       await _database.update(updates);
       return true;
     } catch (e) {
-      print('❌ markCandidatesAsViewed erro: $e');
+      debugPrint('❌ markCandidatesAsViewed erro: $e');
       return false;
     }
   }

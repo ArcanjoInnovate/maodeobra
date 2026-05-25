@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/models/chat/chat_model.dart
 
 import 'participant_model.dart';
@@ -36,7 +37,7 @@ class Chat {
 
       if (participantsMap != null) {
         final format = ParticipantsHelper.detectFormat(participantsMap);
-        print('📋 Chat $chatId: formato participants = $format');
+        debugPrint('📋 Chat $chatId: formato participants = $format');
 
         if (format == 'old_flat') {
           participants['contractor'] = ParticipantData.fromMap(
@@ -61,7 +62,7 @@ class Chat {
             );
           }
         } else {
-          print('⚠️ Formato de participants desconhecido no chat $chatId');
+          debugPrint('⚠️ Formato de participants desconhecido no chat $chatId');
         }
       }
 
@@ -86,8 +87,8 @@ class Chat {
         unreadCount: unreadCount,
       );
     } catch (e) {
-      print('❌ Erro ao parsear chat $chatId: $e');
-      print('   Dados: $map');
+      debugPrint('❌ Erro ao parsear chat $chatId: $e');
+      debugPrint('   Dados: $map');
       rethrow;
     }
   }

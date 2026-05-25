@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/models/chat/participant_model.dart
 
 class ParticipantData {
@@ -65,8 +66,8 @@ class ParticipantData {
     }
     
     // Fallback
-    print('⚠️ Formato de participante não reconhecido para $role');
-    print('   Dados recebidos: $map');
+    debugPrint('⚠️ Formato de participante não reconhecido para $role');
+    debugPrint('   Dados recebidos: $map');
     
     return ParticipantData(
       status: 'offline',

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/expiration_service.dart
 
 import 'dart:async';
@@ -155,7 +156,7 @@ class ExpirationService {
   /// Agora: busca apenas vagas com status 'Aberta'
   Future<List<String>> checkAndExpireVacancies() async {
     try {
-      print('🕐 Verificando vagas expiradas...');
+      debugPrint('🕐 Verificando vagas expiradas...');
       
       // ✅ OTIMIZAÇÃO: Filtra por status no servidor
       final snapshot = await _database
@@ -165,7 +166,7 @@ class ExpirationService {
           .get();
       
       if (!snapshot.exists || snapshot.value == null) {
-        print('ℹ️ Nenhuma vaga aberta encontrada');
+        debugPrint('ℹ️ Nenhuma vaga aberta encontrada');
         return [];
       }
 
@@ -194,10 +195,10 @@ class ExpirationService {
         await _database.update(batchUpdates);
       }
 
-      print('✅ Verificação concluída: ${expiredVacancies.length} vagas expiradas de ${data.length} abertas');
+      debugPrint('✅ Verificação concluída: ${expiredVacancies.length} vagas expiradas de ${data.length} abertas');
       return expiredVacancies;
     } catch (e) {
-      print('❌ Erro ao verificar vagas expiradas: $e');
+      debugPrint('❌ Erro ao verificar vagas expiradas: $e');
       return [];
     }
   }
@@ -216,10 +217,10 @@ class ExpirationService {
         'status': 'Aberta', // Reativa se estava expirada
       });
 
-      print('✅ Vaga $vacancyId renovada até $newExpirationDate');
+      debugPrint('✅ Vaga $vacancyId renovada até $newExpirationDate');
       return true;
     } catch (e) {
-      print('❌ Erro ao renovar vaga: $e');
+      debugPrint('❌ Erro ao renovar vaga: $e');
       return false;
     }
   }
@@ -233,7 +234,7 @@ class ExpirationService {
   /// Agora: busca apenas profissionais com status 'active'
   Future<List<String>> checkAndExpireProfessionals() async {
     try {
-      print('🕐 Verificando perfis profissionais expirados...');
+      debugPrint('🕐 Verificando perfis profissionais expirados...');
       
       // ✅ OTIMIZAÇÃO: Filtra por status no servidor
       final snapshot = await _database
@@ -243,7 +244,7 @@ class ExpirationService {
           .get();
       
       if (!snapshot.exists || snapshot.value == null) {
-        print('ℹ️ Nenhum perfil profissional ativo encontrado');
+        debugPrint('ℹ️ Nenhum perfil profissional ativo encontrado');
         return [];
       }
 
@@ -278,10 +279,10 @@ class ExpirationService {
         await _database.update(batchUpdates);
       }
 
-      print('✅ Verificação concluída: ${expiredProfessionals.length} perfis expirados de ${data.length} ativos');
+      debugPrint('✅ Verificação concluída: ${expiredProfessionals.length} perfis expirados de ${data.length} ativos');
       return expiredProfessionals;
     } catch (e) {
-      print('❌ Erro ao verificar perfis expirados: $e');
+      debugPrint('❌ Erro ao verificar perfis expirados: $e');
       return [];
     }
   }
@@ -300,10 +301,10 @@ class ExpirationService {
         'status': 'active', // Reativa se estava expirado
       });
 
-      print('✅ Perfil profissional $professionalId renovado até $newExpirationDate');
+      debugPrint('✅ Perfil profissional $professionalId renovado até $newExpirationDate');
       return true;
     } catch (e) {
-      print('❌ Erro ao renovar perfil profissional: $e');
+      debugPrint('❌ Erro ao renovar perfil profissional: $e');
       return false;
     }
   }
@@ -314,7 +315,7 @@ class ExpirationService {
 
   /// Inicia verificação periódica automática (executa a cada 6 horas)
   Timer startPeriodicCheck() {
-    print('🔄 Iniciando verificação periódica de expiração...');
+    debugPrint('🔄 Iniciando verificação periódica de expiração...');
     
     // Executa imediatamente
     _runPeriodicCheck();
@@ -326,7 +327,7 @@ class ExpirationService {
   }
 
   Future<void> _runPeriodicCheck() async {
-    print('🔍 Executando verificação periódica...');
+    debugPrint('🔍 Executando verificação periódica...');
     await checkAndExpireVacancies();
     await checkAndExpireProfessionals();
   }
@@ -354,7 +355,7 @@ class ExpirationService {
         'status': data['status'],
       };
     } catch (e) {
-      print('❌ Erro ao obter info de expiração: $e');
+      debugPrint('❌ Erro ao obter info de expiração: $e');
       return null;
     }
   }
@@ -378,7 +379,7 @@ class ExpirationService {
         'status': data['status'],
       };
     } catch (e) {
-      print('❌ Erro ao obter info de expiração: $e');
+      debugPrint('❌ Erro ao obter info de expiração: $e');
       return null;
     }
   }
@@ -390,12 +391,12 @@ class ExpirationService {
   /// Imprime o estado atual do testDate para debug
   void debugTestDate() {
     if (testDate != null) {
-      print('🧪 testDate ativo: $testDate');
-      print('   _now = $_now');
-      print('   expiração gerada = ${getExpirationDate()}');
-      print('   renovação gerada = ${renewExpiration()}');
+      debugPrint('🧪 testDate ativo: $testDate');
+      debugPrint('   _now = $_now');
+      debugPrint('   expiração gerada = ${getExpirationDate()}');
+      debugPrint('   renovação gerada = ${renewExpiration()}');
     } else {
-      print('🧪 testDate null — usando DateTime.now() real');
+      debugPrint('🧪 testDate null — usando DateTime.now() real');
     }
   }
 }

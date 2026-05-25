@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/chat_migration_service.dart
 
 import 'package:dartobra_new/services/chat/firebase_service.dart';
@@ -15,7 +16,7 @@ class ChatMigrationService {
   /// Migra um chat específico
   Future<void> migrateChat(String chatId) async {
     try {
-      print('🔄 Iniciando migração do chat: $chatId');
+      debugPrint('🔄 Iniciando migração do chat: $chatId');
 
       // 1. Busca mensagens antigas
       final oldMessagesRef = _firebase.database
@@ -24,7 +25,7 @@ class ChatMigrationService {
       final snapshot = await oldMessagesRef.get();
 
       if (!snapshot.exists) {
-        print('✅ Chat $chatId não tem mensagens antigas para migrar');
+        debugPrint('✅ Chat $chatId não tem mensagens antigas para migrar');
         return;
       }
 
@@ -32,7 +33,7 @@ class ChatMigrationService {
       
       // Ignora se for apenas o placeholder "init"
       if (oldMessages.length == 1 && oldMessages.containsKey('init')) {
-        print('✅ Chat $chatId só tem placeholder, nada a migrar');
+        debugPrint('✅ Chat $chatId só tem placeholder, nada a migrar');
         return;
       }
 
@@ -51,21 +52,21 @@ class ChatMigrationService {
       });
 
       if (messagesToMigrate.isEmpty) {
-        print('✅ Chat $chatId não tem mensagens válidas para migrar');
+        debugPrint('✅ Chat $chatId não tem mensagens válidas para migrar');
         return;
       }
 
       // 3. Salva na nova estrutura
       await newMessagesRef.set(messagesToMigrate);
 
-      print('✅ Migradas ${messagesToMigrate.length} mensagens do chat $chatId');
+      debugPrint('✅ Migradas ${messagesToMigrate.length} mensagens do chat $chatId');
 
       // 4. OPCIONAL: Remove mensagens antigas (comente se quiser manter backup)
       // await oldMessagesRef.remove();
       // print('🗑️ Mensagens antigas removidas de Chats/$chatId/messages');
 
     } catch (e) {
-      print('❌ Erro ao migrar chat $chatId: $e');
+      debugPrint('❌ Erro ao migrar chat $chatId: $e');
       rethrow;
     }
   }
@@ -73,7 +74,7 @@ class ChatMigrationService {
   /// Migra todos os chats de um usuário
   Future<void> migrateUserChats(String userId, String userRole) async {
     try {
-      print('🔄 Iniciando migração dos chats do usuário: $userId ($userRole)');
+      debugPrint('🔄 Iniciando migração dos chats do usuário: $userId ($userRole)');
 
       // Busca todos os chats do usuário
       final field = userRole == 'contractor' ? 'contractor' : 'employee';
@@ -85,7 +86,7 @@ class ChatMigrationService {
           .get();
 
       if (!chatsSnapshot.exists) {
-        print('✅ Usuário não tem chats para migrar');
+        debugPrint('✅ Usuário não tem chats para migrar');
         return;
       }
 
@@ -97,15 +98,15 @@ class ChatMigrationService {
           await migrateChat(chatId.toString());
           migratedCount++;
         } catch (e) {
-          print('⚠️ Erro ao migrar chat $chatId: $e');
+          debugPrint('⚠️ Erro ao migrar chat $chatId: $e');
           // Continua com os próximos chats mesmo se um falhar
         }
       }
 
-      print('✅ Migração concluída: $migratedCount de ${chats.length} chats');
+      debugPrint('✅ Migração concluída: $migratedCount de ${chats.length} chats');
 
     } catch (e) {
-      print('❌ Erro ao migrar chats do usuário: $e');
+      debugPrint('❌ Erro ao migrar chats do usuário: $e');
       rethrow;
     }
   }
@@ -138,7 +139,7 @@ class ChatMigrationService {
       return !newMessagesSnapshot.exists;
 
     } catch (e) {
-      print('Erro ao verificar migração: $e');
+      debugPrint('Erro ao verificar migração: $e');
       return false;
     }
   }
@@ -149,11 +150,11 @@ class ChatMigrationService {
       final needsMig = await needsMigration(chatId);
       
       if (needsMig) {
-        print('🔄 Chat $chatId precisa ser migrado, iniciando...');
+        debugPrint('🔄 Chat $chatId precisa ser migrado, iniciando...');
         await migrateChat(chatId);
       }
     } catch (e) {
-      print('⚠️ Erro na migração automática: $e');
+      debugPrint('⚠️ Erro na migração automática: $e');
       // Não lança erro para não bloquear o chat
     }
   }
@@ -161,7 +162,7 @@ class ChatMigrationService {
   /// Limpa estrutura antiga após confirmar migração
   Future<void> cleanupOldStructure(String chatId) async {
     try {
-      print('🗑️ Limpando estrutura antiga do chat: $chatId');
+      debugPrint('🗑️ Limpando estrutura antiga do chat: $chatId');
 
       // Verifica se migração foi bem-sucedida
       final newMessagesSnapshot = await _firebase.database
@@ -182,10 +183,10 @@ class ChatMigrationService {
           .ref('Chats/$chatId/historical_messages')
           .remove();
 
-      print('✅ Estrutura antiga removida com sucesso');
+      debugPrint('✅ Estrutura antiga removida com sucesso');
 
     } catch (e) {
-      print('❌ Erro ao limpar estrutura antiga: $e');
+      debugPrint('❌ Erro ao limpar estrutura antiga: $e');
       rethrow;
     }
   }
@@ -226,7 +227,7 @@ class ChatMigrationService {
       };
 
     } catch (e) {
-      print('Erro ao obter estatísticas: $e');
+      debugPrint('Erro ao obter estatísticas: $e');
       return {'total': 0, 'migrated': 0, 'pending': 0};
     }
   }
