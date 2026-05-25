@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class ComplaintService {
@@ -25,9 +26,9 @@ class ComplaintService {
         'created_at': ServerValue.timestamp,
       });
 
-      print('✅ Denúncia criada com sucesso');
+      debugPrint('✅ Denúncia criada com sucesso');
     } catch (e) {
-      print('❌ Erro ao criar denúncia: $e');
+      debugPrint('❌ Erro ao criar denúncia: $e');
       rethrow;
     }
   }

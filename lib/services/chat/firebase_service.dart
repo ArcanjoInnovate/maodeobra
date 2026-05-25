@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 // lib/services/firebase_service.dart
 
 import 'package:firebase_database/firebase_database.dart';
@@ -147,7 +148,7 @@ class FirebaseService {
       });
       return result.snapshot.value as T?;
     } catch (e) {
-      print('Erro na transação: $e');
+      debugPrint('Erro na transação: $e');
       return null;
     }
   }

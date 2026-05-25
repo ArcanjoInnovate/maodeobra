@@ -63,7 +63,7 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
         database: FirebaseDatabase.instance.ref(),
       );
     } catch (e) {
-      print('❌ Erro ao verificar telefone: $e');
+      debugPrint('❌ Erro ao verificar telefone: $e');
       throw Exception('Erro ao verificar telefone');
     }
   }
@@ -88,9 +88,9 @@ class _EditContactPhoneScreenState extends State<EditContactPhoneScreen> {
           .child(widget.local_id)
           .update(updateData);
       
-      print('✅ Telefone salvo no Firebase: $cleanPhone');
+      debugPrint('✅ Telefone salvo no Firebase: $cleanPhone');
     } catch (e) {
-      print('❌ Erro ao salvar telefone no Firebase: $e');
+      debugPrint('❌ Erro ao salvar telefone no Firebase: $e');
       throw Exception('Erro ao salvar telefone');
     }
   }

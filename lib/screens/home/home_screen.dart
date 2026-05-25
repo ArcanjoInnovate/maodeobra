@@ -90,6 +90,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==================key navegação de notificação ====================
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
+  // Cache de SearchController para evitar recriação a cada rebuild
+  late final search.SearchController _cachedSearchController;
+
   // ==================== LISTENERS ====================
   StreamSubscription<DatabaseEvent>? _userDataSubscription;
 
@@ -108,13 +111,14 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==================== CICLO DE VIDA ====================
 
   @override
-  @override
   void initState() {
     super.initState();
+    _cachedSearchController = search.SearchController();
     _initializeVariables();
     _setupRealtimeListener();
     BadgeInitializer.ensureBadgeExists(widget.local_id);
-    _loadUserData();
+    // Removido: _loadUserData() era duplicado — _setupRealtimeListener já
+    // faz o mesmo (onValue listener inclui o snapshot inicial)
     _setupBadgeListener();
     _setupNotificationHandlers(); // ← primeiro registra callbacks locais
     
@@ -146,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null && mounted) {
         _notificationProcessed = true;
-        print('🚀 [Home] Notificação detectada DIRETAMENTE!');
+        debugPrint('🚀 [Home] Notificação detectada DIRETAMENTE!');
         
         final data = initialMessage.data;
         final type = data['type']?.toString() ?? '';
@@ -179,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      print('❌ Erro processar notificação: $e');
+      debugPrint('❌ Erro processar notificação: $e');
     }
   }
 
@@ -303,9 +307,12 @@ class _HomeScreenState extends State<HomeScreen> {
             event.snapshot.value as Map<dynamic, dynamic>,
           );
           _updateAllData(data);
+          if (_isLoading) {
+            setState(() => _isLoading = false);
+          }
         }
       },
-      onError: (error) => debugPrint('❌ Erro no listener de usuário: $error'),
+      onError: (error) => debugPrint('Erro no listener de usuario: $error'),
     );
   }
 
@@ -528,8 +535,8 @@ class _HomeScreenState extends State<HomeScreen> {
           dataContractor: _dataContractor,
           onNavigateToVacancies: () => _onItemTapped(3),
         ),
-        ChangeNotifierProvider(
-          create: (_) => search.SearchController(),
+        ChangeNotifierProvider.value(
+          value: _cachedSearchController,
           child: const SearchPage(),
         ),
         ChatListScreen(

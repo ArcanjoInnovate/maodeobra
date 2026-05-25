@@ -1,6 +1,7 @@
 // SCRIPT PARA VERIFICAR E INICIALIZAR BADGES
 // Execute este código UMA VEZ no seu app (pode ser no initState do HomeScreen)
 
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 class BadgeInitializer {
@@ -12,7 +13,7 @@ class BadgeInitializer {
       final snapshot = await _database.child('badges/$userId').get();
       
       if (!snapshot.exists) {
-        print('⚠️ Badge não existe para $userId, criando...');
+        debugPrint('⚠️ Badge não existe para $userId, criando...');
         
         await _database.child('badges/$userId').set({
           'unread_chats': 0,
@@ -20,20 +21,20 @@ class BadgeInitializer {
           'updated_at': ServerValue.timestamp,
         });
         
-        print('✅ Badge criado para $userId');
+        debugPrint('✅ Badge criado para $userId');
       } else {
-        print('✅ Badge já existe para $userId');
-        print('📊 Dados: ${snapshot.value}');
+        debugPrint('✅ Badge já existe para $userId');
+        debugPrint('📊 Dados: ${snapshot.value}');
       }
     } catch (e) {
-      print('❌ Erro ao verificar badge: $e');
+      debugPrint('❌ Erro ao verificar badge: $e');
     }
   }
 
   /// Recalcula badges do zero (use apenas se estiver com problemas)
   static Future<void> recalculateBadges(String userId, String userRole) async {
     try {
-      print('🔄 Recalculando badges para $userId ($userRole)...');
+      debugPrint('🔄 Recalculando badges para $userId ($userRole)...');
       
       int unreadChats = 0;
       int unreadRequests = 0;
@@ -125,12 +126,12 @@ class BadgeInitializer {
         'updated_at': ServerValue.timestamp,
       });
 
-      print('✅ Badges recalculados:');
-      print('   📬 Chats: $unreadChats');
-      print('   📋 Requests: $unreadRequests');
+      debugPrint('✅ Badges recalculados:');
+      debugPrint('   📬 Chats: $unreadChats');
+      debugPrint('   📋 Requests: $unreadRequests');
       
     } catch (e) {
-      print('❌ Erro ao recalcular badges: $e');
+      debugPrint('❌ Erro ao recalcular badges: $e');
     }
   }
 
@@ -139,20 +140,20 @@ class BadgeInitializer {
     try {
       final snapshot = await _database.child('badges/$userId').get();
       
-      print('═══════════════════════════════════════');
-      print('🔍 DEBUG BADGES - $userId');
-      print('═══════════════════════════════════════');
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('🔍 DEBUG BADGES - $userId');
+      debugPrint('═══════════════════════════════════════');
       
       if (snapshot.exists) {
-        print('✅ Badge existe');
-        print('📊 Dados: ${snapshot.value}');
+        debugPrint('✅ Badge existe');
+        debugPrint('📊 Dados: ${snapshot.value}');
       } else {
-        print('❌ Badge NÃO existe');
+        debugPrint('❌ Badge NÃO existe');
       }
       
-      print('═══════════════════════════════════════');
+      debugPrint('═══════════════════════════════════════');
     } catch (e) {
-      print('❌ Erro ao debugar: $e');
+      debugPrint('❌ Erro ao debugar: $e');
     }
   }
 }

@@ -217,7 +217,7 @@ class _StateDropdownState extends State<StateDropdown> {
         });
       }
     } catch (e) {
-      print('Erro ao carregar estados: $e');
+      debugPrint('Erro ao carregar estados: $e');
       setState(() {
         isLoading = false;
       });
@@ -519,7 +519,7 @@ class _CityDropdownState extends State<CityDropdown> {
         }
       }
     } catch (e) {
-      print('Erro ao carregar cidades: $e');
+      debugPrint('Erro ao carregar cidades: $e');
       setState(() {
         isLoading = false;
       });

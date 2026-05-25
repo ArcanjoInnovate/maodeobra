@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -26,12 +27,7 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      print('\n========================================');
-      print('   BUSCANDO VAGAS');
-      print('========================================');
-      print('Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
-      print('Profissao: ${preferredProfession ?? "Todas"}');
-      print('Bloqueados: ${blockedUserIds.length}');
+      debugPrint('BUSCANDO VAGAS - Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
 
       final startTime = DateTime.now();
       int readsEstimated = 0;
@@ -54,8 +50,6 @@ class FirebaseFeedService {
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('Nenhuma vaga encontrada');
-        _printReadStats(startTime, readsEstimated);
         return PaginatedFeedResult(items: [], hasMore: false);
       }
 
@@ -82,7 +76,7 @@ class FirebaseFeedService {
           if (blockedUserIds.isNotEmpty &&
               vacancy.localId.isNotEmpty &&
               blockedUserIds.contains(vacancy.localId)) {
-            print(
+            debugPrint(
                 '  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
             continue;
           }
@@ -108,7 +102,7 @@ class FirebaseFeedService {
 
           if (vacancies.length >= limit) break;
         } catch (e) {
-          print('Erro ao parsear vaga: $e');
+          debugPrint('Erro ao parsear vaga: $e');
         }
       }
 
@@ -118,8 +112,6 @@ class FirebaseFeedService {
           snapshot.children.length >= fetchLimit && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print('${vacancies.length} vagas retornadas (de $readsEstimated lidas)');
-      print('========================================\n');
 
       return PaginatedFeedResult(
         items: vacancies,
@@ -128,7 +120,7 @@ class FirebaseFeedService {
         lastKey: newLastKey,
       );
     } catch (e, stack) {
-      print('Erro ao buscar vagas: $e\n$stack');
+      debugPrint('Erro ao buscar vagas: $e\n$stack');
       return PaginatedFeedResult(items: [], hasMore: false);
     }
   }
@@ -149,11 +141,7 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      print('\n========================================');
-      print('   BUSCANDO PROFISSIONAIS');
-      print('========================================');
-      print('Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
-      print('Bloqueados: ${blockedUserIds.length}');
+      debugPrint('BUSCANDO PROFISSIONAIS - Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
 
       final startTime = DateTime.now();
       int readsEstimated = 0;
@@ -176,7 +164,7 @@ class FirebaseFeedService {
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        print('Nenhum profissional encontrado');
+        debugPrint('Nenhum profissional encontrado');
         _printReadStats(startTime, readsEstimated);
         return PaginatedFeedResult(items: [], hasMore: false);
       }
@@ -203,7 +191,7 @@ class FirebaseFeedService {
           if (blockedUserIds.isNotEmpty &&
               prof.localId.isNotEmpty &&
               blockedUserIds.contains(prof.localId)) {
-            print(
+            debugPrint(
                 '  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
             continue;
           }
@@ -228,7 +216,7 @@ class FirebaseFeedService {
 
           if (professionals.length >= limit) break;
         } catch (e) {
-          print('Erro ao parsear profissional: $e');
+          debugPrint('Erro ao parsear profissional: $e');
         }
       }
 
@@ -238,9 +226,9 @@ class FirebaseFeedService {
           professionals.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      print(
+      debugPrint(
           '${professionals.length} profissionais retornados (de $readsEstimated lidos)');
-      print('========================================\n');
+      debugPrint('========================================\n');
 
       return PaginatedFeedResult(
         items: professionals,
@@ -249,7 +237,7 @@ class FirebaseFeedService {
         lastKey: newLastKey,
       );
     } catch (e, stack) {
-      print('Erro ao buscar profissionais: $e\n$stack');
+      debugPrint('Erro ao buscar profissionais: $e\n$stack');
       return PaginatedFeedResult(items: [], hasMore: false);
     }
   }
@@ -316,11 +304,11 @@ class FirebaseFeedService {
       ]);
 
       final all = {...results[0], ...results[1]};
-      print(
+      debugPrint(
           '✅ fetchBlockedUserIds: ${all.length} bloqueados (iBlockedThem: ${results[0].length}, blockedMe: ${results[1].length})');
       return all;
     } catch (e) {
-      print('❌ fetchBlockedUserIds: $e');
+      debugPrint('❌ fetchBlockedUserIds: $e');
       return {};
     }
   }
@@ -332,7 +320,7 @@ class FirebaseFeedService {
     if (_currentUserId == null) return {};
 
     try {
-      print('Buscando vagas candidatadas...');
+      debugPrint('Buscando vagas candidatadas...');
       final startTime = DateTime.now();
 
       // Tenta o caminho otimizado primeiro
@@ -353,7 +341,7 @@ class FirebaseFeedService {
         }
 
         final duration = DateTime.now().difference(startTime);
-        print(
+        debugPrint(
             '${requestedIds.length} candidaturas (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
@@ -379,11 +367,11 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print(
+      debugPrint(
           '${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
-      print('Erro ao buscar candidaturas: $e');
+      debugPrint('Erro ao buscar candidaturas: $e');
       return {};
     }
   }
@@ -392,7 +380,7 @@ class FirebaseFeedService {
     if (_currentUserId == null) return {};
 
     try {
-      print('Buscando requests de profissionais...');
+      debugPrint('Buscando requests de profissionais...');
       final startTime = DateTime.now();
 
       final userRequestsSnapshot = await _database
@@ -412,7 +400,7 @@ class FirebaseFeedService {
         }
 
         final duration = DateTime.now().difference(startTime);
-        print(
+        debugPrint(
             '${requestedIds.length} requests profissionais (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
@@ -441,11 +429,11 @@ class FirebaseFeedService {
       }
 
       final duration = DateTime.now().difference(startTime);
-      print(
+      debugPrint(
           '${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
-      print('Erro ao buscar requests de profissionais: $e');
+      debugPrint('Erro ao buscar requests de profissionais: $e');
       return {};
     }
   }
@@ -458,15 +446,18 @@ class FirebaseFeedService {
     if (_currentUserId == null) return {};
 
     try {
-      print('Buscando chats...');
-      final startTime = DateTime.now();
       final chatUserIds = <String>{};
 
-      final contractorSnapshot = await _database
-          .child('Chats')
-          .orderByChild('contractor')
-          .equalTo(_currentUserId)
-          .get();
+      // Queries paralelas em vez de sequenciais
+      final results = await Future.wait([
+        _database.child('Chats')
+            .orderByChild('contractor').equalTo(_currentUserId).get(),
+        _database.child('Chats')
+            .orderByChild('employee').equalTo(_currentUserId).get(),
+      ]);
+
+      final contractorSnapshot = results[0];
+      final employeeSnapshot = results[1];
 
       if (contractorSnapshot.exists) {
         for (var child in contractorSnapshot.children) {
@@ -477,12 +468,6 @@ class FirebaseFeedService {
         }
       }
 
-      final employeeSnapshot = await _database
-          .child('Chats')
-          .orderByChild('employee')
-          .equalTo(_currentUserId)
-          .get();
-
       if (employeeSnapshot.exists) {
         for (var child in employeeSnapshot.children) {
           final contractor = child.child('contractor').value?.toString();
@@ -492,11 +477,9 @@ class FirebaseFeedService {
         }
       }
 
-      final duration = DateTime.now().difference(startTime);
-      print('${chatUserIds.length} chats em ${duration.inMilliseconds}ms');
       return chatUserIds;
     } catch (e) {
-      print('Erro ao buscar chats: $e');
+      debugPrint('Erro ao buscar chats: $e');
       return {};
     }
   }
@@ -514,7 +497,7 @@ class FirebaseFeedService {
     if (hasStateFilter) multiplier += 1;
     if (hasCityFilter) multiplier += 1;
     if (hasProfessionFilter) multiplier += 1;
-    return multiplier.clamp(2, 6);
+    return multiplier.clamp(1, 3);
   }
 
   VacancyModel _parseVacancy(String key, Map<String, dynamic> data) {
@@ -587,12 +570,12 @@ class FirebaseFeedService {
   void _printReadStats(DateTime startTime, int reads) {
     final duration = DateTime.now().difference(startTime);
     final cost = reads * 0.00036;
-    print(
+    debugPrint(
         'Stats: ${duration.inMilliseconds}ms | $reads reads | \$${cost.toStringAsFixed(6)}');
     if (reads > 50)
-      print('⚠️ Muitos reads — considere mais filtros server-side');
+      debugPrint('⚠️ Muitos reads — considere mais filtros server-side');
     if (duration.inMilliseconds > 2000)
-      print('⚠️ Query lenta — verifique índices');
+      debugPrint('⚠️ Query lenta — verifique índices');
   }
 }
 

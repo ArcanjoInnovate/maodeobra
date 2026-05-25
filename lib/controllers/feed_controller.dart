@@ -132,17 +132,17 @@ class FeedController with ChangeNotifier {
 
     // Sincroniza o estado atual do BlockProvider imediatamente
     _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
-    print('🔗 FeedController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
+    debugPrint('🔗 FeedController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
   }
 
   void _handleUserBlocked(String userId) {
-    print('🚫 FeedController: usuário bloqueado: $userId');
+    debugPrint('🚫 FeedController: usuário bloqueado: $userId');
     _blockedUserIds = {..._blockedUserIds, userId};
     _applyFilters();
   }
 
   void _handleUserUnblocked(String userId) {
-    print('✅ FeedController: usuário desbloqueado: $userId');
+    debugPrint('✅ FeedController: usuário desbloqueado: $userId');
     _blockedUserIds = _blockedUserIds.difference({userId});
     _applyFilters();
   }
@@ -155,9 +155,9 @@ class FeedController with ChangeNotifier {
     String? initialCity,
     String? preferredProfession,
   }) async {
-    print('\n========================================');
-    print('   INICIALIZANDO FEED CONTROLLER UNIFICADO');
-    print('========================================');
+    debugPrint('\n========================================');
+    debugPrint('   INICIALIZANDO FEED CONTROLLER UNIFICADO');
+    debugPrint('========================================');
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _feedMode = FeedMode.unified;
     _filterState = initialState;
@@ -172,7 +172,7 @@ class FeedController with ChangeNotifier {
 
       if (_blockProvider != null) {
         _blockedUserIds = Set.from(_blockProvider!.blockedSet);
-        print('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
+        debugPrint('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
       } else {
         await _loadBlockedUsers();
       }
@@ -181,9 +181,9 @@ class FeedController with ChangeNotifier {
       await _loadInitialFeed();
       await _applyFilters();
 
-      print('Feed inicializado! Bloqueados: ${_blockedUserIds.length}');
+      debugPrint('Feed inicializado! Bloqueados: ${_blockedUserIds.length}');
     } catch (e, stack) {
-      print('Erro ao inicializar feed: $e\nStack: $stack');
+      debugPrint('Erro ao inicializar feed: $e\nStack: $stack');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -198,9 +198,9 @@ class FeedController with ChangeNotifier {
       final list =
           await _userController.fetchAllBlockedUsers(_currentUserId!);
       _blockedUserIds = {..._blockedUserIds, ...list};
-      print('✅ Bloqueados carregados (fallback): ${_blockedUserIds.length}');
+      debugPrint('✅ Bloqueados carregados (fallback): ${_blockedUserIds.length}');
     } catch (e) {
-      print('❌ Erro ao carregar bloqueados (fallback): $e');
+      debugPrint('❌ Erro ao carregar bloqueados (fallback): $e');
     }
   }
 
@@ -254,7 +254,7 @@ class FeedController with ChangeNotifier {
       _requestsLoaded = true;
       notifyListeners();
     } catch (e) {
-      print('Erro ao carregar requests: $e');
+      debugPrint('Erro ao carregar requests: $e');
     }
   }
 
@@ -284,8 +284,8 @@ class FeedController with ChangeNotifier {
     notifyListeners();
 
     try {
-      print('\nCarregando mais itens...');
-      print('   Bloqueados: ${_blockedUserIds.length}');
+      debugPrint('\nCarregando mais itens...');
+      debugPrint('   Bloqueados: ${_blockedUserIds.length}');
 
       if (_hasMoreVacancies) {
         final resultV = await _feedService.fetchVacanciesForFeed(
@@ -303,7 +303,7 @@ class FeedController with ChangeNotifier {
         _lastCreatedAt = resultV.lastCreatedAt;
         _lastVacancyKey = resultV.lastKey;
         _hasMoreVacancies = resultV.hasMore;
-        print('   ${resultV.items.length} vagas carregadas');
+        debugPrint('   ${resultV.items.length} vagas carregadas');
       }
 
       if (_hasMoreProfessionals) {
@@ -322,15 +322,15 @@ class FeedController with ChangeNotifier {
         _lastUpdatedAt = resultP.lastUpdatedAt;
         _lastProfessionalKey = resultP.lastKey;
         _hasMoreProfessionals = resultP.hasMore;
-        print('   ${resultP.items.length} profissionais carregados');
+        debugPrint('   ${resultP.items.length} profissionais carregados');
       }
 
-      print(
+      debugPrint(
           '   Total: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
 
       await _applyFilters();
     } catch (e) {
-      print('Erro ao carregar mais itens: $e');
+      debugPrint('Erro ao carregar mais itens: $e');
     } finally {
       _isLoadingMore = false;
       notifyListeners();
@@ -348,8 +348,8 @@ class FeedController with ChangeNotifier {
   }
 
   Future<void> _applyFilters() async {
-    print('DEBUG - Vagas na memória: ${_allVacancies.length}');
-    print('DEBUG - Bloqueados no filtro: ${_blockedUserIds.length}');
+    debugPrint('DEBUG - Vagas na memória: ${_allVacancies.length}');
+    debugPrint('DEBUG - Bloqueados no filtro: ${_blockedUserIds.length}');
 
     await ensureRequestsLoaded();
     await _loadChats();
@@ -386,7 +386,7 @@ class FeedController with ChangeNotifier {
       return true;
     }).toList();
 
-    print(
+    debugPrint(
         'FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visíveis');
     notifyListeners();
   }

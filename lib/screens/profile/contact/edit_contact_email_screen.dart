@@ -64,7 +64,7 @@ class _EditContactEmailScreenState extends State<EditContactEmailScreen>
         database: _database,
       );
     } catch (e) {
-      print('Erro ao verificar email: $e');
+      debugPrint('Erro ao verificar email: $e');
       return false;
     }
   }
@@ -138,7 +138,7 @@ class _EditContactEmailScreenState extends State<EditContactEmailScreen>
         _isLoading = false;
         _errorMessage = 'Erro ao atualizar email. Tente novamente.';
       });
-      print('Erro ao salvar email: $e');
+      debugPrint('Erro ao salvar email: $e');
     }
   }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 /// Serviço de cache para validações do Firebase
@@ -25,15 +26,15 @@ class ValidationCache {
     if (_emailCache.containsKey(email)) {
       final entry = _emailCache[email]!;
       if (DateTime.now().difference(entry.timestamp) < _cacheDuration) {
-        print('✅ Cache HIT para email: $email');
+        debugPrint('✅ Cache HIT para email: $email');
         return entry.value;
       } else {
-        print('⏰ Cache EXPIRADO para email: $email');
+        debugPrint('⏰ Cache EXPIRADO para email: $email');
         _emailCache.remove(email);
       }
     }
     
-    print('❌ Cache MISS para email: $email - Consultando Firebase...');
+    debugPrint('❌ Cache MISS para email: $email - Consultando Firebase...');
     
     try {
       // Verificar em email_contact (otimizado com limitToFirst)
@@ -74,7 +75,7 @@ class ValidationCache {
       return false;
       
     } catch (e) {
-      print('❌ Erro ao verificar email: $e');
+      debugPrint('❌ Erro ao verificar email: $e');
       // Em caso de erro, não cachear e retornar false
       return false;
     }
@@ -95,15 +96,15 @@ class ValidationCache {
     if (_phoneCache.containsKey(cleanPhone)) {
       final entry = _phoneCache[cleanPhone]!;
       if (DateTime.now().difference(entry.timestamp) < _cacheDuration) {
-        print('✅ Cache HIT para telefone: $cleanPhone');
+        debugPrint('✅ Cache HIT para telefone: $cleanPhone');
         return entry.value;
       } else {
-        print('⏰ Cache EXPIRADO para telefone: $cleanPhone');
+        debugPrint('⏰ Cache EXPIRADO para telefone: $cleanPhone');
         _phoneCache.remove(cleanPhone);
       }
     }
     
-    print('❌ Cache MISS para telefone: $cleanPhone - Consultando Firebase...');
+    debugPrint('❌ Cache MISS para telefone: $cleanPhone - Consultando Firebase...');
     
     try {
       // Consulta otimizada com limitToFirst
@@ -133,7 +134,7 @@ class ValidationCache {
       return false;
       
     } catch (e) {
-      print('❌ Erro ao verificar telefone: $e');
+      debugPrint('❌ Erro ao verificar telefone: $e');
       return false;
     }
   }
@@ -143,26 +144,26 @@ class ValidationCache {
   static void clearAll() {
     _emailCache.clear();
     _phoneCache.clear();
-    print('🧹 Cache limpo completamente');
+    debugPrint('🧹 Cache limpo completamente');
   }
   
   /// Limpa apenas o cache de emails
   static void clearEmailCache() {
     _emailCache.clear();
-    print('🧹 Cache de emails limpo');
+    debugPrint('🧹 Cache de emails limpo');
   }
   
   /// Limpa apenas o cache de telefones
   static void clearPhoneCache() {
     _phoneCache.clear();
-    print('🧹 Cache de telefones limpo');
+    debugPrint('🧹 Cache de telefones limpo');
   }
   
   /// Remove um email específico do cache
   /// Use quando um email for alterado com sucesso
   static void invalidateEmail(String email) {
     _emailCache.remove(email);
-    print('🔄 Cache invalidado para email: $email');
+    debugPrint('🔄 Cache invalidado para email: $email');
   }
   
   /// Remove um telefone específico do cache
@@ -170,7 +171,7 @@ class ValidationCache {
   static void invalidatePhone(String phone) {
     String cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
     _phoneCache.remove(cleanPhone);
-    print('🔄 Cache invalidado para telefone: $cleanPhone');
+    debugPrint('🔄 Cache invalidado para telefone: $cleanPhone');
   }
   
   /// Retorna estatísticas do cache (útil para debugging)

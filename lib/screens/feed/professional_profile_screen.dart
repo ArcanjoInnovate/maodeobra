@@ -157,7 +157,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
 
       setState(() => _isCheckingChat = false);
     } catch (e) {
-      print('❌ Erro ao verificar chat existente: $e');
+      debugPrint('❌ Erro ao verificar chat existente: $e');
       setState(() => _isCheckingChat = false);
     }
   }
@@ -197,7 +197,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
         ),
       );
     } catch (e) {
-      print('❌ Erro ao abrir chat: $e');
+      debugPrint('❌ Erro ao abrir chat: $e');
       _showError('Erro ao abrir conversa. Tente novamente.');
     }
   }

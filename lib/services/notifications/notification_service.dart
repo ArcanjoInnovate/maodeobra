@@ -13,7 +13,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart' as
  
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('📩 [BG] Mensagem recebida: ${message.data}');
+  debugPrint('📩 [BG] Mensagem recebida: ${message.data}');
 }
  
 // ══════════════════════════════════════════════════════════════════════════════
@@ -77,7 +77,7 @@ class NotificationService {
     await _registerToken(userId);
     _setupForegroundListener();
     _setupBackgroundTapListener();
-    print('✅ NotificationService inicializado para: $userId');
+    debugPrint('✅ NotificationService inicializado para: $userId');
   }
  
   // ══════════════════════════════════════════════════════════════════════════
@@ -96,7 +96,7 @@ class NotificationService {
   }) {
     _onChatTap = onChatTap;
     _onRequestTap = onRequestTap;
-    print('🔔 Callbacks atualizados (pendingPayload=${_pendingPayload != null})');
+    debugPrint('🔔 Callbacks atualizados (pendingPayload=${_pendingPayload != null})');
   }
  
   // ══════════════════════════════════════════════════════════════════════════
@@ -113,7 +113,7 @@ class NotificationService {
     final payload = _pendingPayload;
     _pendingPayload = null;
     if (payload != null) {
-      print('📦 consumePendingPayload: $payload');
+      debugPrint('📦 consumePendingPayload: $payload');
     }
     return payload;
   }
@@ -129,7 +129,7 @@ class NotificationService {
       sound: true,
       provisional: false,
     );
-    print('🔑 Permissão: ${settings.authorizationStatus}');
+    debugPrint('🔑 Permissão: ${settings.authorizationStatus}');
   }
  
   // ══════════════════════════════════════════════════════════════════════════
@@ -175,17 +175,17 @@ class NotificationService {
         await FirebaseDatabase.instance
             .ref('Users/$userId/fcmToken')
             .set(token);
-        print('✅ FCM token registrado: ${token.substring(0, 30)}...');
+        debugPrint('✅ FCM token registrado: ${token.substring(0, 30)}...');
       }
  
       _messaging.onTokenRefresh.listen((newToken) async {
         await FirebaseDatabase.instance
             .ref('Users/$userId/fcmToken')
             .set(newToken);
-        print('🔄 FCM token atualizado');
+        debugPrint('🔄 FCM token atualizado');
       });
     } catch (e) {
-      print('❌ Erro ao registrar token: $e');
+      debugPrint('❌ Erro ao registrar token: $e');
     }
   }
  
@@ -195,7 +195,7 @@ class NotificationService {
  
   void _setupForegroundListener() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📩 [FG] Mensagem recebida: ${message.data}');
+      debugPrint('📩 [FG] Mensagem recebida: ${message.data}');
  
       final data = message.data;
       final type = data['type'] ?? '';
@@ -221,7 +221,7 @@ class NotificationService {
  
   void _setupBackgroundTapListener() {
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('🔔 [BG TAP] Notificação tocada: ${message.data}');
+      debugPrint('🔔 [BG TAP] Notificação tocada: ${message.data}');
       _handleNotificationTap(message.data);
     });
   }
@@ -233,7 +233,7 @@ class NotificationService {
   Future<void> _checkInitialMessage() async {
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      print(
+      debugPrint(
           '🚀 [TERMINATED] App abriu por notificação: ${initialMessage.data}');
  
       if (_onChatTap != null || _onRequestTap != null) {
@@ -255,7 +255,7 @@ class NotificationService {
   // ══════════════════════════════════════════════════════════════════════════
  
   void _onLocalNotificationTap(NotificationResponse response) {
-    print('🔔 [LOCAL TAP] payload: ${response.payload}');
+    debugPrint('🔔 [LOCAL TAP] payload: ${response.payload}');
  
     if (response.payload == null || response.payload!.isEmpty) return;
  
@@ -263,7 +263,7 @@ class NotificationService {
       final data = jsonDecode(response.payload!) as Map<String, dynamic>;
       _handleNotificationTap(data);
     } catch (e) {
-      print('❌ Erro ao parsear payload local: $e');
+      debugPrint('❌ Erro ao parsear payload local: $e');
     }
   }
  
@@ -279,10 +279,10 @@ class NotificationService {
   void _handleNotificationTap(Map<String, dynamic> data) {
     final type = data['type']?.toString() ?? '';
  
-    print('🎯 Roteando notificação | type=$type');
+    debugPrint('🎯 Roteando notificação | type=$type');
  
     if (_onChatTap == null && _onRequestTap == null) {
-      print('⏳ Callbacks não registrados — salvando payload como pendente');
+      debugPrint('⏳ Callbacks não registrados — salvando payload como pendente');
       _pendingPayload = data;
       return;
     }
@@ -294,10 +294,10 @@ class NotificationService {
         final senderId = data['senderId']?.toString() ?? '';
  
         if (chatId.isNotEmpty && _onChatTap != null) {
-          print('→ onChatTap($chatId, $senderId)');
+          debugPrint('→ onChatTap($chatId, $senderId)');
           _onChatTap!(chatId, senderId);
         } else {
-          print('⚠️ chatId vazio ou callback não registrado');
+          debugPrint('⚠️ chatId vazio ou callback não registrado');
         }
         break;
  
@@ -307,7 +307,7 @@ class NotificationService {
         final vacancyId = data['vacancyId']?.toString() ?? '';
  
         if (_onRequestTap != null) {
-          print('→ onRequestTap($requestType, $profileId, $vacancyId)');
+          debugPrint('→ onRequestTap($requestType, $profileId, $vacancyId)');
           _onRequestTap!(requestType, profileId, vacancyId);
         }
         break;
@@ -316,19 +316,19 @@ class NotificationService {
         final vacancyId = data['vacancyId']?.toString() ?? '';
  
         if (vacancyId.isNotEmpty && _onRequestTap != null) {
-          print('→ onRequestTap(vacancy_request, , $vacancyId)');
+          debugPrint('→ onRequestTap(vacancy_request, , $vacancyId)');
           _onRequestTap!('vacancy_request', '', vacancyId);
         } else {
-          print('⚠️ vacancyId vazio ou callback não registrado');
+          debugPrint('⚠️ vacancyId vazio ou callback não registrado');
         }
         break;
  
       case 'expiration_warning':
-        print('ℹ️ Notificação de expiração, sem navegação especial');
+        debugPrint('ℹ️ Notificação de expiração, sem navegação especial');
         break;
  
       default:
-        print('⚠️ Tipo de notificação desconhecido: $type');
+        debugPrint('⚠️ Tipo de notificação desconhecido: $type');
         break;
     }
   }
@@ -369,7 +369,7 @@ class NotificationService {
         payload: payload,
       );
     } catch (e) {
-      print('❌ Erro ao mostrar notificação local: $e');
+      debugPrint('❌ Erro ao mostrar notificação local: $e');
     }
   }
  
@@ -419,9 +419,9 @@ class NotificationService {
       );
  
       await _localNotifications.cancelAll();
-      print('🧹 Badge limpo');
+      debugPrint('🧹 Badge limpo');
     } catch (e) {
-      print('❌ Erro ao limpar badge: $e');
+      debugPrint('❌ Erro ao limpar badge: $e');
     }
   }
 }

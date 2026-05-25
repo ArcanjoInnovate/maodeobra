@@ -73,16 +73,16 @@ class BlockProvider extends ChangeNotifier {
 
   Future<void> init(String userId) async {
     if (_initialized && _initSucceeded && _myUserId == userId) {
-      print('✅ BlockProvider já inicializado com sucesso para $userId');
+      debugPrint('✅ BlockProvider já inicializado com sucesso para $userId');
       return;
     }
 
     if (_isLoading && _myUserId == userId) {
-      print('⏳ BlockProvider já carregando para $userId');
+      debugPrint('⏳ BlockProvider já carregando para $userId');
       return;
     }
 
-    print('🔄 BlockProvider.init: $userId');
+    debugPrint('🔄 BlockProvider.init: $userId');
     _myUserId = userId;
     _initialized = false;
     _initSucceeded = false;
@@ -95,9 +95,9 @@ class BlockProvider extends ChangeNotifier {
       _startListeners();
       _initialized = true;
       _initSucceeded = true;
-      print('✅ BlockProvider pronto: ${_blockedSet.length} bloqueados');
+      debugPrint('✅ BlockProvider pronto: ${_blockedSet.length} bloqueados');
     } catch (e, st) {
-      print('❌ BlockProvider.init erro: $e\n$st');
+      debugPrint('❌ BlockProvider.init erro: $e\n$st');
       _lastError = 'Erro na inicialização: $e';
       _initialized = true;
       _initSucceeded = false;
@@ -127,7 +127,7 @@ class BlockProvider extends ChangeNotifier {
       await _reload();
       _initSucceeded = true;
     } catch (e) {
-      print('❌ reload erro: $e');
+      debugPrint('❌ reload erro: $e');
       _lastError = 'Erro ao recarregar: $e';
     } finally {
       _isLoading = false;
@@ -156,10 +156,10 @@ class BlockProvider extends ChangeNotifier {
       return false;
     }
 
-    print('🔍 Verificando se $targetUserId já está bloqueado...');
+    debugPrint('🔍 Verificando se $targetUserId já está bloqueado...');
     final jaExiste = await _service.isUserBlocked(_myUserId!, targetUserId);
     if (jaExiste) {
-      print('⚠️ Já bloqueado');
+      debugPrint('⚠️ Já bloqueado');
       _lastError = 'Usuário já bloqueado';
       if (!_blockedSet.contains(targetUserId)) {
         _blockedSet = {..._blockedSet, targetUserId};
@@ -191,10 +191,10 @@ class BlockProvider extends ChangeNotifier {
         notifyListeners();
       });
 
-      print('✅ Bloqueado com sucesso: $targetUserId');
+      debugPrint('✅ Bloqueado com sucesso: $targetUserId');
       return true;
     } catch (e, st) {
-      print('❌ Exceção ao bloquear: $e\n$st');
+      debugPrint('❌ Exceção ao bloquear: $e\n$st');
       _lastError = 'Exceção: $e';
       notifyListeners();
       return false;
@@ -219,7 +219,7 @@ class BlockProvider extends ChangeNotifier {
       }
       return success;
     } catch (e, st) {
-      print('❌ unblockUser: $e\n$st');
+      debugPrint('❌ unblockUser: $e\n$st');
       return false;
     }
   }
@@ -239,7 +239,7 @@ class BlockProvider extends ChangeNotifier {
     final iBlocked = _parseBlockedMap(results[0]);
     final blockedMe = _parseBlockedMap(results[1]);
     _blockedSet = {...iBlocked, ...blockedMe};
-    print('📊 _blockedSet atualizado: ${_blockedSet.length} usuários');
+    debugPrint('📊 _blockedSet atualizado: ${_blockedSet.length} usuários');
   }
 
   Future<dynamic> _fetchViaListener(String path) async {

@@ -149,7 +149,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         await appState.processInitialMessage();
       }
     } catch (e) {
-      print('❌ Erro splash: $e');
+      debugPrint('❌ Erro splash: $e');
       _goToLogin();
     }
   }
@@ -167,33 +167,33 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       await blockProvider.init(userId).timeout(
         const Duration(seconds: 8),
         onTimeout: () {
-          print('⚠️ BlockProvider.init timeout — feed carregará sem bloqueados'
+          debugPrint('⚠️ BlockProvider.init timeout — feed carregará sem bloqueados'
               ' e sincronizará via stream quando a rede responder');
         },
       );
 
-      print(
+      debugPrint(
           '✅ BlockProvider pronto: ${blockProvider.blockedSet.length} bloqueados');
 
       if (!mounted) return;
 
       try {
         context.read<FeedController>().registerWithBlockProvider(blockProvider);
-        print('✅ FeedController registrado no BlockProvider');
+        debugPrint('✅ FeedController registrado no BlockProvider');
       } catch (e) {
-        print('⚠️ FeedController não disponível ainda: $e');
+        debugPrint('⚠️ FeedController não disponível ainda: $e');
       }
 
       try {
         context
             .read<app_search.SearchController>()
             .registerWithBlockProvider(blockProvider);
-        print('✅ SearchController registrado no BlockProvider');
+        debugPrint('✅ SearchController registrado no BlockProvider');
       } catch (e) {
-        print('⚠️ SearchController não disponível ainda: $e');
+        debugPrint('⚠️ SearchController não disponível ainda: $e');
       }
     } catch (e) {
-      print('❌ _initBlockProviderAndConnectControllers: $e');
+      debugPrint('❌ _initBlockProviderAndConnectControllers: $e');
     }
   }
 

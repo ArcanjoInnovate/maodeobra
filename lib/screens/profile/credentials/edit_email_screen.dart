@@ -581,7 +581,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
         'email': widget.newEmail,
       });
     } catch (e) {
-      print('Erro ao atualizar email no database: $e');
+      debugPrint('Erro ao atualizar email no database: $e');
     }
   }
 

@@ -48,9 +48,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   final FocusNode _focusNode = FocusNode();
   final GlobalKey _inputKey = GlobalKey();
   static const Color _muted = Color(0xFF6B7280);
-  final String otherUserId = '';
-  final FeedController feedController = FeedController();
-  final searchController = search.SearchController();
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
   int _previousMessageCount = 0;
@@ -457,8 +454,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     }
 
     final blockProvider = context.read<BlockProvider>();
-    feedController.registerWithBlockProvider(blockProvider);
-    searchController.registerWithBlockProvider(blockProvider);
 
     // ✅ Só inicializa se NUNCA foi inicializado antes
     // Não chama init() se já está inicializado — evita o bug de bloquear 2x
@@ -482,15 +477,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     if (!mounted) return;
 
     if (success) {
-      // ✅ Adiciona diretamente nos controllers — evita cache do iOS
+      // Atualiza controllers do Provider tree
       try {
-        context
-            .read<FeedController>()
-            .addBlockedUser(otherUserId); // ou widget.otherUserId no chat
-        context.read<search.SearchController>().addBlockedUser(otherUserId);
+        context.read<FeedController>().addBlockedUser(widget.otherUserId);
+        context.read<search.SearchController>().addBlockedUser(widget.otherUserId);
       } catch (_) {}
 
-      // forceRefresh em background (não crítico — só para sincronizar)
       Future.delayed(const Duration(seconds: 2), () {
         try {
           context.read<FeedController>().forceRefresh();

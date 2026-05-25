@@ -70,7 +70,7 @@ class _AnimatedMessageBubbleState extends State<AnimatedMessageBubble>
         : widget.message.readByContractor;
 
     // Log para debug — remova após confirmar funcionamento
-    print(
+    debugPrint(
       '🔍 bubble | id=${widget.message.id} | myRole=${widget.myRole} | '
       'isSentByMe=${widget.isSentByMe} | '
       'readByContractor=${widget.message.readByContractor} | '

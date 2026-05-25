@@ -368,7 +368,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       // ✅ CORREÇÃO: Atualizar legalType
                       if (result['legalType'] != null) {
                         legalType = result['legalType'];
-                        print('✅ legalType atualizado para: $legalType');
+                        debugPrint('✅ legalType atualizado para: $legalType');
                       }
 
                       finished_professional = result['finished_professional'] ??
@@ -502,7 +502,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   void _returnToHomeScreen() {
-    print('✅ Voltando a tela de home legalType = $legalType');
+    debugPrint('✅ Voltando a tela de home legalType = $legalType');
     Navigator.pop(context, {
       'userName': userName,
       'userAge': userAge,

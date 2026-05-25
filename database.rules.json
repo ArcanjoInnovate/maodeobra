@@ -1,101 +1,175 @@
 {
   "rules": {
+
     "Administrative": {
       ".read": true,
       ".write": false
     },
+
     "Users": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["email"],
+      ".indexOn": ["email", "email_contact", "telefone"],
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        ".read": "auth != null",
         ".write": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        "blocked_users": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid",
+          "$targetId": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "fcmToken": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        },
+        "fcmDebug": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        },
+        "fcmError": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        },
         "penalty_history": {
           ".read": "auth != null && (auth.uid === $uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
           ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true"
         }
       }
     },
-    "badges": {
+
+    "notification_history": {
       "$userId": {
-        ".read": "$userId === auth.uid",
-        ".write": "$userId === auth.uid"
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId",
+        "$notificationId": {
+          ".validate": "newData.hasChildren(['type','target_id','requester_id','status','created_at'])"
+        }
       }
     },
+
+    "blocked_by": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null"
+      }
+    },
+
+    "debug_fcm": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "badges": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId"
+      }
+    },
+
     "admin_access_logs": {
       ".read": "auth != null && auth.token.admin === true",
       ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true"
     },
+
     "Code": {
       ".read": false,
       ".write": false
     },
+
     "vacancy": {
-      ".read": "true",
-      ".indexOn": ["contractor", "email", "created_at", "status", "state", "updated_at"],
-      ".write": "auth != null"
-    },
-    "complaints": {
       ".read": "auth != null",
+      ".indexOn": ["contractor", "email", "created_at", "status", "state", "updated_at", "local_id"],
+      "$vacancyId": {
+        ".write": "auth != null && (!data.exists() || data.child('local_id').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        "requests": {
+          ".write": "auth != null"
+        },
+        "views": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "complaints": {
+      ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
       ".write": "auth != null",
       ".indexOn": ["type"]
     },
+
     "ComplaintsArchived": {
       ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
       ".write": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
       ".indexOn": ["type"]
     },
+
     "reporteds_chat": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('Users/' + auth.uid + '/isAdmin').val() === true",
       ".indexOn": ["contractor", "email"],
       ".write": "auth != null"
     },
+
     "reports": {
       ".indexOn": ["denuncianteId", "denunciadoId"],
       "$reportId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".read": "auth != null && (data.child('denuncianteId').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        ".write": "auth != null && (!data.exists() || data.child('denuncianteId').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)"
       }
     },
+
     "professionals": {
       ".read": "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["updated_at", "status", "state"]
+      ".indexOn": ["updated_at", "status", "state", "local_id"],
+      "$professionalId": {
+        ".write": "auth != null && (!data.exists() || data.child('local_id').val() === auth.uid || root.child('Users/' + auth.uid + '/isAdmin').val() === true)",
+        "requests": {
+          ".write": "auth != null"
+        },
+        "views": {
+          ".write": "auth != null"
+        }
+      }
     },
+
     "Chats": {
       ".read": "auth != null",
       ".indexOn": ["contractor", "employee"],
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null && (data.child('contractor').val() === auth.uid || data.child('employee').val() === auth.uid || !data.exists())"
       }
     },
+
     "ChatMessages": {
-      ".read": "auth != null",
+      ".indexOn": ["timestamp"],
       "$chatId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
+        ".read": "auth != null && (root.child('Chats/' + $chatId + '/contractor').val() === auth.uid || root.child('Chats/' + $chatId + '/employee').val() === auth.uid)",
+        ".write": "auth != null && (root.child('Chats/' + $chatId + '/contractor').val() === auth.uid || root.child('Chats/' + $chatId + '/employee').val() === auth.uid)",
         ".indexOn": ["timestamp", "read_by_contractor", "read_by_employee"]
       }
     },
+
     "user_requests": {
-      "$uid": {
-        ".read": "auth.uid === $uid",
-        ".write": "auth.uid === $uid",
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId",
         "vacancies": {
           "$vacancyId": {
-            ".read": "auth.uid === $uid",
-            ".write": "auth.uid === $uid"
+            ".read": "auth != null && auth.uid === $userId",
+            ".write": "auth != null && auth.uid === $userId"
           }
         },
         "professionals": {
           "$professionalId": {
-            ".read": "auth.uid === $uid",
-            ".write": "auth.uid === $uid"
+            ".read": "auth != null && auth.uid === $userId",
+            ".write": "auth != null && auth.uid === $userId"
           }
         }
       }
+    },
+
+    "deleted_users": {
+      ".read": "auth != null",
+      ".write": false
     }
   }
 }

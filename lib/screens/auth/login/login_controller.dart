@@ -114,7 +114,7 @@ class LoginController {
         'message': 'Erro ao fazer login. Tente novamente em instantes.',
       };
     } catch (e) {
-      print('❌ Erro inesperado: $e');
+      debugPrint('❌ Erro inesperado: $e');
       return {
         'success': false,
         'errorType': 'other',

@@ -69,7 +69,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         _loading = false;
       });
     } catch (e) {
-      print('❌ _loadBlockedUsers: $e');
+      debugPrint('❌ _loadBlockedUsers: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -147,7 +147,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         );
       }
     } catch (e) {
-      print('❌ _unblock: $e');
+      debugPrint('❌ _unblock: $e');
     } finally {
       if (mounted) setState(() => _unblocking.remove(targetId));
     }

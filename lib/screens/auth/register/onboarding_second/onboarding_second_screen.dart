@@ -73,8 +73,8 @@ class _OnboardingSecond extends State<OnboardingSecond> {
       ),
     );
 
-    print('Dados básicos: ${widget.basicInfo}');
-    print('Dados profissionais: $professionalInfo');
+    debugPrint('Dados básicos: ${widget.basicInfo}');
+    debugPrint('Dados profissionais: $professionalInfo');
   }
 
   // Mostrar erro

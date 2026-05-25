@@ -48,10 +48,10 @@ class _SuspensionEndScreenState extends State<SuspensionEndScreen> {
           'end': '',
         },
       });
-      print('✅ Suspensão removida com sucesso');
+      debugPrint('✅ Suspensão removida com sucesso');
       return true;
     } catch (e) {
-      print('❌ Erro ao limpar suspensão: $e');
+      debugPrint('❌ Erro ao limpar suspensão: $e');
       return false;
     }
   }

@@ -48,8 +48,8 @@ class BadgeHelper {
       // ✅ OTIMIZAÇÃO: Uma única escrita batch
       await _database.update(updates);
 
-      // Recalcula badge
-      await recalculateChatBadge(userId);
+      // Decrementa badge atomicamente em vez de recalcular do zero
+      await _decrementChatBadge(userId);
 
     } catch (e, stack) {
       debugPrint('❌ Erro ao marcar chat como lido: $e');
@@ -260,6 +260,7 @@ class BadgeHelper {
 }
 
 /// Conta mensagens não lidas em um chat específico
+/// Otimizado: usa query indexada em vez de baixar TODAS as mensagens
 static Future<int> _countUnreadMessagesInChat(
   String chatId,
   String userId,
@@ -272,6 +273,8 @@ static Future<int> _countUnreadMessagesInChat(
 
     final messagesSnapshot = await _database
         .child('ChatMessages/$chatId')
+        .orderByChild(readField)
+        .equalTo(false)
         .get();
 
     if (!messagesSnapshot.exists) {
@@ -279,27 +282,18 @@ static Future<int> _countUnreadMessagesInChat(
     }
 
     final messages = messagesSnapshot.value as Map<dynamic, dynamic>;
+    // Exclui placeholder e mensagens enviadas pelo próprio usuário
     int unreadCount = 0;
-
-    for (var messageEntry in messages.entries) {
-      if (messageEntry.key == '_placeholder') continue;
-      
-      final message = messageEntry.value as Map<dynamic, dynamic>;
-      
-      // Verifica se é mensagem do outro usuário (não minha)
-      final senderId = message['sender_id']?.toString() ?? '';
-      if (senderId == userId) continue; // Ignora minhas próprias mensagens
-      
-      // Verifica se não foi lida
-      final isRead = message[readField] == true;
-      if (!isRead) {
-        unreadCount++;
-      }
+    for (var entry in messages.entries) {
+      if (entry.key == '_placeholder') continue;
+      final msg = entry.value as Map<dynamic, dynamic>;
+      final senderId = msg['sender_id']?.toString() ?? '';
+      if (senderId != userId) unreadCount++;
     }
 
     return unreadCount;
   } catch (e) {
-    debugPrint('❌ Erro ao contar mensagens do chat $chatId: $e');
+    debugPrint('Erro ao contar mensagens do chat $chatId: $e');
     return 0;
   }
 }

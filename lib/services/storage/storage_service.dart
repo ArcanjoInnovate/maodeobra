@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -33,10 +34,10 @@ class FirebaseStorageService {
       if (compressedFile != null) {
         fileToUpload = compressedFile;
         wasCompressed = true;
-        print('✅ Usando imagem comprimida');
+        debugPrint('✅ Usando imagem comprimida');
       } else {
         // Fallback: usar imagem original se compressão falhar
-        print('⚠️ Compressão falhou, usando imagem original');
+        debugPrint('⚠️ Compressão falhou, usando imagem original');
         fileToUpload = file;
         wasCompressed = false;
       }
@@ -60,7 +61,7 @@ class FirebaseStorageService {
         else if (ext == '.gif') contentType = 'image/gif';
       }
 
-      print('📤 Fazendo upload para: $storagePath');
+      debugPrint('📤 Fazendo upload para: $storagePath');
 
       // Obter tamanhos antes do upload
       final originalSize = file.lengthSync();
@@ -99,24 +100,24 @@ class FirebaseStorageService {
       if (wasCompressed && await fileToUpload.exists()) {
         try {
           await fileToUpload.delete();
-          print('🗑️ Arquivo temporário deletado');
+          debugPrint('🗑️ Arquivo temporário deletado');
         } catch (e) {
-          print('⚠️ Erro ao deletar temporário: $e');
+          debugPrint('⚠️ Erro ao deletar temporário: $e');
         }
       }
       
-      print('✅ Imagem enviada com sucesso!');
-      print('📊 Tamanho original: ${_formatBytes(originalSize)}');
-      print('📊 Tamanho enviado: ${_formatBytes(uploadSize)}');
+      debugPrint('✅ Imagem enviada com sucesso!');
+      debugPrint('📊 Tamanho original: ${_formatBytes(originalSize)}');
+      debugPrint('📊 Tamanho enviado: ${_formatBytes(uploadSize)}');
       if (wasCompressed) {
         final reduction = ((originalSize - uploadSize) / originalSize * 100);
-        print('💾 Economia: ${reduction.toStringAsFixed(1)}%');
+        debugPrint('💾 Economia: ${reduction.toStringAsFixed(1)}%');
       }
       
       return downloadUrl;
       
     } catch (e) {
-      print('❌ Erro ao fazer upload de imagem: $e');
+      debugPrint('❌ Erro ao fazer upload de imagem: $e');
       return null;
     }
   }
@@ -137,12 +138,12 @@ class FirebaseStorageService {
     Function(double)? onProgress,
   }) async {
     try {
-      print('🎥 Iniciando compressão de vídeo...');
+      debugPrint('🎥 Iniciando compressão de vídeo...');
       
       // Comprimir vídeo
       final compressedFile = await _compressVideo(file, quality);
       if (compressedFile == null) {
-        print('❌ Erro ao comprimir vídeo');
+        debugPrint('❌ Erro ao comprimir vídeo');
         return null;
       }
 
@@ -156,7 +157,7 @@ class FirebaseStorageService {
           ? '$folder/$userId/$fileName'
           : '$folder/$fileName';
 
-      print('📤 Enviando vídeo para: $storagePath');
+      debugPrint('📤 Enviando vídeo para: $storagePath');
 
       // Upload
       final ref = _storage.ref().child(storagePath);
@@ -190,14 +191,14 @@ class FirebaseStorageService {
       // Deletar arquivo temporário comprimido
       await VideoCompress.deleteAllCache();
       
-      print('✅ Vídeo enviado com sucesso: $downloadUrl');
-      print('📊 Tamanho original: ${_formatBytes(file.lengthSync())}');
-      print('📊 Tamanho comprimido: ${_formatBytes(File(compressedFile.path!).lengthSync())}');
+      debugPrint('✅ Vídeo enviado com sucesso: $downloadUrl');
+      debugPrint('📊 Tamanho original: ${_formatBytes(file.lengthSync())}');
+      debugPrint('📊 Tamanho comprimido: ${_formatBytes(File(compressedFile.path!).lengthSync())}');
       
       return downloadUrl;
       
     } catch (e) {
-      print('❌ Erro ao fazer upload de vídeo: $e');
+      debugPrint('❌ Erro ao fazer upload de vídeo: $e');
       await VideoCompress.deleteAllCache();
       return null;
     }
@@ -214,11 +215,11 @@ class FirebaseStorageService {
       final ref = _storage.refFromURL(url);
       await ref.delete();
       
-      print('🗑️ Arquivo deletado com sucesso: ${ref.fullPath}');
+      debugPrint('🗑️ Arquivo deletado com sucesso: ${ref.fullPath}');
       return true;
       
     } catch (e) {
-      print('❌ Erro ao deletar arquivo: $e');
+      debugPrint('❌ Erro ao deletar arquivo: $e');
       return false;
     }
   }
@@ -236,7 +237,7 @@ class FirebaseStorageService {
       if (success) successCount++;
     }
     
-    print('🗑️ $successCount de ${urls.length} arquivos deletados');
+    debugPrint('🗑️ $successCount de ${urls.length} arquivos deletados');
     return successCount;
   }
 
@@ -255,9 +256,9 @@ class FirebaseStorageService {
         '${DateTime.now().millisecondsSinceEpoch}_compressed.jpg',
       );
 
-      print('📝 Comprimindo imagem...');
-      print('   Original: ${file.path}');
-      print('   Destino: $targetPath');
+      debugPrint('📝 Comprimindo imagem...');
+      debugPrint('   Original: ${file.path}');
+      debugPrint('   Destino: $targetPath');
 
       final result = await FlutterImageCompress.compressAndGetFile(
         file.absolute.path,
@@ -269,24 +270,24 @@ class FirebaseStorageService {
       );
 
       if (result == null) {
-        print('⚠️ Compressão retornou null');
+        debugPrint('⚠️ Compressão retornou null');
         return null;
       }
 
       // Verificar se o arquivo realmente existe
       final compressedFile = File(result.path);
       if (!await compressedFile.exists()) {
-        print('❌ Arquivo comprimido não existe: ${result.path}');
+        debugPrint('❌ Arquivo comprimido não existe: ${result.path}');
         return null;
       }
 
-      print('✅ Imagem comprimida com sucesso');
-      print('   Tamanho: ${await compressedFile.length()} bytes');
+      debugPrint('✅ Imagem comprimida com sucesso');
+      debugPrint('   Tamanho: ${await compressedFile.length()} bytes');
       
       return compressedFile;
       
     } catch (e) {
-      print('❌ Erro ao comprimir imagem: $e');
+      debugPrint('❌ Erro ao comprimir imagem: $e');
       return null;
     }
   }
@@ -304,7 +305,7 @@ class FirebaseStorageService {
       return info;
       
     } catch (e) {
-      print('❌ Erro ao comprimir vídeo: $e');
+      debugPrint('❌ Erro ao comprimir vídeo: $e');
       return null;
     }
   }

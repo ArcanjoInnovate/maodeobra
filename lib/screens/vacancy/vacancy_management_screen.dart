@@ -311,7 +311,7 @@ class _VacancyManagementState extends State<VacancyManagement> {
     );
 
     if (result != null && mounted) {
-      print('✅ Perfil atualizado, recarregando dados...');
+      debugPrint('✅ Perfil atualizado, recarregando dados...');
     }
   }
 
@@ -355,7 +355,7 @@ class _VacancyManagementState extends State<VacancyManagement> {
         });
       }
     }, onError: (error) {
-      print('❌ Erro no stream de vagas: $error');
+      debugPrint('❌ Erro no stream de vagas: $error');
       if (mounted) setState(() => _isLoading = false);
     });
   }
