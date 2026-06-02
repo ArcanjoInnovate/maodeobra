@@ -126,15 +126,19 @@ class UserRelationShipService {
       }
 
       // PASSO 5: Aguarda confirmação do listener com timeout
-      debugPrint('⏳ Aguardando confirmação do listener...');
-      final confirmed = await completer.future.timeout(
-        const Duration(seconds: 8),
-        onTimeout: () {
-          debugPrint('⏱️ Timeout aguardando listener');
-          subscription.cancel();
-          return false;
-        },
-      );
+      // ✅ subscription SEMPRE cancelado ao sair deste bloco
+      bool confirmed = false;
+      try {
+        confirmed = await completer.future.timeout(
+          const Duration(seconds: 8),
+          onTimeout: () {
+            debugPrint('⏱️ Timeout aguardando listener');
+            return false;
+          },
+        );
+      } finally {
+        subscription.cancel();
+      }
 
       if (!confirmed) {
         debugPrint('❌ FALHA: Escrita não confirmada pelo servidor');

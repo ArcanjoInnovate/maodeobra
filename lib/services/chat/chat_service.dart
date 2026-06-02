@@ -347,25 +347,12 @@ Future<void> _incrementUnreadCount(String chatId, String userRole) async {
   /// em uma única operação batch (zera unreadCount + marca mensagens + recalcula badge).
   /// Antes: duplicava lógica do badge_service + recalculava badge para AMBOS os usuários
   /// Agora: uma única chamada centralizada, recalcula apenas para o usuário atual
-  Future<void> markAsRead(String chatId, String userRole) async {
+  /// ✅ OTIMIZADO: userId passado pelo caller (já disponível no ChatController).
+  /// Elimina 1 read de Chats/{chatId} por chamada.
+  Future<void> markAsRead(String chatId, String userId, String userRole) async {
     try {
-      debugPrint('📖 markAsRead | chat=$chatId | role=$userRole');
-
-      // Pega o userId do role atual para recalcular o badge
-      final chatSnapshot = await _firebase.chatRef(chatId).get();
-      if (!chatSnapshot.exists) return;
-      
-      final chatData = chatSnapshot.value as Map<dynamic, dynamic>;
-      final userId = userRole == 'contractor'
-          ? chatData['contractor']?.toString() ?? ''
-          : chatData['employee']?.toString() ?? '';
-
       if (userId.isEmpty) return;
-
-      // ✅ Delega para BadgeHelper que centraliza toda a lógica
       await BadgeHelper.markChatAsRead(chatId, userId, userRole);
-      
-      debugPrint('✅ markAsRead concluído');
     } catch (e) {
       debugPrint('❌ Erro em markAsRead: $e');
     }

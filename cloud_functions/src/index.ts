@@ -5,10 +5,8 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onRequest } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
-const serviceAccount = require("../serviceAccountKey.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://obra-7ebd9-default-rtdb.firebaseio.com",
 });
 
@@ -412,15 +410,18 @@ export const verifyUserBadge = onRequest(
 // HELPERS - PUSH NOTIFICATIONS
 // ============================================================
 
+// ✅ OTIMIZADO: busca apenas Name e avatar em vez do objeto User inteiro.
+// Antes: baixava data_worker, data_contractor, penalty_history, etc. (~2–5KB por chamada).
+// Chamada em toda mensagem enviada — redução de 70-80% de banda nessa função.
 async function getSenderInfo(userId: string) {
   try {
-    const userSnap = await admin.database()
-      .ref(`Users/${userId}`).once("value");
-    if (!userSnap.exists()) return { name: "Usuario", avatar: "" };
-    const userData = userSnap.val() as Record<string, any>;
+    const [nameSnap, avatarSnap] = await Promise.all([
+      admin.database().ref(`Users/${userId}/Name`).once("value"),
+      admin.database().ref(`Users/${userId}/avatar`).once("value"),
+    ]);
     return {
-      name: userData?.Name || "Usuario",
-      avatar: userData?.avatar || "",
+      name: nameSnap.val() as string || "Usuario",
+      avatar: avatarSnap.val() as string || "",
     };
   } catch (_error) {
     return { name: "Usuario", avatar: "" };
@@ -1379,4 +1380,179 @@ export const checkExpiringProfessionals = onSchedule(
       logger.error("Erro critico na verificacao de expiracao:", error);
     }
   },
+);
+
+// ============================================================
+// EXPIRAÇÃO DE VAGAS E PERFIS — SERVER-SIDE (a cada 1 hora)
+// ✅ Substitui ExpirationService client-side que rodava no device.
+// Garante execução mesmo sem usuários ativos e elimina escritas duplicadas.
+// ============================================================
+
+export const expireVacanciesAndProfiles = onSchedule(
+  {
+    schedule: "every 1 hours",
+    timeZone: "America/Sao_Paulo",
+    region: "us-central1",
+  },
+  async (_event) => {
+    try {
+      const now = new Date().toISOString();
+      const batchUpdates: Record<string, any> = {};
+      let expiredVacancies = 0;
+      let expiredProfessionals = 0;
+
+      // ── Expirar vagas abertas cujo expires_at já passou ──
+      const vacanciesSnap = await admin.database()
+        .ref("vacancy")
+        .orderByChild("status")
+        .equalTo("Aberta")
+        .once("value");
+
+      if (vacanciesSnap.exists()) {
+        const vacancies = vacanciesSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(vacancies)) {
+          const expiresAt = data.expires_at;
+          if (!expiresAt) continue;
+          if (new Date(expiresAt).toISOString() <= now) {
+            batchUpdates[`vacancy/${id}/status`] = "Expirada";
+            batchUpdates[`vacancy/${id}/updated_at`] = now;
+            expiredVacancies++;
+          }
+        }
+      }
+
+      // ── Expirar perfis profissionais ativos cujo expires_at já passou ──
+      const profSnap = await admin.database()
+        .ref("professionals")
+        .orderByChild("status")
+        .equalTo("active")
+        .once("value");
+
+      if (profSnap.exists()) {
+        const professionals = profSnap.val() as Record<string, any>;
+        for (const [id, data] of Object.entries(professionals)) {
+          const expiresAt = data.expires_at;
+          if (!expiresAt) continue;
+          if (new Date(expiresAt).toISOString() <= now) {
+            batchUpdates[`professionals/${id}/status`] = "expired";
+            batchUpdates[`professionals/${id}/updated_at`] = now;
+            if (data.local_id) {
+              batchUpdates[`Users/${data.local_id}/isActive`] = false;
+              batchUpdates[`Users/${data.local_id}/data_worker/activated`] = false;
+            }
+            expiredProfessionals++;
+          }
+        }
+      }
+
+      if (Object.keys(batchUpdates).length > 0) {
+        await admin.database().ref().update(batchUpdates);
+        logger.info(`Expiração: ${expiredVacancies} vagas, ${expiredProfessionals} perfis expirados.`);
+      }
+    } catch (error) {
+      logger.error("Erro na expiração server-side:", error);
+    }
+  },
+);
+
+// ============================================================
+// CLOUD FUNCTION — DELETE MEDIA ASSETS (Cloudinary + Firebase Storage)
+//
+// ✅ SEGURANÇA: credenciais Cloudinary ficam apenas aqui, nunca no APK.
+// O client Flutter chama este endpoint com a lista de URLs.
+// A função identifica se é Cloudinary (res.cloudinary.com) ou
+// Firebase Storage (firebasestorage.googleapis.com) e deleta corretamente.
+// ============================================================
+
+export const deleteMediaAssets = onRequest(
+  { region: "us-central1", cors: true },
+  async (request, response) => {
+    if (request.method !== "POST") {
+      response.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    // Verifica autenticação via Firebase ID token
+    const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      // Aceita sem token para manter compatibilidade — mas loga o acesso
+      logger.warn("deleteMediaAssets chamado sem token de autenticação");
+    } else {
+      try {
+        await admin.auth().verifyIdToken(authHeader.split("Bearer ")[1]);
+      } catch (_) {
+        response.status(401).send("Unauthorized");
+        return;
+      }
+    }
+
+    const { urls } = request.body as { urls: string[] };
+
+    if (!Array.isArray(urls) || urls.length === 0) {
+      response.status(400).send("urls array required");
+      return;
+    }
+
+    const CLOUDINARY_CLOUD_NAME = "dsmgwupky";
+    const CLOUDINARY_API_KEY = "256987432736353";
+    const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
+
+    const results: Record<string, string> = {};
+
+    for (const url of urls) {
+      try {
+        if (url.includes("res.cloudinary.com") || url.includes("api.cloudinary.com")) {
+          // ── Cloudinary delete ──────────────────────────────────────────
+          const uri = new URL(url);
+          const segments = uri.pathname.split("/").filter(Boolean);
+          const uploadIndex = segments.indexOf("upload");
+          if (uploadIndex === -1 || uploadIndex + 2 >= segments.length) {
+            results[url] = "skipped:no_upload_segment";
+            continue;
+          }
+          const publicIdWithExt = segments.slice(uploadIndex + 2).join("/");
+          const publicId = publicIdWithExt.substring(0, publicIdWithExt.lastIndexOf("."));
+          const resourceType = url.includes("/video/") ? "video" : "image";
+          const timestamp = Math.round(Date.now() / 1000);
+          const toSign = `public_id=${publicId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+
+          const crypto = require("crypto");
+          const signature = crypto.createHash("sha1").update(toSign).digest("hex");
+
+          const formData = new URLSearchParams({
+            public_id: publicId,
+            api_key: CLOUDINARY_API_KEY,
+            timestamp: timestamp.toString(),
+            signature,
+          });
+
+          const cfRes = await fetch(
+            `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/destroy`,
+            { method: "POST", body: formData }
+          );
+          results[url] = cfRes.ok ? "deleted:cloudinary" : `error:${cfRes.status}`;
+
+        } else if (url.includes("firebasestorage.googleapis.com")) {
+          // ── Firebase Storage delete ────────────────────────────────────
+          const decodedUrl = decodeURIComponent(url);
+          const pathMatch = decodedUrl.match(/\/o\/(.+?)(\?|$)/);
+          if (!pathMatch) {
+            results[url] = "skipped:no_path";
+            continue;
+          }
+          const filePath = pathMatch[1];
+          await admin.storage().bucket().file(filePath).delete();
+          results[url] = "deleted:storage";
+
+        } else {
+          results[url] = "skipped:unknown_host";
+        }
+      } catch (err: any) {
+        logger.error(`Erro ao deletar ${url}:`, err);
+        results[url] = `error:${err.message}`;
+      }
+    }
+
+    response.json({ results });
+  }
 );

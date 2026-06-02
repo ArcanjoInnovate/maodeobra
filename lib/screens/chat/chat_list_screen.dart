@@ -109,100 +109,44 @@ class _ChatListScreenState extends State<ChatListScreen>
             },
           ),
         ],
+        // ✅ OTIMIZADO: Tabs sem StreamBuilder redundantes.
+        // O badge total já está no AppBar via getBadgeStream.
+        // Streams por role baixavam TODOS os chats do usuário — removidos.
         bottom: TabBar(
           controller: _tabController,
           labelColor: Theme.of(context).primaryColor,
           unselectedLabelColor: Colors.grey,
           indicatorColor: Theme.of(context).primaryColor,
-          tabs: [
-            // Tab CONTRACTOR com badge
-            StreamBuilder<int>(
-              stream: BadgeHelper.getUnreadCountByRoleStream(
-                widget.userId,
-                'contractor',
-              ),
-              builder: (context, snapshot) {
-                final unreadCount = snapshot.data ?? 0;
-                return Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.work_outline, size: 20),
-                      const SizedBox(width: 8),
-                      const Flexible(
-                        child: Text(
-                          'Contratante',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (unreadCount > 0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '$unreadCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+          tabs: const [
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.work_outline, size: 20),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Contratante',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-
-            // Tab EMPLOYEE com badge
-            StreamBuilder<int>(
-              stream: BadgeHelper.getUnreadCountByRoleStream(
-                widget.userId,
-                'employee',
-              ),
-              builder: (context, snapshot) {
-                final unreadCount = snapshot.data ?? 0;
-                return Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.person_outline, size: 20),
-                      const SizedBox(width: 8),
-                      const Flexible(
-                        child: Text(
-                          'Funcionário',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (unreadCount > 0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '$unreadCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.person_outline, size: 20),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Funcionário',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
           ],
         ),
@@ -470,12 +414,21 @@ class _ChatListTab extends StatefulWidget {
 class _ChatListTabState extends State<_ChatListTab> {
   bool _blockedExpanded = false;
 
+  // ✅ Stream criada uma única vez no initState — evita recriar listener a cada rebuild.
+  // Antes: ChatServiceFinal() + getChatListStream() no build() criavam novo listener
+  // a cada reconstrução do widget (troca de aba, rebuild do pai).
+  late final Stream<List<Chat>> _chatStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatStream = ChatServiceFinal().getChatListStream(widget.userId, widget.roleFilter);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final chatService = ChatServiceFinal();
-
     return StreamBuilder<List<Chat>>(
-      stream: chatService.getChatListStream(widget.userId, widget.roleFilter),
+      stream: _chatStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return _buildErrorWidget(context, snapshot.error.toString());

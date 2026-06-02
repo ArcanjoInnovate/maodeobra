@@ -22,17 +22,17 @@ class FirebaseSearchServiceServerPaginated {
       final startTime = DateTime.now();
       int readsEstimated = 0;
 
+      // ✅ Server-side filter: busca apenas vagas 'Aberta' — sem multiplicador
       Query query = _database
           .child('vacancy')
-          .orderByChild('created_at');
+          .orderByChild('status')
+          .equalTo('Aberta');
 
       if (endAtValue != null) {
         query = query.endBefore(endAtValue);
       }
 
-      final fetchLimit = limit * 2;
-      
-      query = query.limitToLast(fetchLimit);
+      query = query.limitToLast(limit);
 
       final snapshot = await query.get();
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
@@ -96,7 +96,7 @@ class FirebaseSearchServiceServerPaginated {
         }
       }
 
-      final hasMore = sortedEntries.length >= fetchLimit && vacancies.length >= limit;
+      final hasMore = sortedEntries.length >= limit && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
       debugPrint('${vacancies.length} vagas validas retornadas (de $readsEstimated lidas)');
@@ -129,17 +129,17 @@ class FirebaseSearchServiceServerPaginated {
       final startTime = DateTime.now();
       int readsEstimated = 0;
 
+      // ✅ Server-side filter: busca apenas profissionais 'active' — sem multiplicador
       Query query = _database
           .child('professionals')
-          .orderByChild('updated_at');
+          .orderByChild('status')
+          .equalTo('active');
 
       if (endAtValue != null) {
         query = query.endBefore(endAtValue);
       }
 
-      final fetchLimit = limit * 2;
-      
-      query = query.limitToLast(fetchLimit);
+      query = query.limitToLast(limit);
 
       final snapshot = await query.get();
       readsEstimated = snapshot.exists ? snapshot.children.length : 0;
@@ -203,7 +203,7 @@ class FirebaseSearchServiceServerPaginated {
         }
       }
 
-      final hasMore = sortedEntries.length >= fetchLimit && professionals.length >= limit;
+      const hasMore = false; // com server-side filter, sem cursor confiável aqui
 
       _printReadStats(startTime, readsEstimated);
       debugPrint('${professionals.length} profissionais retornados (de $readsEstimated lidos)');
@@ -230,37 +230,46 @@ class FirebaseSearchServiceServerPaginated {
   }
 
   // ===============================
-  // BUSCAR REQUESTS - OTIMIZADO
+  // BUSCAR REQUESTS — usa índice user_requests (sem full scan)
   // ===============================
   Future<Set<String>> fetchRequestedVacancyIds() async {
     try {
-      if (_currentUserId == null) {
-        debugPrint('Usuario nao autenticado');
-        return {};
+      if (_currentUserId == null) return {};
+
+      // ✅ Lê do índice denormalizado: O(1) em vez de O(N vagas)
+      final snap = await _database
+          .child('user_requests/$_currentUserId/vacancies')
+          .get();
+
+      if (snap.exists && snap.value != null) {
+        final data = snap.value;
+        final ids = <String>{};
+        if (data is Map) {
+          ids.addAll(data.keys.map((k) => k.toString()));
+        } else if (data is List) {
+          for (var item in data) {
+            if (item != null) ids.add(item.toString());
+          }
+        }
+        return ids;
       }
 
-      debugPrint('Buscando vagas ja solicitadas');
-      final startTime = DateTime.now();
-
+      // Fallback: varre apenas vagas abertas (raro — só se user_requests estiver vazio)
       final snapshot = await _database
           .child('vacancy')
           .orderByChild('status')
           .equalTo('Aberta')
           .get();
 
-      if (!snapshot.exists) {
-        return {};
-      }
+      if (!snapshot.exists) return {};
 
       final data = snapshot.value as Map<dynamic, dynamic>;
       final requestedVacancies = <String>{};
 
       data.forEach((vacancyId, value) {
         if (value is! Map) return;
-
         if (value.containsKey('requests')) {
           final requests = value['requests'];
-
           if (requests is List && requests.contains(_currentUserId)) {
             requestedVacancies.add(vacancyId.toString());
           } else if (requests is Map && requests.containsKey(_currentUserId)) {
@@ -269,11 +278,7 @@ class FirebaseSearchServiceServerPaginated {
         }
       });
 
-      final duration = DateTime.now().difference(startTime);
-      debugPrint('${requestedVacancies.length} vagas ja solicitadas em ${duration.inMilliseconds}ms');
-
       return requestedVacancies;
-
     } catch (e) {
       debugPrint('Erro ao buscar requests de vagas: $e');
       return {};
@@ -282,35 +287,44 @@ class FirebaseSearchServiceServerPaginated {
 
   Future<Set<String>> fetchRequestedProfessionalIds() async {
     try {
-      if (_currentUserId == null) {
-        return {};
+      if (_currentUserId == null) return {};
+
+      // ✅ Lê do índice denormalizado
+      final snap = await _database
+          .child('user_requests/$_currentUserId/professionals')
+          .get();
+
+      if (snap.exists && snap.value != null) {
+        final data = snap.value;
+        final ids = <String>{};
+        if (data is Map) {
+          ids.addAll(data.keys.map((k) => k.toString()));
+        } else if (data is List) {
+          for (var item in data) {
+            if (item != null) ids.add(item.toString());
+          }
+        }
+        return ids;
       }
 
-      debugPrint('Buscando profissionais ja solicitados');
-      final startTime = DateTime.now();
-
+      // Fallback: varre apenas profissionais ativos
       final snapshot = await _database
           .child('professionals')
           .orderByChild('status')
           .equalTo('active')
           .get();
 
-      if (!snapshot.exists) {
-        return {};
-      }
+      if (!snapshot.exists) return {};
 
       final data = snapshot.value as Map<dynamic, dynamic>;
       final requestedProfessionals = <String>{};
 
       data.forEach((professionalId, value) {
         if (value is! Map) return;
-        
         final localId = value['local_id']?.toString();
         if (localId == null) return;
-        
         if (value.containsKey('requests')) {
           final requests = value['requests'];
-
           if (requests is List && requests.contains(_currentUserId)) {
             requestedProfessionals.add(localId);
           } else if (requests is Map && requests.containsKey(_currentUserId)) {
@@ -318,9 +332,6 @@ class FirebaseSearchServiceServerPaginated {
           }
         }
       });
-
-      final duration = DateTime.now().difference(startTime);
-      debugPrint('${requestedProfessionals.length} profissionais ja solicitados em ${duration.inMilliseconds}ms');
 
       return requestedProfessionals;
 

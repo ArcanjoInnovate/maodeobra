@@ -20,7 +20,6 @@ import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
@@ -729,12 +728,14 @@ class _InfoVacancyState extends State<InfoVacancy>
 
   Future<void> _deleteVacancy() async {
     try {
+      // ✅ Delete de mídia via Cloud Function (credenciais não ficam no APK)
       if (_currentMedia != null) {
-        for (final url in (_currentMedia!['images'] as List? ?? [])) {
-          await _deleteFromCloudinary(url.toString(), 'image');
-        }
-        for (final url in (_currentMedia!['videos'] as List? ?? [])) {
-          await _deleteFromCloudinary(url.toString(), 'video');
+        final allUrls = [
+          ...(_currentMedia!['images'] as List? ?? []).map((u) => u.toString()),
+          ...(_currentMedia!['videos'] as List? ?? []).map((u) => u.toString()),
+        ];
+        if (allUrls.isNotEmpty) {
+          await _deleteMediaViaCloudFunction(allUrls);
         }
       }
 
@@ -781,34 +782,22 @@ class _InfoVacancyState extends State<InfoVacancy>
     }
   }
 
-  Future<void> _deleteFromCloudinary(
-      String mediaUrl, String resourceType) async {
+  /// ✅ SEGURO: chama Cloud Function que assina e deleta no Cloudinary server-side.
+  /// Credenciais Cloudinary NUNCA ficam no APK — estão apenas na Cloud Function.
+  ///
+  /// A CF recebe a lista de URLs e decide se é Cloudinary ou Firebase Storage.
+  /// Fallback silencioso: se a CF falhar, a deleção é ignorada (mídia fica órfã
+  /// mas não impede o fluxo principal de deletar a vaga).
+  Future<void> _deleteMediaViaCloudFunction(List<String> mediaUrls) async {
     try {
-      final uri = Uri.parse(mediaUrl);
-      final segments = uri.pathSegments;
-      final uploadIndex = segments.indexOf('upload');
-      if (uploadIndex == -1 || uploadIndex + 2 >= segments.length) return;
-      final publicIdWithExtension = segments.sublist(uploadIndex + 2).join('/');
-      final publicId = publicIdWithExtension.substring(
-          0, publicIdWithExtension.lastIndexOf('.'));
-      const cloudName = 'dsmgwupky';
-      const apiKey = '256987432736353';
-      const apiSecret = 'K8oSFMvqA6N2eU4zLTnLTVuArMU';
-      final timestamp = (DateTime.now().millisecondsSinceEpoch / 1000).round();
-      final toSign = 'public_id=$publicId&timestamp=$timestamp$apiSecret';
-      final signature = sha1.convert(utf8.encode(toSign)).toString();
       await http.post(
-        Uri.parse(
-            'https://api.cloudinary.com/v1_1/$cloudName/$resourceType/destroy'),
-        body: {
-          'public_id': publicId,
-          'api_key': apiKey,
-          'timestamp': timestamp.toString(),
-          'signature': signature,
-        },
+        Uri.parse('https://us-central1-obra-7ebd9.cloudfunctions.net/deleteMediaAssets'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'urls': mediaUrls}),
       );
     } catch (e) {
-      debugPrint('Erro ao deletar do Cloudinary: $e');
+      // Falha silenciosa — não bloqueia deleção da vaga
+      debugPrint('⚠️ Aviso: não foi possível deletar mídia remota: $e');
     }
   }
 

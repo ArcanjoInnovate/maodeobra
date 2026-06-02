@@ -390,7 +390,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> reloadData() async {
     debugPrint('🔄 Recarregando dados do Firebase...');
-    await _loadUserData();
+    // ✅ Força uma re-leitura única quando o usuário puxa para atualizar.
+    // O listener _setupRealtimeListener já mantém os dados atualizados em tempo real.
+    if (!mounted) return;
+    try {
+      setState(() => _isLoading = true);
+      final snapshot =
+          await _database.child('Users').child(widget.local_id).get();
+      if (snapshot.exists && mounted) {
+        final data = Map<String, dynamic>.from(
+          snapshot.value as Map<dynamic, dynamic>,
+        );
+        _updateAllData(data);
+      }
+    } catch (e) {
+      debugPrint('❌ Erro ao recarregar: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   // ==================== FUNÇÕES DE PERFIL ====================

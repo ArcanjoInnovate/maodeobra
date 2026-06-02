@@ -5,21 +5,19 @@ import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:dartobra_new/models/search/vacancy_model.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:dartobra_new/services/expiration/expiration_service.dart';
 
 class FirebaseFeedService {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUSCAR VAGAS
+  // BUSCAR VAGAS — server-side filter por status
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<PaginatedFeedResult<VacancyModel>> fetchVacanciesForFeed({
     required String? filterState,
     required String? filterCity,
     required String? preferredProfession,
-    required Set<String> chatUserIds,
     required Set<String> requestedVacancyIds,
     required Set<String> blockedUserIds,
     int limit = 20,
@@ -27,27 +25,16 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      debugPrint('BUSCANDO VAGAS - Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
+      // ✅ Server-side: busca apenas vagas 'Aberta' via índice
+      Query query = _database
+          .child('vacancy')
+          .orderByChild('status')
+          .equalTo('Aberta');
 
-      final startTime = DateTime.now();
-      int readsEstimated = 0;
-
-      Query query = _database.child('vacancy').orderByChild('updated_at');
-
-      if (lastCreatedAt != null && lastKey != null) {
-        query = query.endBefore(lastCreatedAt, key: lastKey);
-      }
-
-      final multiplier = _calculateMultiplier(
-        hasStateFilter: filterState != null,
-        hasCityFilter: filterCity != null,
-        hasProfessionFilter: preferredProfession != null,
-      );
-      final fetchLimit = limit * multiplier;
-      query = query.limitToLast(fetchLimit);
+      // ✅ Busca exatamente o necessário — sem multiplicador
+      query = query.limitToLast(limit * 2); // 2x mínimo para folga de bloqueados
 
       final snapshot = await query.get();
-      readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
         return PaginatedFeedResult(items: [], hasMore: false);
@@ -57,35 +44,41 @@ class FirebaseFeedService {
       String? newLastCreatedAt;
       String? newLastKey;
 
-      for (var child in snapshot.children) {
+      // Ordenar por updated_at desc client-side (só nos itens já filtrados pelo server)
+      final children = snapshot.children.toList();
+      children.sort((a, b) {
+        final aVal = (a.value as Map?)?['updated_at'] ?? '';
+        final bVal = (b.value as Map?)?['updated_at'] ?? '';
+        return bVal.compareTo(aVal);
+      });
+
+      // Paginação cursor
+      bool pastCursor = lastKey == null;
+
+      for (var child in children) {
+        final key = child.key!;
+
+        if (!pastCursor) {
+          if (key == lastKey) pastCursor = true;
+          continue;
+        }
+
         try {
-          final key = child.key!;
           final data = Map<String, dynamic>.from(child.value as Map);
           final vacancy = _parseVacancy(key, data);
-
-          // Status deve ser aberta
-          final status = vacancy.status.toLowerCase();
-          if (status != 'aberta' && status != 'open') continue;
-          if (status == 'expirada' || status == 'expired') continue;
 
           // Já candidatado
           if (requestedVacancyIds.contains(vacancy.id)) continue;
 
-          // ✅ Dono bloqueado — usa o set que vem do FeedController
-          // que por sua vez buscou via fetchBlockedUserIds (corrigido)
+          // Dono bloqueado
           if (blockedUserIds.isNotEmpty &&
               vacancy.localId.isNotEmpty &&
-              blockedUserIds.contains(vacancy.localId)) {
-            debugPrint(
-                '  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
-            continue;
-          }
+              blockedUserIds.contains(vacancy.localId)) continue;
 
-          // Filtros de localização e profissão
+          // Filtros client-side apenas para localização/profissão
           if (filterState != null &&
               filterState.isNotEmpty &&
-              vacancy.state.toUpperCase() != filterState.toUpperCase())
-            continue;
+              vacancy.state.toUpperCase() != filterState.toUpperCase()) continue;
 
           if (filterCity != null &&
               filterCity.isNotEmpty &&
@@ -106,12 +99,7 @@ class FirebaseFeedService {
         }
       }
 
-      vacancies.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-      final hasMore =
-          snapshot.children.length >= fetchLimit && vacancies.length >= limit;
-
-      _printReadStats(startTime, readsEstimated);
+      final hasMore = vacancies.length >= limit;
 
       return PaginatedFeedResult(
         items: vacancies,
@@ -126,14 +114,13 @@ class FirebaseFeedService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUSCAR PROFISSIONAIS
+  // BUSCAR PROFISSIONAIS — server-side filter por status
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<PaginatedFeedResult<ProfessionalModel>> fetchProfessionalsForFeed({
     required String? filterState,
     required String? filterCity,
     required String? preferredProfession,
-    required Set<String> chatUserIds,
     required Set<String> requestedProfessionalIds,
     required Set<String> blockedUserIds,
     int limit = 20,
@@ -141,31 +128,17 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      debugPrint('BUSCANDO PROFISSIONAIS - Filtros: ${filterState ?? "Todos"} / ${filterCity ?? "Todas"}');
+      // ✅ Server-side: busca apenas profissionais 'active' via índice
+      Query query = _database
+          .child('professionals')
+          .orderByChild('status')
+          .equalTo('active');
 
-      final startTime = DateTime.now();
-      int readsEstimated = 0;
-
-      Query query = _database.child('professionals').orderByChild('updated_at');
-
-      if (lastUpdatedAt != null && lastKey != null) {
-        query = query.endBefore(lastUpdatedAt, key: lastKey);
-      }
-
-      final multiplier = _calculateMultiplier(
-        hasStateFilter: filterState != null,
-        hasCityFilter: filterCity != null,
-        hasProfessionFilter: preferredProfession != null,
-      );
-      final fetchLimit = limit * multiplier;
-      query = query.limitToLast(fetchLimit);
+      query = query.limitToLast(limit * 2);
 
       final snapshot = await query.get();
-      readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
-        debugPrint('Nenhum profissional encontrado');
-        _printReadStats(startTime, readsEstimated);
         return PaginatedFeedResult(items: [], hasMore: false);
       }
 
@@ -173,30 +146,36 @@ class FirebaseFeedService {
       String? newLastUpdatedAt;
       String? newLastKey;
 
-      for (var child in snapshot.children) {
+      final children = snapshot.children.toList();
+      children.sort((a, b) {
+        final aVal = (a.value as Map?)?['updated_at'] ?? '';
+        final bVal = (b.value as Map?)?['updated_at'] ?? '';
+        return bVal.compareTo(aVal);
+      });
+
+      bool pastCursor = lastKey == null;
+
+      for (var child in children) {
+        final key = child.key!;
+
+        if (!pastCursor) {
+          if (key == lastKey) pastCursor = true;
+          continue;
+        }
+
         try {
-          final key = child.key!;
           final data = Map<String, dynamic>.from(child.value as Map);
           final prof = _parseProfessional(key, data);
-
-          // Status ativo
-          final status = prof.status.toLowerCase();
-          if (status != 'active' && status != 'ativo') continue;
-          if (status == 'expired') continue;
 
           // Já solicitado
           if (requestedProfessionalIds.contains(prof.id)) continue;
 
-          // ✅ Profissional bloqueado
+          // Bloqueado
           if (blockedUserIds.isNotEmpty &&
               prof.localId.isNotEmpty &&
-              blockedUserIds.contains(prof.localId)) {
-            debugPrint(
-                '  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
-            continue;
-          }
+              blockedUserIds.contains(prof.localId)) continue;
 
-          // Filtros
+          // Filtros localização/profissão
           if (filterState != null &&
               filterState.isNotEmpty &&
               prof.state.toUpperCase() != filterState.toUpperCase()) continue;
@@ -220,15 +199,7 @@ class FirebaseFeedService {
         }
       }
 
-      professionals.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-      final hasMore = snapshot.children.length >= fetchLimit &&
-          professionals.length >= limit;
-
-      _printReadStats(startTime, readsEstimated);
-      debugPrint(
-          '${professionals.length} profissionais retornados (de $readsEstimated lidos)');
-      debugPrint('========================================\n');
+      final hasMore = professionals.length >= limit;
 
       return PaginatedFeedResult(
         items: professionals,
@@ -244,24 +215,12 @@ class FirebaseFeedService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUSCAR IDs BLOQUEADOS
-  //
-  // CORREÇÃO CRÍTICA para o iOS:
-  //
-  // Estrutura no Firebase:
-  //   Users/MEU_ID/blocked_users = { ID_BLOQUEADO_1: true, ID_BLOQUEADO_2: true }
-  //
-  // Bug anterior: pegava os VALUES ("true" ou 1 no iOS)
-  //   blockedIds = {"true"} ou {"1"} — nunca batia com um userId real
-  //
-  // Correção: pegar as KEYS que são os IDs dos usuários bloqueados
-  //   blockedIds = {"ID_BLOQUEADO_1", "ID_BLOQUEADO_2"} — correto
   // ═══════════════════════════════════════════════════════════════════════════
   Future<Set<String>> fetchBlockedUserIds() async {
     if (_currentUserId == null) return {};
     try {
       final ref = FirebaseDatabase.instance.ref();
 
-      // Lê ambos os nós via onValue (evita cache iOS)
       Future<Set<String>> readViaListener(String path) async {
         final completer = Completer<Set<String>>();
         late StreamSubscription<DatabaseEvent> sub;
@@ -305,13 +264,14 @@ class FirebaseFeedService {
 
       final all = {...results[0], ...results[1]};
       debugPrint(
-          '✅ fetchBlockedUserIds: ${all.length} bloqueados (iBlockedThem: ${results[0].length}, blockedMe: ${results[1].length})');
+          '✅ fetchBlockedUserIds: ${all.length} bloqueados');
       return all;
     } catch (e) {
       debugPrint('❌ fetchBlockedUserIds: $e');
       return {};
     }
   }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // BUSCAR VAGAS CANDIDATADAS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -320,10 +280,6 @@ class FirebaseFeedService {
     if (_currentUserId == null) return {};
 
     try {
-      debugPrint('Buscando vagas candidatadas...');
-      final startTime = DateTime.now();
-
-      // Tenta o caminho otimizado primeiro
       final userRequestsSnapshot = await _database
           .child('user_requests/$_currentUserId/vacancies')
           .get();
@@ -339,14 +295,10 @@ class FirebaseFeedService {
             if (item != null) requestedIds.add(item.toString());
           }
         }
-
-        final duration = DateTime.now().difference(startTime);
-        debugPrint(
-            '${requestedIds.length} candidaturas (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
-      // Fallback: varre todas as vagas
+      // Fallback
       final snapshot = await _database
           .child('vacancy')
           .orderByChild('status')
@@ -366,9 +318,6 @@ class FirebaseFeedService {
         }
       }
 
-      final duration = DateTime.now().difference(startTime);
-      debugPrint(
-          '${requestedIds.length} candidaturas (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
       debugPrint('Erro ao buscar candidaturas: $e');
@@ -380,9 +329,6 @@ class FirebaseFeedService {
     if (_currentUserId == null) return {};
 
     try {
-      debugPrint('Buscando requests de profissionais...');
-      final startTime = DateTime.now();
-
       final userRequestsSnapshot = await _database
           .child('user_requests/$_currentUserId/professionals')
           .get();
@@ -398,10 +344,6 @@ class FirebaseFeedService {
             if (item != null) requestedIds.add(item.toString());
           }
         }
-
-        final duration = DateTime.now().difference(startTime);
-        debugPrint(
-            '${requestedIds.length} requests profissionais (otimizado) em ${duration.inMilliseconds}ms');
         return requestedIds;
       }
 
@@ -428,9 +370,6 @@ class FirebaseFeedService {
         }
       }
 
-      final duration = DateTime.now().difference(startTime);
-      debugPrint(
-          '${requestedIds.length} requests profissionais (fallback) em ${duration.inMilliseconds}ms');
       return requestedIds;
     } catch (e) {
       debugPrint('Erro ao buscar requests de profissionais: $e');
@@ -439,66 +378,8 @@ class FirebaseFeedService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUSCAR CHATS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  Future<Set<String>> fetchChatUserIds() async {
-    if (_currentUserId == null) return {};
-
-    try {
-      final chatUserIds = <String>{};
-
-      // Queries paralelas em vez de sequenciais
-      final results = await Future.wait([
-        _database.child('Chats')
-            .orderByChild('contractor').equalTo(_currentUserId).get(),
-        _database.child('Chats')
-            .orderByChild('employee').equalTo(_currentUserId).get(),
-      ]);
-
-      final contractorSnapshot = results[0];
-      final employeeSnapshot = results[1];
-
-      if (contractorSnapshot.exists) {
-        for (var child in contractorSnapshot.children) {
-          final employee = child.child('employee').value?.toString();
-          if (employee != null && employee.isNotEmpty) {
-            chatUserIds.add(employee);
-          }
-        }
-      }
-
-      if (employeeSnapshot.exists) {
-        for (var child in employeeSnapshot.children) {
-          final contractor = child.child('contractor').value?.toString();
-          if (contractor != null && contractor.isNotEmpty) {
-            chatUserIds.add(contractor);
-          }
-        }
-      }
-
-      return chatUserIds;
-    } catch (e) {
-      debugPrint('Erro ao buscar chats: $e');
-      return {};
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
   // HELPERS PRIVADOS
   // ═══════════════════════════════════════════════════════════════════════════
-
-  int _calculateMultiplier({
-    bool hasStateFilter = false,
-    bool hasCityFilter = false,
-    bool hasProfessionFilter = false,
-  }) {
-    int multiplier = 1;
-    if (hasStateFilter) multiplier += 1;
-    if (hasCityFilter) multiplier += 1;
-    if (hasProfessionFilter) multiplier += 1;
-    return multiplier.clamp(1, 3);
-  }
 
   VacancyModel _parseVacancy(String key, Map<String, dynamic> data) {
     return VacancyModel(
@@ -565,17 +446,6 @@ class FirebaseFeedService {
       return List<String>.from(data['skills']);
     }
     return [];
-  }
-
-  void _printReadStats(DateTime startTime, int reads) {
-    final duration = DateTime.now().difference(startTime);
-    final cost = reads * 0.00036;
-    debugPrint(
-        'Stats: ${duration.inMilliseconds}ms | $reads reads | \$${cost.toStringAsFixed(6)}');
-    if (reads > 50)
-      debugPrint('⚠️ Muitos reads — considere mais filtros server-side');
-    if (duration.inMilliseconds > 2000)
-      debugPrint('⚠️ Query lenta — verifique índices');
   }
 }
 

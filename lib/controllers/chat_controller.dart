@@ -112,7 +112,7 @@ class ChatControllerFinal extends ChangeNotifier {
 
     _isMarkingAsRead = true;
     try {
-      await _chatService.markAsRead(_chatId!, _userRole!);
+      await _chatService.markAsRead(_chatId!, _userId ?? '', _userRole!);
     } finally {
       _isMarkingAsRead = false;
     }

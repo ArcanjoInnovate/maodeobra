@@ -18,9 +18,7 @@ class FeedController with ChangeNotifier {
       UserRelationShipController();
   final ExpirationService _expirationService = ExpirationService();
 
-  // Referência ao BlockProvider para poder desregistrar callbacks no dispose
   BlockProvider? _blockProvider;
-
   Set<String> _blockedUserIds = {};
 
   FeedMode _feedMode = FeedMode.unified;
@@ -34,9 +32,7 @@ class FeedController with ChangeNotifier {
 
   Set<String> _requestedVacancyIds = {};
   Set<String> _requestedProfessionalIds = {};
-  Set<String> _chatUserIds = {};
   bool _requestsLoaded = false;
-  bool _chatsLoaded = false;
 
   String? _filterState;
   String? _filterCity;
@@ -110,39 +106,25 @@ class FeedController with ChangeNotifier {
   bool hasRequestedProfessional(String professionalLocalId) =>
       _requestedProfessionalIds.contains(professionalLocalId);
 
-  // ── Integração com BlockProvider ──────────────────────────────────────────
+  // ── BlockProvider ─────────────────────────────────────────────────────────
 
-  /// Chame este método uma única vez após criar o controller,
-  /// passando o BlockProvider do contexto.
-  /// Exemplo no widget:
-  ///   feedController.registerWithBlockProvider(
-  ///     context.read<BlockProvider>(),
-  ///   );
   void registerWithBlockProvider(BlockProvider blockProvider) {
-    // Evita registrar duas vezes o mesmo provider
     if (_blockProvider == blockProvider) return;
-
-    // Remove callbacks do provider anterior se houver
     _blockProvider?.unregisterOnBlock(_handleUserBlocked);
     _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
-
     _blockProvider = blockProvider;
     blockProvider.registerOnBlock(_handleUserBlocked);
     blockProvider.registerOnUnblock(_handleUserUnblocked);
-
-    // Sincroniza o estado atual do BlockProvider imediatamente
     _blockedUserIds = {..._blockedUserIds, ...blockProvider.blockedSet};
-    debugPrint('🔗 FeedController: ${_blockedUserIds.length} bloqueados sincronizados do BlockProvider');
+    debugPrint('🔗 FeedController: ${_blockedUserIds.length} bloqueados sincronizados');
   }
 
   void _handleUserBlocked(String userId) {
-    debugPrint('🚫 FeedController: usuário bloqueado: $userId');
     _blockedUserIds = {..._blockedUserIds, userId};
     _applyFilters();
   }
 
   void _handleUserUnblocked(String userId) {
-    debugPrint('✅ FeedController: usuário desbloqueado: $userId');
     _blockedUserIds = _blockedUserIds.difference({userId});
     _applyFilters();
   }
@@ -155,9 +137,6 @@ class FeedController with ChangeNotifier {
     String? initialCity,
     String? preferredProfession,
   }) async {
-    debugPrint('\n========================================');
-    debugPrint('   INICIALIZANDO FEED CONTROLLER UNIFICADO');
-    debugPrint('========================================');
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _feedMode = FeedMode.unified;
     _filterState = initialState;
@@ -172,16 +151,12 @@ class FeedController with ChangeNotifier {
 
       if (_blockProvider != null) {
         _blockedUserIds = Set.from(_blockProvider!.blockedSet);
-        debugPrint('✅ Bloqueados vindos do BlockProvider: ${_blockedUserIds.length}');
       } else {
         await _loadBlockedUsers();
       }
 
-      await _loadChats();
       await _loadInitialFeed();
       await _applyFilters();
-
-      debugPrint('Feed inicializado! Bloqueados: ${_blockedUserIds.length}');
     } catch (e, stack) {
       debugPrint('Erro ao inicializar feed: $e\nStack: $stack');
     } finally {
@@ -190,17 +165,14 @@ class FeedController with ChangeNotifier {
     }
   }
 
-  /// Fallback: carrega bloqueados direto do serviço quando
-  /// BlockProvider não está disponível.
   Future<void> _loadBlockedUsers() async {
     if (_currentUserId == null) return;
     try {
       final list =
           await _userController.fetchAllBlockedUsers(_currentUserId!);
       _blockedUserIds = {..._blockedUserIds, ...list};
-      debugPrint('✅ Bloqueados carregados (fallback): ${_blockedUserIds.length}');
     } catch (e) {
-      debugPrint('❌ Erro ao carregar bloqueados (fallback): $e');
+      debugPrint('❌ Erro ao carregar bloqueados: $e');
     }
   }
 
@@ -228,18 +200,6 @@ class FeedController with ChangeNotifier {
     } finally {
       _loadingCities = false;
       notifyListeners();
-    }
-  }
-
-  // ── Chats ─────────────────────────────────────────────────────────────────
-
-  Future<void> _loadChats() async {
-    if (_chatsLoaded) return;
-    try {
-      _chatUserIds = await _feedService.fetchChatUserIds();
-      _chatsLoaded = true;
-    } catch (e) {
-      _chatUserIds = {};
     }
   }
 
@@ -284,16 +244,12 @@ class FeedController with ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('\nCarregando mais itens...');
-      debugPrint('   Bloqueados: ${_blockedUserIds.length}');
-
       if (_hasMoreVacancies) {
         final resultV = await _feedService.fetchVacanciesForFeed(
           blockedUserIds: _blockedUserIds,
           filterState: _filterState,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
-          chatUserIds: _chatUserIds,
           requestedVacancyIds: _requestedVacancyIds,
           limit: 15,
           lastCreatedAt: _lastCreatedAt,
@@ -303,7 +259,6 @@ class FeedController with ChangeNotifier {
         _lastCreatedAt = resultV.lastCreatedAt;
         _lastVacancyKey = resultV.lastKey;
         _hasMoreVacancies = resultV.hasMore;
-        debugPrint('   ${resultV.items.length} vagas carregadas');
       }
 
       if (_hasMoreProfessionals) {
@@ -312,7 +267,6 @@ class FeedController with ChangeNotifier {
           blockedUserIds: _blockedUserIds,
           filterCity: _filterCity,
           preferredProfession: _preferredProfession,
-          chatUserIds: _chatUserIds,
           requestedProfessionalIds: _requestedProfessionalIds,
           limit: 15,
           lastUpdatedAt: _lastUpdatedAt,
@@ -322,11 +276,7 @@ class FeedController with ChangeNotifier {
         _lastUpdatedAt = resultP.lastUpdatedAt;
         _lastProfessionalKey = resultP.lastKey;
         _hasMoreProfessionals = resultP.hasMore;
-        debugPrint('   ${resultP.items.length} profissionais carregados');
       }
-
-      debugPrint(
-          '   Total: ${_allVacancies.length} vagas, ${_allProfessionals.length} profissionais');
 
       await _applyFilters();
     } catch (e) {
@@ -348,11 +298,7 @@ class FeedController with ChangeNotifier {
   }
 
   Future<void> _applyFilters() async {
-    debugPrint('DEBUG - Vagas na memória: ${_allVacancies.length}');
-    debugPrint('DEBUG - Bloqueados no filtro: ${_blockedUserIds.length}');
-
     await ensureRequestsLoaded();
-    await _loadChats();
 
     _filteredVacancies = _allVacancies.where((vac) {
       if (_blockedUserIds.isNotEmpty &&
@@ -386,8 +332,6 @@ class FeedController with ChangeNotifier {
       return true;
     }).toList();
 
-    debugPrint(
-        'FINAL: ${_filteredVacancies.length}/${_allVacancies.length} vagas visíveis');
     notifyListeners();
   }
 
@@ -435,10 +379,8 @@ class FeedController with ChangeNotifier {
 
   Future<void> forceRefresh() async {
     _requestsLoaded = false;
-    _chatsLoaded = false;
     _requestedVacancyIds.clear();
     _requestedProfessionalIds.clear();
-    _chatUserIds.clear();
     _isLoading = true;
     notifyListeners();
 
@@ -448,7 +390,6 @@ class FeedController with ChangeNotifier {
       await _loadBlockedUsers();
     }
 
-    await _loadChats();
     await _loadInitialFeed();
     await _applyFilters();
     _isLoading = false;
@@ -459,7 +400,6 @@ class FeedController with ChangeNotifier {
 
   @override
   void dispose() {
-    // Remove callbacks para evitar memory leaks
     _blockProvider?.unregisterOnBlock(_handleUserBlocked);
     _blockProvider?.unregisterOnUnblock(_handleUserUnblocked);
     super.dispose();

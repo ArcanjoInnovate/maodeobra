@@ -146,7 +146,8 @@ class SearchController extends ChangeNotifier {
         await _loadBlockedUsers();
       }
 
-      await _cacheService.clearAll();
+      // ✅ clearAll() REMOVIDO: não destruir cache a cada abertura da tela.
+      // O cache Hive tem TTL de 5 min; será reaproveitado em acessos frequentes.
 
       if (_professions.isEmpty) {
         _professions = CivilProfessions.getAll();
@@ -233,8 +234,6 @@ class SearchController extends ChangeNotifier {
   // ── Primeira página ───────────────────────────────────────────────────────
 
   Future<void> _loadFirstPage() async {
-    debugPrint('_loadFirstPage — bloqueados: ${_blockedUserIds.length}');
-
     _lastProfessionalKey = null;
     _lastProfessionalValue = null;
     _lastVacancyKey = null;
@@ -242,6 +241,25 @@ class SearchController extends ChangeNotifier {
     _hasMoreProfessionals = true;
     _hasMoreVacancies = true;
 
+    // ✅ Tenta carregar do cache Hive (TTL 5 min) antes de ir ao Firebase.
+    // Elimina reads no cold start para usuários que abrem a busca frequentemente.
+    final cachedProfs = await _cacheService.loadProfessionals(maxAgeMinutes: 5);
+    final cachedVacs = await _cacheService.loadVacancies(maxAgeMinutes: 5);
+
+    if (cachedProfs != null && cachedVacs != null) {
+      debugPrint('📦 Usando cache Hive: ${cachedProfs.length} profs + ${cachedVacs.length} vagas');
+      _allProfessionals = cachedProfs
+          .map((m) => ProfessionalModel.fromJson(m['id'] as String, m))
+          .toList();
+      _allVacancies = cachedVacs
+          .map((m) => VacancyModel.fromJson(m['id'] as String, m))
+          .toList();
+      _hasMoreProfessionals = false;
+      _hasMoreVacancies = false;
+      return;
+    }
+
+    // Cache miss ou expirado — busca no Firebase e salva no cache
     final profResult = await _firebaseService.fetchProfessionalsPaginated(
       blockedUserIds: _blockedUserIds,
       limit: ITEMS_PER_PAGE,
@@ -260,7 +278,15 @@ class SearchController extends ChangeNotifier {
     _lastVacancyKey = vacResult.lastKey;
     _lastVacancyValue = vacResult.lastValue;
 
-    debugPrint('${_allProfessionals.length} profs + ${_allVacancies.length} vagas');
+    // Persiste no cache em background (não bloqueia a UI)
+    unawaited(_cacheService.saveProfessionals(
+      _allProfessionals.map((p) => p.toMap()).toList(),
+    ));
+    unawaited(_cacheService.saveVacancies(
+      _allVacancies.map((v) => v.toMap()).toList(),
+    ));
+
+    debugPrint('🔥 Firebase: ${_allProfessionals.length} profs + ${_allVacancies.length} vagas');
   }
 
   // ── Paginação ─────────────────────────────────────────────────────────────
