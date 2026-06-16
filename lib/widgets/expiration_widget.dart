@@ -24,9 +24,8 @@ class ExpirationWarningWidget extends StatelessWidget {
     final isExpired = expirationService.isExpired(expiresAt);
     final isNearExpiration = expirationService.isNearExpiration(expiresAt);
     final daysLeft = expirationService.daysUntilExpiration(expiresAt);
-    final message = expirationService.getExpirationMessage(expiresAt);
 
-    // Não mostra nada se tiver mais de 2 dias
+    // Não mostra nada se tiver mais de 1 dia
     if (!isExpired && !isNearExpiration) {
       return const SizedBox.shrink();
     }
@@ -35,26 +34,39 @@ class ExpirationWarningWidget extends StatelessWidget {
     final Color textColor;
     final Color borderColor;
     final IconData icon;
-    final String displayMessage;
+    final String displayTitle;
+    final String displayBody;
 
     if (isExpired) {
       backgroundColor = const Color(0xFFFEF2F2);
       textColor = const Color(0xFFDC2626);
       borderColor = const Color(0xFFDC2626);
-      icon = Icons.error_outline;
-      displayMessage = 'Expirado';
+      icon = Icons.trending_down_rounded;
+      displayTitle = 'Publicação com 2 dias — renovação necessária';
+      displayBody =
+          'Sua publicação foi postada há 2 dias e pode estar sumindo '
+          'do feed e da busca por ficar no final da lista. '
+          'Renove agora para voltar ao topo e aumentar suas chances de visualização.';
     } else if (daysLeft == 1) {
       backgroundColor = const Color(0xFFFFF7ED);
       textColor = const Color(0xFFEA580C);
       borderColor = const Color(0xFFEA580C);
-      icon = Icons.warning_amber_rounded;
-      displayMessage = 'Expira amanhã!';
+      icon = Icons.schedule_rounded;
+      displayTitle = 'Publicação expira amanhã — renove para o topo';
+      displayBody =
+          'Sua publicação tem menos de 1 dia antes de completar 2 dias. '
+          'Quanto mais antiga, mais ela fica no final do feed e da busca. '
+          'Renove agora para subir ao topo da lista.';
     } else {
       backgroundColor = const Color(0xFFFFF7ED);
       textColor = const Color(0xFFEA580C);
       borderColor = const Color(0xFFEA580C);
       icon = Icons.schedule_rounded;
-      displayMessage = 'Expira em $daysLeft dias';
+      displayTitle = 'Publicação expira em $daysLeft dia(s)';
+      displayBody =
+          'Sua publicação foi postada há pouco mais de 1 dia. '
+          'Em breve ela pode começar a sumir do topo do feed e da busca. '
+          'Renove quando chegar a hora para voltar ao topo.';
     }
 
     if (isCompact) {
@@ -71,7 +83,7 @@ class ExpirationWarningWidget extends StatelessWidget {
             Icon(icon, size: 12, color: textColor),
             const SizedBox(width: 4),
             Text(
-              displayMessage,
+              isExpired ? 'Renovar para o topo' : 'Expira em breve',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -84,63 +96,60 @@ class ExpirationWarningWidget extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor.withOpacity(0.3)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: textColor),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayMessage,
+          Row(
+            children: [
+              Icon(icon, size: 18, color: textColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  displayTitle,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: textColor,
                   ),
                 ),
-                if (!isExpired) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Renove para continuar visível por mais 2 dias',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: textColor.withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            displayBody,
+            style: TextStyle(
+              fontSize: 12,
+              color: textColor.withOpacity(0.85),
+              height: 1.45,
             ),
           ),
-          if (onRenew != null && !isExpired) ...[
-            const SizedBox(width: 10),
-            TextButton(
-              onPressed: onRenew,
-              style: TextButton.styleFrom(
-                backgroundColor: textColor,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+          if (onRenew != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: onRenew,
+                style: TextButton.styleFrom(
+                  backgroundColor: textColor,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text(
-                'Renovar',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                child: const Text(
+                  'Renovar e voltar ao topo',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),

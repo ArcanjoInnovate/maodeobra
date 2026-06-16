@@ -181,10 +181,9 @@ class ExpirationService {
         final expiresAt = vacancyData['expires_at'];
         
         if (expiresAt != null && isExpired(expiresAt)) {
-          // ✅ OTIMIZAÇÃO: Acumula updates para batch
-          batchUpdates['vacancy/$vacancyId/status'] = 'Expirada';
+          // ✅ Apenas registra que está velha para fins de ordenação/aviso ao dono.
+          // NÃO altera status — vaga permanece visível no feed/search.
           batchUpdates['vacancy/$vacancyId/expired_at'] = _now.toIso8601String();
-          batchUpdates['vacancy/$vacancyId/updated_at'] = _now.toIso8601String();
           
           expiredVacancies.add(vacancyId);
         }
@@ -203,7 +202,9 @@ class ExpirationService {
     }
   }
 
-  /// Renova uma vaga específica
+  /// Renova uma vaga específica.
+  /// Apenas extende expires_at e atualiza updated_at para subir no topo do feed.
+  /// NÃO altera o status — vagas nunca saem do feed por expiração.
   Future<bool> renewVacancy(String vacancyId) async {
     try {
       final newExpirationDate = renewExpirationISO();
@@ -214,10 +215,10 @@ class ExpirationService {
         'expiration_timestamp': newExpirationTimestamp,
         'renewed_at': _now.toIso8601String(),
         'updated_at': _now.toIso8601String(),
-        'status': 'Aberta', // Reativa se estava expirada
+        // ✅ status NUNCA é alterado aqui — vaga permanece no feed independente
       });
 
-      debugPrint('✅ Vaga $vacancyId renovada até $newExpirationDate');
+      debugPrint('✅ Vaga $vacancyId renovada até $newExpirationDate (bump no feed)');
       return true;
     } catch (e) {
       debugPrint('❌ Erro ao renovar vaga: $e');
@@ -259,16 +260,9 @@ class ExpirationService {
         final expiresAt = professionalData['expires_at'];
         
         if (expiresAt != null && isExpired(expiresAt)) {
-          // ✅ OTIMIZAÇÃO: Acumula updates para batch
-          batchUpdates['professionals/$professionalId/status'] = 'expired';
+          // ✅ Apenas registra que está velho para fins de aviso ao dono.
+          // NÃO altera status — perfil permanece visível no feed/search.
           batchUpdates['professionals/$professionalId/expired_at'] = _now.toIso8601String();
-          batchUpdates['professionals/$professionalId/updated_at'] = _now.toIso8601String();
-          
-          // Atualiza o status do usuário
-          final localId = professionalData['local_id'];
-          if (localId != null) {
-            batchUpdates['Users/$localId/isActive'] = false;
-          }
           
           expiredProfessionals.add(professionalId);
         }
@@ -287,7 +281,9 @@ class ExpirationService {
     }
   }
 
-  /// Renova um perfil profissional específico
+  /// Renova um perfil profissional específico.
+  /// Apenas extende expires_at e atualiza updated_at para subir no topo do feed.
+  /// NÃO altera o status — perfis nunca saem do feed por expiração.
   Future<bool> renewProfessional(String professionalId) async {
     try {
       final newExpirationDate = renewExpirationISO();
@@ -298,10 +294,10 @@ class ExpirationService {
         'expiration_timestamp': newExpirationTimestamp,
         'renewed_at': _now.toIso8601String(),
         'updated_at': _now.toIso8601String(),
-        'status': 'active', // Reativa se estava expirado
+        // ✅ status NUNCA é alterado aqui — perfil permanece no feed independente
       });
 
-      debugPrint('✅ Perfil profissional $professionalId renovado até $newExpirationDate');
+      debugPrint('✅ Perfil $professionalId renovado até $newExpirationDate (bump no feed)');
       return true;
     } catch (e) {
       debugPrint('❌ Erro ao renovar perfil profissional: $e');

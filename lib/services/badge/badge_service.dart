@@ -1,4 +1,8 @@
 // lib/services/badge/badge_service.dart
+//
+// ✅ N2-01 CORRIGIDO: getUnreadMessagesCountByRoleStream e getUnreadCountByRoleStream
+// substituídos por leitura direta do nó badges/{uid} — elimina N reads por evento.
+// Cloud Function já mantém badges/{uid}/unread_chats atualizado em tempo real.
 
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
@@ -7,11 +11,9 @@ class BadgeHelper {
   static final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
   // ========================================
-  // MARCAR CHAT COMO LIDO (CORRIGIDO)
+  // MARCAR CHAT COMO LIDO
   // ========================================
-  
-  /// ✅ OTIMIZADO: Usa query server-side para mensagens não lidas em vez de baixar todas.
-  /// Usa batch update único. Removido queries redundantes (chatSnapshot, unreadSnapshot).
+
   static Future<void> markChatAsRead(
     String chatId,
     String userId,
@@ -20,11 +22,10 @@ class BadgeHelper {
     try {
       debugPrint('📖 markChatAsRead: chat=$chatId role=$userRole');
 
-      final readField = userRole == 'employee' 
-          ? 'read_by_employee' 
+      final readField = userRole == 'employee'
+          ? 'read_by_employee'
           : 'read_by_contractor';
 
-      // ✅ OTIMIZAÇÃO: Query server-side para mensagens não lidas em vez de baixar todas
       final messagesSnapshot = await _database
           .child('ChatMessages/$chatId')
           .orderByChild(readField)
@@ -32,7 +33,6 @@ class BadgeHelper {
           .get();
 
       final updates = <String, dynamic>{
-        // Sempre zera o unreadCount
         'Chats/$chatId/unreadCount/$userRole': 0,
       };
 
@@ -45,12 +45,8 @@ class BadgeHelper {
         debugPrint('✅ ${messages.length} mensagens marcadas como lidas');
       }
 
-      // ✅ OTIMIZAÇÃO: Uma única escrita batch
       await _database.update(updates);
-
-      // Decrementa badge atomicamente em vez de recalcular do zero
       await _decrementChatBadge(userId);
-
     } catch (e, stack) {
       debugPrint('❌ Erro ao marcar chat como lido: $e');
       debugPrint('Stack: $stack');
@@ -58,16 +54,16 @@ class BadgeHelper {
   }
 
   // ========================================
-  // DECREMENTAR BADGE DE CHAT (PRIVADO - OTIMIZADO)
+  // DECREMENTAR BADGE DE CHAT (PRIVADO)
   // ========================================
-  
+
   // ignore: unused_element
   static Future<void> _decrementChatBadge(String userId) async {
     try {
       final badgeRef = _database.child('badges/$userId');
-      
+
       debugPrint('📉 Decrementando chat badge para $userId');
-      
+
       await badgeRef.runTransaction((current) {
         if (current == null) {
           debugPrint('  ⚠️ Badge não existe, criando com 0');
@@ -80,7 +76,7 @@ class BadgeHelper {
 
         final data = Map<String, dynamic>.from(current as Map);
         final currentBadge = (data['unread_chats'] as int?) ?? 0;
-        
+
         if (currentBadge > 0) {
           final newBadge = currentBadge - 1;
           data['unread_chats'] = newBadge;
@@ -100,11 +96,11 @@ class BadgeHelper {
   // ========================================
   // DECREMENTAR REQUEST BADGE
   // ========================================
-  
+
   static Future<void> _decrementRequestBadge(String userId) async {
     try {
       final badgeRef = _database.child('badges/$userId');
-      
+
       await badgeRef.runTransaction((current) {
         if (current == null) {
           return Transaction.success({
@@ -116,7 +112,7 @@ class BadgeHelper {
 
         final data = Map<String, dynamic>.from(current as Map);
         final currentBadge = (data['unread_requests'] as int?) ?? 0;
-        
+
         if (currentBadge > 0) {
           data['unread_requests'] = currentBadge - 1;
           data['updated_at'] = ServerValue.timestamp;
@@ -135,52 +131,39 @@ class BadgeHelper {
   // ========================================
   // DECREMENTAR REQUEST (PÚBLICO)
   // ========================================
-  
+
   static Future<void> decrementRequestBadge(String userId) async {
     debugPrint('📉 Decrementando request badge: $userId');
     await _decrementRequestBadge(userId);
   }
 
   // ========================================
-  // RECALCULAR BADGE DE CHATS (PARA SINCRONIZAÇÃO)
+  // RECALCULAR BADGE DE CHATS
   // ========================================
-  
-  /// ✅ OTIMIZADO: Usa Future.wait para queries paralelas + transaction em vez de set().
-  /// Antes: 3 queries sequenciais + set() (sobrescrevia unread_requests)
-  /// Agora: 2 queries paralelas + transaction (preserva outros campos)
+
   static Future<void> recalculateChatBadge(String userId) async {
     try {
       debugPrint('🔄 Recalculando chat badge: $userId');
 
-      // ✅ OTIMIZAÇÃO: Queries paralelas em vez de sequenciais
       final results = await Future.wait([
         _database.child('Chats').orderByChild('employee').equalTo(userId).get(),
         _database.child('Chats').orderByChild('contractor').equalTo(userId).get(),
       ]);
 
-      final chatsAsEmployeeSnapshot = results[0];
-      final chatsAsContractorSnapshot = results[1];
-
       int totalUnreadChats = 0;
+      totalUnreadChats += _countUnreadFromSnapshot(results[0], 'employee');
+      totalUnreadChats += _countUnreadFromSnapshot(results[1], 'contractor');
 
-      // Conta chats não lidos como EMPLOYEE
-      totalUnreadChats += _countUnreadFromSnapshot(chatsAsEmployeeSnapshot, 'employee');
-
-      // Conta chats não lidos como CONTRACTOR
-      totalUnreadChats += _countUnreadFromSnapshot(chatsAsContractorSnapshot, 'contractor');
-
-      // Limita a 9
       final clampedTotal = totalUnreadChats.clamp(0, 9);
 
-      // ✅ OTIMIZAÇÃO: Usa transaction em vez de set() para preservar outros campos
       await _database.child('badges/$userId').runTransaction((current) {
         final data = current == null
             ? <String, dynamic>{'unread_chats': 0, 'unread_requests': 0}
             : Map<String, dynamic>.from(current as Map);
-        
+
         data['unread_chats'] = clampedTotal;
         data['updated_at'] = ServerValue.timestamp;
-        
+
         return Transaction.success(data);
       });
 
@@ -191,197 +174,219 @@ class BadgeHelper {
     }
   }
 
-  /// Helper para contar chats não lidos de um snapshot
   static int _countUnreadFromSnapshot(DataSnapshot snapshot, String role) {
     if (!snapshot.exists) return 0;
-    
+
     final chats = snapshot.value as Map<dynamic, dynamic>;
     int count = 0;
-    
+
     for (var chatEntry in chats.entries) {
       final chatData = chatEntry.value as Map<dynamic, dynamic>;
       final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
-      
+
       if (unreadCountData != null) {
         final unread = (unreadCountData[role] as int?) ?? 0;
-        if (unread > 0) {
-          count++;
-        }
+        if (unread > 0) count++;
       }
     }
-    
+
     return count;
   }
 
+  // ========================================
+  // CONTAR MENSAGENS NÃO LIDAS (ONE-SHOT)
+  // ========================================
 
-  static Future<int> getUnreadMessagesCountByRole(String userId, String role) async {
-  try {
-    final field = role == 'employee' ? 'employee' : 'contractor';
-    
-    // 1. Busca todos os chats do usuário neste role
-    final chatsSnapshot = await _database
-        .child('Chats')
-        .orderByChild(field)
-        .equalTo(userId)
-        .get();
+  static Future<int> getUnreadMessagesCountByRole(
+      String userId, String role) async {
+    try {
+      final field = role == 'employee' ? 'employee' : 'contractor';
 
-    if (!chatsSnapshot.exists) {
-      return 0;
-    }
+      final chatsSnapshot = await _database
+          .child('Chats')
+          .orderByChild(field)
+          .equalTo(userId)
+          .get();
 
-    final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
-    int totalUnreadMessages = 0;
+      if (!chatsSnapshot.exists) return 0;
 
-    // 2. Para cada chat, conta mensagens não lidas
-    for (var chatEntry in chats.entries) {
-      final chatId = chatEntry.key.toString();
-      final chatData = chatEntry.value as Map<dynamic, dynamic>;
-      
-      // Pega unreadCount deste chat
-      final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
-      if (unreadCountData != null) {
-        final myUnread = (unreadCountData[role] as int?) ?? 0;
-        
-        // Se tem mensagens não lidas, conta TODAS as mensagens não lidas deste chat
-        if (myUnread > 0) {
-          final messagesCount = await _countUnreadMessagesInChat(chatId, userId, role);
-          totalUnreadMessages += messagesCount;
-          debugPrint('  Chat $chatId: $messagesCount mensagens não lidas');
+      final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
+      int totalUnreadMessages = 0;
+
+      for (var chatEntry in chats.entries) {
+        final chatId = chatEntry.key.toString();
+        final chatData = chatEntry.value as Map<dynamic, dynamic>;
+        final unreadCountData =
+            chatData['unreadCount'] as Map<dynamic, dynamic>?;
+
+        if (unreadCountData != null) {
+          final myUnread = (unreadCountData[role] as int?) ?? 0;
+          if (myUnread > 0) {
+            final messagesCount =
+                await _countUnreadMessagesInChat(chatId, userId, role);
+            totalUnreadMessages += messagesCount;
+            debugPrint('  Chat $chatId: $messagesCount mensagens não lidas');
+          }
         }
       }
-    }
 
-    debugPrint('✅ Total de mensagens não lidas ($role): $totalUnreadMessages');
-    return totalUnreadMessages;
-  } catch (e) {
-    debugPrint('❌ Erro ao contar mensagens: $e');
-    return 0;
-  }
-}
-
-/// Conta mensagens não lidas em um chat específico
-/// Otimizado: usa query indexada em vez de baixar TODAS as mensagens
-static Future<int> _countUnreadMessagesInChat(
-  String chatId,
-  String userId,
-  String role,
-) async {
-  try {
-    final readField = role == 'employee' 
-        ? 'read_by_employee' 
-        : 'read_by_contractor';
-
-    final messagesSnapshot = await _database
-        .child('ChatMessages/$chatId')
-        .orderByChild(readField)
-        .equalTo(false)
-        .get();
-
-    if (!messagesSnapshot.exists) {
+      debugPrint(
+          '✅ Total de mensagens não lidas ($role): $totalUnreadMessages');
+      return totalUnreadMessages;
+    } catch (e) {
+      debugPrint('❌ Erro ao contar mensagens: $e');
       return 0;
     }
-
-    final messages = messagesSnapshot.value as Map<dynamic, dynamic>;
-    // Exclui placeholder e mensagens enviadas pelo próprio usuário
-    int unreadCount = 0;
-    for (var entry in messages.entries) {
-      if (entry.key == '_placeholder') continue;
-      final msg = entry.value as Map<dynamic, dynamic>;
-      final senderId = msg['sender_id']?.toString() ?? '';
-      if (senderId != userId) unreadCount++;
-    }
-
-    return unreadCount;
-  } catch (e) {
-    debugPrint('Erro ao contar mensagens do chat $chatId: $e');
-    return 0;
   }
-}
 
-// ========================================
-// STREAM DE MENSAGENS NÃO LIDAS POR ROLE
-// ========================================
+  static Future<int> _countUnreadMessagesInChat(
+    String chatId,
+    String userId,
+    String role,
+  ) async {
+    try {
+      final readField =
+          role == 'employee' ? 'read_by_employee' : 'read_by_contractor';
 
-/// Stream do total de mensagens não lidas
-static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role) {
-  final field = role == 'employee' ? 'employee' : 'contractor';
-  
-  return _database
-      .child('Chats')
-      .orderByChild(field)
-      .equalTo(userId)
-      .onValue
-      .asyncMap((event) async {
-    if (!event.snapshot.exists) {
+      final messagesSnapshot = await _database
+          .child('ChatMessages/$chatId')
+          .orderByChild(readField)
+          .equalTo(false)
+          .get();
+
+      if (!messagesSnapshot.exists) return 0;
+
+      final messages = messagesSnapshot.value as Map<dynamic, dynamic>;
+      int unreadCount = 0;
+      for (var entry in messages.entries) {
+        if (entry.key == '_placeholder') continue;
+        final msg = entry.value as Map<dynamic, dynamic>;
+        final senderId = msg['sender_id']?.toString() ?? '';
+        if (senderId != userId) unreadCount++;
+      }
+
+      return unreadCount;
+    } catch (e) {
+      debugPrint('Erro ao contar mensagens do chat $chatId: $e');
       return 0;
     }
+  }
 
-    final chats = event.snapshot.value as Map<dynamic, dynamic>;
-    int totalUnreadMessages = 0;
+  // ========================================
+  // ✅ N2-01 — STREAM DE MENSAGENS NÃO LIDAS
+  // ANTES: asyncMap com N reads a cada evento de qualquer chat
+  // DEPOIS: escuta badges/{uid}/unread_chats — 0 reads extras
+  //
+  // NOTA: este stream agora retorna a contagem de CHATS não lidos
+  // (não de mensagens individuais), pois é o que o nó badges mantém.
+  // Se a UI precisar do número exato de mensagens, use
+  // getUnreadMessagesCountByRole() como one-shot pontual.
+  // ========================================
 
-    for (var chatEntry in chats.entries) {
-      final chatId = chatEntry.key.toString();
-      final chatData = chatEntry.value as Map<dynamic, dynamic>;
-      
-      final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
-      if (unreadCountData != null) {
-        final myUnread = (unreadCountData[role] as int?) ?? 0;
-        
-        if (myUnread > 0) {
-          final messagesCount = await _countUnreadMessagesInChat(chatId, userId, role);
-          totalUnreadMessages += messagesCount;
+  static Stream<int> getUnreadMessagesCountByRoleStream(
+      String userId, String role) {
+    // O nó badges/{uid}/unread_chats já é mantido pela Cloud Function
+    // e representa os chats com mensagens não lidas — substitui o N+1.
+    return _database
+        .child('badges/$userId/unread_chats')
+        .onValue
+        .map((event) => (event.snapshot.value as int?)?.clamp(0, 9) ?? 0);
+  }
+
+  // ========================================
+  // CONTAR CHATS NÃO LIDOS (ONE-SHOT)
+  // ========================================
+
+  static Future<int> getUnreadCountByRole(String userId, String role) async {
+    try {
+      final field = role == 'employee' ? 'employee' : 'contractor';
+
+      final chatsSnapshot = await _database
+          .child('Chats')
+          .orderByChild(field)
+          .equalTo(userId)
+          .get();
+
+      if (!chatsSnapshot.exists) return 0;
+
+      final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
+      int unreadCount = 0;
+
+      for (var chatEntry in chats.entries) {
+        final chatData = chatEntry.value as Map<dynamic, dynamic>;
+        final unreadCountData =
+            chatData['unreadCount'] as Map<dynamic, dynamic>?;
+
+        if (unreadCountData != null) {
+          final myUnread = (unreadCountData[role] as int?) ?? 0;
+          if (myUnread > 0) unreadCount++;
         }
       }
+
+      return unreadCount;
+    } catch (e) {
+      debugPrint('❌ Erro ao contar por role: $e');
+      return 0;
     }
-
-    return totalUnreadMessages;
-  });
-}
+  }
 
   // ========================================
-  // CONTAR CHATS NÃO LIDOS POR ROLE
+  // ✅ N2-01 — STREAM DE CHATS NÃO LIDOS POR ROLE
+  // ANTES: asyncMap sobre todos os chats a cada evento
+  // DEPOIS: escuta badges/{uid}/unread_chats direto — 1 listener, 0 reads extras
   // ========================================
-  /// ✅ OTIMIZADO: Corrigido bug onde int era passado por valor.
-  /// Agora usa retorno de _countAllUnreadMessages para somar corretamente.
+
+  static Stream<int> getUnreadCountByRoleStream(String userId, String role) {
+    // badges/{uid}/unread_chats já soma employee + contractor.
+    // Se a UI precisar separar por role, use getUnreadCountByRole() one-shot.
+    return _database
+        .child('badges/$userId/unread_chats')
+        .onValue
+        .map((event) => (event.snapshot.value as int?)?.clamp(0, 9) ?? 0);
+  }
+
+  // ========================================
+  // RECALCULAR BADGE DE MENSAGENS
+  // ========================================
+
   static Future<void> recalculateMessageBadge(String userId) async {
     try {
       debugPrint('🔄 Recalculando badge de mensagens: $userId');
-      
-      // ✅ FIX: Soma os retornos em vez de passar int por valor
-      final unreadAsEmployee = await _countAllUnreadMessages(userId, 'employee');
-      final unreadAsContractor = await _countAllUnreadMessages(userId, 'contractor');
+
+      final unreadAsEmployee =
+          await _countAllUnreadMessages(userId, 'employee');
+      final unreadAsContractor =
+          await _countAllUnreadMessages(userId, 'contractor');
       final totalUnreadMessages = unreadAsEmployee + unreadAsContractor;
 
-      // Salvar em badges/$userId/unread_messages
       final badgeRef = _database.child('badges/$userId');
       await badgeRef.runTransaction((current) {
-        final data = current == null 
+        final data = current == null
             ? {'unread_messages': totalUnreadMessages}
             : Map<String, dynamic>.from(current as Map);
-        
+
         data['unread_messages'] = totalUnreadMessages.clamp(0, 99);
         data['updated_at'] = ServerValue.timestamp;
-        
+
         return Transaction.success(data);
       });
 
-      debugPrint('✅ Total mensagens não lidas: ${totalUnreadMessages.clamp(0, 99)}');
-      
+      debugPrint(
+          '✅ Total mensagens não lidas: ${totalUnreadMessages.clamp(0, 99)}');
     } catch (e) {
       debugPrint('❌ Erro recalculateMessageBadge: $e');
     }
   }
 
-  /// ✅ OTIMIZADO: Retorna int em vez de receber por parâmetro (fix do bug).
-  /// Usa unreadCount do chat para evitar queries desnecessárias em chats já lidos.
   static Future<int> _countAllUnreadMessages(
-    String userId, 
+    String userId,
     String userRole,
   ) async {
     final field = userRole == 'employee' ? 'employee' : 'contractor';
-    final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+    final readField =
+        userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
     int totalUnreadMessages = 0;
-    
+
     final chatsSnapshot = await _database
         .child('Chats')
         .orderByChild(field)
@@ -394,15 +399,14 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
     for (var chatEntry in chats.entries) {
       final chatId = chatEntry.key.toString();
       final chatData = chatEntry.value as Map<dynamic, dynamic>;
-      
-      // ✅ OTIMIZAÇÃO: Verifica unreadCount primeiro para pular chats já lidos
-      final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
+
+      final unreadCountData =
+          chatData['unreadCount'] as Map<dynamic, dynamic>?;
       if (unreadCountData != null) {
         final myUnread = (unreadCountData[userRole] as int?) ?? 0;
-        if (myUnread == 0) continue; // Pula chats sem mensagens não lidas
+        if (myUnread == 0) continue;
       }
-      
-      // Conta mensagens não lidas DESTE chat
+
       final msgSnapshot = await _database
           .child('ChatMessages/$chatId')
           .orderByChild(readField)
@@ -415,18 +419,20 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
         debugPrint('  💬 $chatId ($userRole): +$count msgs');
       }
     }
-    
+
     return totalUnreadMessages;
   }
 
   // ========================================
-  // 3️⃣ Contar mensagens de UM chat específico
+  // CONTAR MENSAGENS DE UM CHAT ESPECÍFICO
   // ========================================
-  
-  static Future<int> getUnreadMessageCountInChat(String chatId, String userRole) async {
+
+  static Future<int> getUnreadMessageCountInChat(
+      String chatId, String userRole) async {
     try {
-      final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
-      
+      final readField =
+          userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+
       final snapshot = await _database
           .child('ChatMessages/$chatId')
           .orderByChild(readField)
@@ -441,10 +447,9 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
   }
 
   // ========================================
-  // 4️⃣ STREAMS para UI
+  // STREAMS PARA UI
   // ========================================
-  
-  /// Stream TOTAL mensagens não lidas
+
   static Stream<int> getMessageBadgeStream(String userId) {
     return _database
         .child('badges/$userId/unread_messages')
@@ -452,99 +457,26 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
         .map((event) => (event.snapshot.value as int?)?.clamp(0, 99) ?? 0);
   }
 
-  /// Stream mensagens não lidas de UM chat
-  static Stream<int> getUnreadMessageCountStream(String chatId, String userRole) {
-    final readField = userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
-    
+  static Stream<int> getUnreadMessageCountStream(
+      String chatId, String userRole) {
+    final readField =
+        userRole == 'employee' ? 'read_by_employee' : 'read_by_contractor';
+
     return _database
         .child('ChatMessages/$chatId')
         .orderByChild(readField)
         .equalTo(false)
         .onValue
-        .map((event) => event.snapshot.exists ? (event.snapshot.value as Map).length : 0);
-  }
-
-  static Future<int> getUnreadCountByRole(String userId, String role) async {
-    try {
-      final field = role == 'employee' ? 'employee' : 'contractor';
-      
-      final chatsSnapshot = await _database
-          .child('Chats')
-          .orderByChild(field)
-          .equalTo(userId)
-          .get();
-
-      if (!chatsSnapshot.exists) {
-        return 0;
-      }
-
-      final chats = chatsSnapshot.value as Map<dynamic, dynamic>;
-      int unreadCount = 0;
-
-      for (var chatEntry in chats.entries) {
-        final chatData = chatEntry.value as Map<dynamic, dynamic>;
-        final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
-        
-        if (unreadCountData != null) {
-          final myUnread = (unreadCountData[role] as int?) ?? 0;
-          if (myUnread > 0) {
-            unreadCount++;
-          }
-        }
-      }
-
-      return unreadCount;
-    } catch (e) {
-      debugPrint('❌ Erro ao contar por role: $e');
-      return 0;
-    }
+        .map((event) =>
+            event.snapshot.exists ? (event.snapshot.value as Map).length : 0);
   }
 
   // ========================================
-  // STREAM DE CHATS NÃO LIDOS POR ROLE
+  // STREAM DE BADGES COMPLETO
   // ========================================
-  
-  static Stream<int> getUnreadCountByRoleStream(String userId, String role) {
-    final field = role == 'employee' ? 'employee' : 'contractor';
-    
-    return _database
-        .child('Chats')
-        .orderByChild(field)
-        .equalTo(userId)
-        .onValue
-        .asyncMap((event) async {
-      if (!event.snapshot.exists) {
-        return 0;
-      }
 
-      final chats = event.snapshot.value as Map<dynamic, dynamic>;
-      int unreadCount = 0;
-
-      for (var chatEntry in chats.entries) {
-        final chatData = chatEntry.value as Map<dynamic, dynamic>;
-        final unreadCountData = chatData['unreadCount'] as Map<dynamic, dynamic>?;
-        
-        if (unreadCountData != null) {
-          final myUnread = (unreadCountData[role] as int?) ?? 0;
-          if (myUnread > 0) {
-            unreadCount++;
-          }
-        }
-      }
-
-      return unreadCount;
-    });
-  }
-
-  // ========================================
-  // STREAM DE BADGES
-  // ========================================
-  
   static Stream<BadgeData> getBadgeStream(String userId) {
-    return _database
-        .child('badges/$userId')
-        .onValue
-        .map((event) {
+    return _database.child('badges/$userId').onValue.map((event) {
       if (!event.snapshot.exists) {
         return BadgeData(unreadChats: 0, unreadRequests: 0);
       }
@@ -558,10 +490,9 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
   }
 
   // ========================================
-  // STREAMS SIMPLIFICADOS (APENAS TRUE/FALSE)
+  // STREAMS SIMPLIFICADOS (TRUE/FALSE)
   // ========================================
-  
-  /// Retorna TRUE se tiver QUALQUER chat não lido
+
   static Stream<bool> hasUnreadChatsStream(String userId) {
     return _database
         .child('badges/$userId/unread_chats')
@@ -573,7 +504,6 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
     });
   }
 
-  /// Retorna TRUE se tiver QUALQUER request não lida
   static Stream<bool> hasUnreadRequestsStream(String userId) {
     return _database
         .child('badges/$userId/unread_requests')
@@ -588,7 +518,7 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
   // ========================================
   // GET BADGE ATUAL
   // ========================================
-  
+
   static Future<BadgeData> getCurrentBadge(String userId) async {
     try {
       final snapshot = await _database.child('badges/$userId').get();
@@ -611,20 +541,20 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
   // ========================================
   // CRIAR BADGE SE NÃO EXISTIR
   // ========================================
-  
+
   static Future<void> ensureBadgeExists(String userId) async {
     try {
       final snapshot = await _database.child('badges/$userId').get();
-      
+
       if (!snapshot.exists) {
         debugPrint('⚠️ Badge não existe para $userId, criando...');
-        
+
         await _database.child('badges/$userId').set({
           'unread_chats': 0,
           'unread_requests': 0,
           'updated_at': ServerValue.timestamp,
         });
-        
+
         debugPrint('✅ Badge criado');
       }
     } catch (e) {
@@ -635,7 +565,7 @@ static Stream<int> getUnreadMessagesCountByRoleStream(String userId, String role
   // ========================================
   // ZERAR BADGES
   // ========================================
-  
+
   static Future<void> clearAllBadges(String userId) async {
     try {
       await _database.child('badges/$userId').set({

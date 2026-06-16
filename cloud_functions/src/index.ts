@@ -1,8 +1,9 @@
 import * as admin from "firebase-admin";
+import * as crypto from "crypto";
 import { onValueCreated } from "firebase-functions/v2/database";
 import { onValueDeleted } from "firebase-functions/v2/database";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onRequest } from "firebase-functions/v2/https";
+import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
 
@@ -56,8 +57,6 @@ function _normalizeRequests(requests: any): string[] {
 
 // ============================================================
 // HELPER - BADGE ATÔMICO VIA TRANSACTION
-// Substitui o antigo recalculateChatBadge que fazia 3 reads
-// Agora usa transaction para increment/decrement (1 read + 1 write)
 // ============================================================
 
 async function adjustChatBadge(userId: string, delta: number) {
@@ -159,7 +158,6 @@ async function verifyAndFixBadge(
 
     let unreadChats = 0;
 
-    // Paralelizar as 2 queries de chats
     const [employeeChatsSnap, contractorChatsSnap] = await Promise.all([
       admin.database().ref("Chats")
         .orderByChild("employee").equalTo(userId).once("value"),
@@ -270,7 +268,11 @@ async function verifyMultipleUsers(
   };
 
   const entries = Object.entries(userRoles);
-  const CHUNK_SIZE = 10;
+
+  // ✅ N2-06: chunkSize 10 → 50 — mesma quantidade de reads, mas 5× menos
+  // iterações do loop, reduzindo o tempo de execução da Cloud Function e
+  // consequentemente o custo de compute (cobrado por ms de CPU).
+  const CHUNK_SIZE = 50;
 
   for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
     const chunk = entries.slice(i, i + CHUNK_SIZE);
@@ -320,7 +322,6 @@ async function verifyAllBadges(): Promise<BatchResult> {
   const badges = badgesSnap.val() as Record<string, any>;
   const userIds = Object.keys(badges);
 
-  // Buscar roles em chunks paralelos para reduzir reads sequenciais
   const CHUNK_SIZE = 20;
   const userRoles: Record<string, "worker" | "contractor"> = {};
 
@@ -345,8 +346,7 @@ async function verifyAllBadges(): Promise<BatchResult> {
 }
 
 // ============================================================
-// CLOUD FUNCTION - BADGE CLEANUP SEMANAL (ÚNICO)
-// Removido: manualBadgeCleanup (era duplicado desnecessário)
+// CLOUD FUNCTION - BADGE CLEANUP SEMANAL
 // ============================================================
 
 export const weeklyBadgeCleanup = onSchedule(
@@ -369,13 +369,11 @@ export const weeklyBadgeCleanup = onSchedule(
 
 // ============================================================
 // CLOUD FUNCTION - VERIFICAR BADGE INDIVIDUAL (HTTP)
-// Adicionado: autenticação via Firebase Auth token
 // ============================================================
 
 export const verifyUserBadge = onRequest(
   { region: "us-central1", cors: true },
   async (request, response) => {
-    // Verificar autenticação
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       response.status(401).send({ error: "Unauthorized - missing Bearer token" });
@@ -410,9 +408,6 @@ export const verifyUserBadge = onRequest(
 // HELPERS - PUSH NOTIFICATIONS
 // ============================================================
 
-// ✅ OTIMIZADO: busca apenas Name e avatar em vez do objeto User inteiro.
-// Antes: baixava data_worker, data_contractor, penalty_history, etc. (~2–5KB por chamada).
-// Chamada em toda mensagem enviada — redução de 70-80% de banda nessa função.
 async function getSenderInfo(userId: string) {
   try {
     const [nameSnap, avatarSnap] = await Promise.all([
@@ -553,13 +548,13 @@ async function sendPushNotification(
 
 // ============================================================
 // HELPER - LIMPAR CANDIDATURAS E BADGES
-// Otimizado: batch updates em vez de writes individuais
 // ============================================================
 
 async function cleanupCandidaturesBadges(userId: string, userRole: string) {
   const database = admin.database();
   const batchUpdates: Record<string, any> = {};
   let badgeDecrementCount = 0;
+  const ownerDecrementsMap: Record<string, number> = {};
 
   if (userRole === "worker") {
     const vacanciesSnap = await database.ref("vacancy")
@@ -578,6 +573,7 @@ async function cleanupCandidaturesBadges(userId: string, userRole: string) {
 
       if (requestViews[userId]?.viewed_by_owner === false && ownerId) {
         badgeDecrementCount++;
+        ownerDecrementsMap[ownerId] = (ownerDecrementsMap[ownerId] || 0) + 1;
       }
 
       const filteredRequests = requests.filter((id) => id !== userId);
@@ -602,6 +598,7 @@ async function cleanupCandidaturesBadges(userId: string, userRole: string) {
 
       if (requestViews[userId]?.viewed_by_owner === false && ownerId) {
         badgeDecrementCount++;
+        ownerDecrementsMap[ownerId] = (ownerDecrementsMap[ownerId] || 0) + 1;
       }
 
       const filteredRequests = requests.filter((id) => id !== userId);
@@ -611,36 +608,16 @@ async function cleanupCandidaturesBadges(userId: string, userRole: string) {
     }
   }
 
-  // Aplica todas as remoções de candidatura em 1 batch write
   if (Object.keys(batchUpdates).length > 0) {
     await database.ref().update(batchUpdates);
   }
 
-  // Decrementa badges dos owners afetados via transactions
-  // Coletamos os ownerIds com decrement necessário
   if (badgeDecrementCount > 0) {
-    // Re-iterar para pegar ownerIds que precisam de decrement
-    const nodeType = userRole === "worker" ? "vacancy" : "professionals";
-    const snap = await database.ref(nodeType)
-      .orderByChild("status").equalTo("active").once("value");
-
-    if (snap.exists()) {
-      const items = snap.val() as Record<string, any>;
-      const ownerDecrements: Record<string, number> = {};
-
-      for (const [_id, data] of Object.entries(items)) {
-        const requestViews = data.views?.request_views || {};
-        if (requestViews[userId]?.viewed_by_owner === false && data.local_id) {
-          ownerDecrements[data.local_id] = (ownerDecrements[data.local_id] || 0) + 1;
-        }
-      }
-
-      await Promise.all(
-        Object.entries(ownerDecrements).map(([ownerId, count]) =>
-          adjustRequestBadge(ownerId, -count),
-        ),
-      );
-    }
+    await Promise.all(
+      Object.entries(ownerDecrementsMap).map(([ownerId, count]) =>
+        adjustRequestBadge(ownerId, -count),
+      ),
+    );
   }
 
   logger.info(`Cleanup candidaturas: ${Object.keys(batchUpdates).length / 2} removidas, ` +
@@ -665,7 +642,6 @@ export const onUserDeleted = onValueDeleted(
       const beforeData = event.data.val() as any;
       const userRole = beforeData?.role || "worker";
 
-      // PASSO 1: Marca como deletado
       const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
       await admin.database().ref(`deleted_users/${userId}`).set({
         expires_at: expiresAt,
@@ -673,10 +649,7 @@ export const onUserDeleted = onValueDeleted(
         deleted_at: Date.now(),
       });
 
-      // PASSO 2: Limpa candidaturas e decrementa badges
       await cleanupCandidaturesBadges(userId, userRole);
-
-      // PASSO 3: Remove badge do usuario
       await admin.database().ref(`badges/${userId}`).remove();
 
       logger.info(`Processo de exclusao completo para ${userId}`);
@@ -726,8 +699,6 @@ export const cleanupDeletedUsers = onSchedule(
 
 // ============================================================
 // CLOUD FUNCTION - NOVA MENSAGEM NO CHAT
-// Otimizado: usa adjustChatBadge (transaction) em vez de
-// recalculateChatBadge (3 reads + 1 write)
 // ============================================================
 
 export const onChatMessageCreated = onValueCreated(
@@ -760,7 +731,6 @@ export const onChatMessageCreated = onValueCreated(
       const receiverRole =
         senderRole === "employee" ? "contractor" : "employee";
 
-      // Primeira mensagem do chat - sem notificacao
       const isFirstMessage =
         !metadata?.last_message || metadata.last_message === "";
 
@@ -770,17 +740,15 @@ export const onChatMessageCreated = onValueCreated(
         return;
       }
 
-      const isOnline = await isUserOnlineInChat(chatId, receiverRole);
+      // ✅ N3-04: dado já disponível no snapshot de Chats/{chatId} —
+      // elimina 1 read extra por mensagem enviada.
+      const isOnline = (chatData as any).participants?.[receiverRole] === "online";
       const previousUnread = chatData.unreadCount?.[receiverRole] || 0;
       const newUnreadCount = isOnline ? 0 : 1;
 
       await admin.database()
         .ref(`Chats/${chatId}/unreadCount/${receiverRole}`).set(newUnreadCount);
 
-      // Ajusta badge incrementalmente via transaction
-      // Se unread mudou de 0 -> 1: incrementa badge
-      // Se unread continua 1 -> 1: nao muda badge (ja contado)
-      // Se receiver esta online (1 -> 0 ou 0 -> 0): nao incrementa
       if (newUnreadCount === 1 && previousUnread === 0) {
         await adjustChatBadge(receiver, +1);
       } else if (newUnreadCount === 0 && previousUnread === 1) {
@@ -806,8 +774,6 @@ export const onChatMessageCreated = onValueCreated(
 
 // ============================================================
 // CLOUD FUNCTION - SOLICITACAO DE CHAT (PROFESSIONAL)
-// UNIFICADO: combina onProfessionalChatRequestCreated +
-// onProfessionalRequestViewCreated (que eram duplicados no mesmo path)
 // ============================================================
 
 export const onProfessionalChatRequestCreated = onValueCreated(
@@ -830,10 +796,8 @@ export const onProfessionalChatRequestCreated = onValueCreated(
       const ownerId = professionalData.local_id as string;
       if (!ownerId) return;
 
-      // 1. Incrementa badge via transaction
       await adjustRequestBadge(ownerId, +1);
 
-      // 2. Envia push notification
       const requesterName = requestData.contractor_name || "Alguem";
       const requesterAvatar = requestData.contractor_avatar || "";
 
@@ -851,7 +815,6 @@ export const onProfessionalChatRequestCreated = onValueCreated(
         requesterAvatar,
       );
 
-      // 3. Cria notificacao no historico (antes era trigger separado)
       const now = Date.now();
       const notificationRef = admin.database()
         .ref(`notification_history/${ownerId}`).push();
@@ -880,8 +843,6 @@ export const onProfessionalChatRequestCreated = onValueCreated(
 
 // ============================================================
 // CLOUD FUNCTION - SOLICITACAO DE CHAT (VACANCY)
-// UNIFICADO: combina onVacancyChatRequestCreated +
-// onVacancyRequestViewCreated (que eram duplicados no mesmo path)
 // ============================================================
 
 export const onVacancyChatRequestCreated = onValueCreated(
@@ -895,7 +856,6 @@ export const onVacancyChatRequestCreated = onValueCreated(
     const requestData = event.data.val() as any;
 
     try {
-      // Verificar se no ainda existe (protecao contra retry)
       const existingSnap = await admin.database()
         .ref(`vacancy/${vacancyId}/views/request_views/${requesterId}`)
         .once("value");
@@ -910,10 +870,8 @@ export const onVacancyChatRequestCreated = onValueCreated(
       const ownerId = vacancyData.local_id as string;
       if (!ownerId) return;
 
-      // 1. Incrementa badge via transaction
       await adjustRequestBadge(ownerId, +1);
 
-      // 2. Envia push notification
       const candidateName = requestData.worker_name || "Candidato";
       const candidateAvatar = requestData.worker_avatar || "";
 
@@ -931,7 +889,6 @@ export const onVacancyChatRequestCreated = onValueCreated(
         candidateAvatar,
       );
 
-      // 3. Cria notificacao no historico (antes era trigger separado)
       const now = Date.now();
       const notificationRef = admin.database()
         .ref(`notification_history/${ownerId}`).push();
@@ -998,8 +955,6 @@ export const onChatCreated = onValueCreated(
 
 // ============================================================
 // CLOUD FUNCTION - USUARIO BLOQUEADO
-// Otimizado: substituido ref("Chats").get() (full table scan)
-// por 2 queries indexadas + batch updates
 // ============================================================
 
 export const onUserBlocked = onValueCreated(
@@ -1020,7 +975,6 @@ export const onUserBlocked = onValueCreated(
 
       let blockedChatId: string | null = null;
 
-      // OTIMIZADO: 2 queries indexadas em vez de ref("Chats").get()
       const [asContractorSnap, asEmployeeSnap] = await Promise.all([
         admin.database().ref("Chats")
           .orderByChild("contractor").equalTo(blockerId).once("value"),
@@ -1028,7 +982,6 @@ export const onUserBlocked = onValueCreated(
           .orderByChild("employee").equalTo(blockerId).once("value"),
       ]);
 
-      // Procurar chat entre blockerId e blockedId
       const findChatBetween = (
         snapshot: admin.database.DataSnapshot,
         blockerField: string,
@@ -1058,7 +1011,6 @@ export const onUserBlocked = onValueCreated(
 
       await admin.database().ref().update(updates);
 
-      // Recalcula badge de chats para ambos (apenas se chat foi bloqueado)
       if (blockedChatId) {
         await Promise.all([
           recalculateChatBadge(blockerId),
@@ -1066,7 +1018,6 @@ export const onUserBlocked = onValueCreated(
         ]);
       }
 
-      // Helper reutilizavel: remove candidatura e acumula em batch
       const candidatureUpdates: Record<string, any> = {};
       const ownerDecrements: Record<string, number> = {};
 
@@ -1099,7 +1050,6 @@ export const onUserBlocked = onValueCreated(
         }
       }
 
-      // Executar as 4 verificacoes de candidaturas em paralelo (2+2)
       await Promise.all([
         collectCandidatureRemovals("vacancy", blockedId, blockerId),
         collectCandidatureRemovals("professionals", blockedId, blockerId),
@@ -1107,12 +1057,10 @@ export const onUserBlocked = onValueCreated(
         collectCandidatureRemovals("professionals", blockerId, blockedId),
       ]);
 
-      // Batch update de todas as candidaturas
       if (Object.keys(candidatureUpdates).length > 0) {
         await admin.database().ref().update(candidatureUpdates);
       }
 
-      // Decrementa badges dos owners afetados via transaction
       await Promise.all(
         Object.entries(ownerDecrements).map(([ownerId, count]) =>
           adjustRequestBadge(ownerId, -count),
@@ -1128,7 +1076,6 @@ export const onUserBlocked = onValueCreated(
 
 // ============================================================
 // CLOUD FUNCTION - LIMPAR NOTIFICACOES EXPIRADAS (diario)
-// Otimizado: batch delete em vez de deletes individuais
 // ============================================================
 
 export const cleanExpiredNotifications = onSchedule(
@@ -1171,13 +1118,11 @@ export const cleanExpiredNotifications = onSchedule(
 
 // ============================================================
 // CLOUD FUNCTION - MIGRACAO BLOCKED USERS (one-time HTTP)
-// Mantida com autenticacao adicionada
 // ============================================================
 
 export const migrateBlockedUsers = onRequest(
   { region: "us-central1", cors: true },
   async (req, res) => {
-    // Verificar autenticacao
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).send({ error: "Unauthorized" });
@@ -1256,8 +1201,6 @@ export const migrateBlockedUsers = onRequest(
 
 // ============================================================
 // CLOUD FUNCTION - VERIFICAR PERFIS EXPIRANDO
-// Otimizado: le apenas fcmToken em vez de User inteiro +
-// batch write para last_expiration_notification
 // ============================================================
 
 export const checkExpiringProfessionals = onSchedule(
@@ -1281,29 +1224,33 @@ export const checkExpiringProfessionals = onSchedule(
       let notificationsSent = 0;
       const batchUpdates: Record<string, any> = {};
 
-      for (const [professionalId, professionalData] of Object.entries(professionals)) {
+      const candidates = Object.entries(professionals).filter(([, data]) => {
+        if (!data.expires_at || !data.local_id) return false;
+        const ts = new Date(data.expires_at).getTime();
+        return ts >= minTime && ts <= maxTime;
+      });
+
+      if (candidates.length === 0) return;
+
+      const [lastNotifSnaps, tokenSnaps] = await Promise.all([
+        Promise.all(candidates.map(([id]) =>
+          admin.database().ref(`professionals/${id}/last_expiration_notification`).once("value")
+        )),
+        Promise.all(candidates.map(([, data]) =>
+          admin.database().ref(`Users/${data.local_id}/fcmToken`).once("value")
+        )),
+      ]);
+
+      for (let i = 0; i < candidates.length; i++) {
+        const [professionalId, professionalData] = candidates[i];
         try {
           const expiresAt = professionalData.expires_at;
-          if (!expiresAt) continue;
-
           const expirationTimestamp = new Date(expiresAt).getTime();
 
-          if (expirationTimestamp < minTime || expirationTimestamp > maxTime) continue;
-
-          const localId = professionalData.local_id;
-          if (!localId) continue;
-
-          const lastNotifiedSnap = await admin.database()
-            .ref(`professionals/${professionalId}/last_expiration_notification`)
-            .once("value");
-
-          const lastNotified = lastNotifiedSnap.val();
+          const lastNotified = lastNotifSnaps[i].val();
           if (lastNotified && now - lastNotified < 3 * 60 * 60 * 1000) continue;
 
-          // Ler apenas fcmToken em vez do User inteiro
-          const tokenSnap = await admin.database()
-            .ref(`Users/${localId}/fcmToken`).once("value");
-
+          const tokenSnap = tokenSnaps[i];
           if (!tokenSnap.exists()) continue;
 
           const fcmToken = tokenSnap.val() as string;
@@ -1313,10 +1260,6 @@ export const checkExpiringProfessionals = onSchedule(
           const minutesLeft = Math.floor(
             (timeLeft % (60 * 60 * 1000)) / (60 * 1000),
           );
-          const timeMessage =
-            hoursLeft > 0
-              ? `${hoursLeft}h ${minutesLeft}min`
-              : `${minutesLeft} minutos`;
 
           const message: admin.messaging.Message = {
             token: fcmToken,
@@ -1326,8 +1269,8 @@ export const checkExpiringProfessionals = onSchedule(
               expiresAt,
               hoursLeft: hoursLeft.toString(),
               minutesLeft: minutesLeft.toString(),
-              notificationTitle: "Seu perfil esta expirando!",
-              notificationBody: `Seu perfil profissional expira em ${timeMessage}. Renove agora para continuar visivel!`,
+              notificationTitle: "Seu perfil está sumindo do feed!",
+              notificationBody: `Seu perfil foi publicado há 2 dias e pode estar indo para o final da lista. Renove agora para voltar ao topo!`,
             },
             android: { priority: "high" },
             apns: {
@@ -1335,8 +1278,8 @@ export const checkExpiringProfessionals = onSchedule(
               payload: {
                 aps: {
                   alert: {
-                    title: "Seu perfil esta expirando!",
-                    body: `Seu perfil profissional expira em ${timeMessage}. Renove agora para continuar visivel!`,
+                    title: "Seu perfil está sumindo do feed!",
+                    body: `Seu perfil foi publicado há 2 dias e pode estar indo para o final da lista. Renove agora para voltar ao topo!`,
                   },
                   sound: "default",
                   badge: 1,
@@ -1347,7 +1290,6 @@ export const checkExpiringProfessionals = onSchedule(
 
           await admin.messaging().send(message);
 
-          // Acumula no batch em vez de escrever individualmente
           batchUpdates[
             `professionals/${professionalId}/last_expiration_notification`
           ] = now;
@@ -1368,7 +1310,6 @@ export const checkExpiringProfessionals = onSchedule(
         }
       }
 
-      // Batch write para todas as notificacoes de expiracao
       if (Object.keys(batchUpdates).length > 0) {
         await admin.database().ref().update(batchUpdates);
       }
@@ -1383,9 +1324,7 @@ export const checkExpiringProfessionals = onSchedule(
 );
 
 // ============================================================
-// EXPIRAÇÃO DE VAGAS E PERFIS — SERVER-SIDE (a cada 1 hora)
-// ✅ Substitui ExpirationService client-side que rodava no device.
-// Garante execução mesmo sem usuários ativos e elimina escritas duplicadas.
+// CLOUD FUNCTION — MARCAR VAGAS E PERFIS ANTIGOS (a cada 1 hora)
 // ============================================================
 
 export const expireVacanciesAndProfiles = onSchedule(
@@ -1398,10 +1337,9 @@ export const expireVacanciesAndProfiles = onSchedule(
     try {
       const now = new Date().toISOString();
       const batchUpdates: Record<string, any> = {};
-      let expiredVacancies = 0;
-      let expiredProfessionals = 0;
+      let markedVacancies = 0;
+      let markedProfessionals = 0;
 
-      // ── Expirar vagas abertas cujo expires_at já passou ──
       const vacanciesSnap = await admin.database()
         .ref("vacancy")
         .orderByChild("status")
@@ -1413,15 +1351,13 @@ export const expireVacanciesAndProfiles = onSchedule(
         for (const [id, data] of Object.entries(vacancies)) {
           const expiresAt = data.expires_at;
           if (!expiresAt) continue;
-          if (new Date(expiresAt).toISOString() <= now) {
-            batchUpdates[`vacancy/${id}/status`] = "Expirada";
-            batchUpdates[`vacancy/${id}/updated_at`] = now;
-            expiredVacancies++;
+          if (new Date(expiresAt).toISOString() <= now && !data.expired_at) {
+            batchUpdates[`vacancy/${id}/expired_at`] = now;
+            markedVacancies++;
           }
         }
       }
 
-      // ── Expirar perfis profissionais ativos cujo expires_at já passou ──
       const profSnap = await admin.database()
         .ref("professionals")
         .orderByChild("status")
@@ -1433,35 +1369,84 @@ export const expireVacanciesAndProfiles = onSchedule(
         for (const [id, data] of Object.entries(professionals)) {
           const expiresAt = data.expires_at;
           if (!expiresAt) continue;
-          if (new Date(expiresAt).toISOString() <= now) {
-            batchUpdates[`professionals/${id}/status`] = "expired";
-            batchUpdates[`professionals/${id}/updated_at`] = now;
-            if (data.local_id) {
-              batchUpdates[`Users/${data.local_id}/isActive`] = false;
-              batchUpdates[`Users/${data.local_id}/data_worker/activated`] = false;
-            }
-            expiredProfessionals++;
+          if (new Date(expiresAt).toISOString() <= now && !data.expired_at) {
+            batchUpdates[`professionals/${id}/expired_at`] = now;
+            markedProfessionals++;
           }
         }
       }
 
       if (Object.keys(batchUpdates).length > 0) {
         await admin.database().ref().update(batchUpdates);
-        logger.info(`Expiração: ${expiredVacancies} vagas, ${expiredProfessionals} perfis expirados.`);
+        logger.info(`Marcados como antigos: ${markedVacancies} vagas, ${markedProfessionals} perfis (sem remover do feed).`);
       }
     } catch (error) {
-      logger.error("Erro na expiração server-side:", error);
+      logger.error("Erro ao marcar itens antigos:", error);
     }
   },
 );
 
 // ============================================================
-// CLOUD FUNCTION — DELETE MEDIA ASSETS (Cloudinary + Firebase Storage)
+// CLOUD FUNCTION — MODERATE IMAGE (Vision API)
 //
-// ✅ SEGURANÇA: credenciais Cloudinary ficam apenas aqui, nunca no APK.
-// O client Flutter chama este endpoint com a lista de URLs.
-// A função identifica se é Cloudinary (res.cloudinary.com) ou
-// Firebase Storage (firebasestorage.googleapis.com) e deleta corretamente.
+// ✅ SEGURANÇA N1-03: chave da Vision API fica apenas aqui,
+// nunca no APK. Client Flutter chama este endpoint autenticado.
+// ============================================================
+
+export const moderateImage = onCall(
+  {
+    region: "us-central1",
+    secrets: ["VISION_API_KEY"],
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Login required");
+    }
+
+    const { imageBase64 } = request.data as { imageBase64: string };
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      throw new HttpsError("invalid-argument", "imageBase64 required");
+    }
+
+    const apiKey = process.env.VISION_API_KEY;
+    if (!apiKey) {
+      logger.error("VISION_API_KEY não configurada");
+      throw new HttpsError("internal", "Service misconfigured");
+    }
+
+    const visionUrl =
+      `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`;
+
+    const body = JSON.stringify({
+      requests: [
+        {
+          image: { content: imageBase64 },
+          features: [{ type: "SAFE_SEARCH_DETECTION", maxResults: 1 }],
+        },
+      ],
+    });
+
+    const res = await fetch(visionUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!res.ok) {
+      logger.error(`Vision API erro ${res.status}`);
+      throw new HttpsError("internal", `Vision API error: ${res.status}`);
+    }
+
+    const json = await res.json();
+    const safeSearch = json.responses?.[0]?.safeSearchAnnotation ?? null;
+
+    return { safeSearch };
+  },
+);
+
+// ============================================================
+// CLOUD FUNCTION — DELETE MEDIA ASSETS (Cloudinary + Firebase Storage)
 // ============================================================
 
 export const deleteMediaAssets = onRequest(
@@ -1472,10 +1457,8 @@ export const deleteMediaAssets = onRequest(
       return;
     }
 
-    // Verifica autenticação via Firebase ID token
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
-      // Aceita sem token para manter compatibilidade — mas loga o acesso
       logger.warn("deleteMediaAssets chamado sem token de autenticação");
     } else {
       try {
@@ -1502,7 +1485,6 @@ export const deleteMediaAssets = onRequest(
     for (const url of urls) {
       try {
         if (url.includes("res.cloudinary.com") || url.includes("api.cloudinary.com")) {
-          // ── Cloudinary delete ──────────────────────────────────────────
           const uri = new URL(url);
           const segments = uri.pathname.split("/").filter(Boolean);
           const uploadIndex = segments.indexOf("upload");
@@ -1516,7 +1498,6 @@ export const deleteMediaAssets = onRequest(
           const timestamp = Math.round(Date.now() / 1000);
           const toSign = `public_id=${publicId}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
 
-          const crypto = require("crypto");
           const signature = crypto.createHash("sha1").update(toSign).digest("hex");
 
           const formData = new URLSearchParams({
@@ -1533,7 +1514,6 @@ export const deleteMediaAssets = onRequest(
           results[url] = cfRes.ok ? "deleted:cloudinary" : `error:${cfRes.status}`;
 
         } else if (url.includes("firebasestorage.googleapis.com")) {
-          // ── Firebase Storage delete ────────────────────────────────────
           const decodedUrl = decodeURIComponent(url);
           const pathMatch = decodedUrl.match(/\/o\/(.+?)(\?|$)/);
           if (!pathMatch) {
@@ -1554,5 +1534,5 @@ export const deleteMediaAssets = onRequest(
     }
 
     response.json({ results });
-  }
+  },
 );

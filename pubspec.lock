@@ -185,6 +185,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.2"
+  cloud_functions:
+    dependency: "direct main"
+    description:
+      name: cloud_functions
+      sha256: b9ece944fc8c97ac0937cdf45e895f4670213c722ed819581e3d517b43413753
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.6.2"
+  cloud_functions_platform_interface:
+    dependency: transitive
+    description:
+      name: cloud_functions_platform_interface
+      sha256: "9720aa2ba715bfb1de6a131c70bbb0fa79329294ec1327fd24ce08004a080dcc"
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.8.2"
+  cloud_functions_web:
+    dependency: transitive
+    description:
+      name: cloud_functions_web
+      sha256: "7756b6a6cf16016dc4c8631c88b31b81156b129c40914a84021216a841c0b3d8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.11.5"
   code_assets:
     dependency: transitive
     description:
@@ -281,14 +305,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.3"
-  emailjs:
-    dependency: "direct main"
-    description:
-      name: emailjs
-      sha256: bca1cdde15b4413a754815a0a784e6907b2cab5f2d43b753ff492493f8be55c8
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.0.0"
   fake_async:
     dependency: transitive
     description:
@@ -840,14 +856,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.0"
-  mailer:
-    dependency: "direct main"
-    description:
-      name: mailer
-      sha256: c3b934c0e800ddc946167c0123a900eba5acd009abb73648d0191a742542f2b4
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.6.0"
   matcher:
     dependency: transitive
     description:
@@ -1120,62 +1128,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.28.0"
-  shared_preferences:
-    dependency: transitive
-    description:
-      name: shared_preferences
-      sha256: c3025c5534b01739267eb7d76959bbc25a6d10f6988e1c2a3036940133dd10bf
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.5.5"
-  shared_preferences_android:
-    dependency: transitive
-    description:
-      name: shared_preferences_android
-      sha256: e8d4762b1e2e8578fc4d0fd548cebf24afd24f49719c08974df92834565e2c53
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.23"
-  shared_preferences_foundation:
-    dependency: transitive
-    description:
-      name: shared_preferences_foundation
-      sha256: "4e7eaffc2b17ba398759f1151415869a34771ba11ebbccd1b0145472a619a64f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.5.6"
-  shared_preferences_linux:
-    dependency: transitive
-    description:
-      name: shared_preferences_linux
-      sha256: "580abfd40f415611503cae30adf626e6656dfb2f0cee8f465ece7b6defb40f2f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.1"
-  shared_preferences_platform_interface:
-    dependency: transitive
-    description:
-      name: shared_preferences_platform_interface
-      sha256: "649dc798a33931919ea356c4305c2d1f81619ea6e92244070b520187b5140ef9"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.2"
-  shared_preferences_web:
-    dependency: transitive
-    description:
-      name: shared_preferences_web
-      sha256: c49bd060261c9a3f0ff445892695d6212ff603ef3115edbb448509d407600019
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.3"
-  shared_preferences_windows:
-    dependency: transitive
-    description:
-      name: shared_preferences_windows
-      sha256: "94ef0f72b2d71bc3e700e025db3710911bd51a71cefb65cc609dd0d9a982e3c1"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.4.1"
   shelf:
     dependency: transitive
     description:

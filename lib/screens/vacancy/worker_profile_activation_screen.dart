@@ -43,32 +43,33 @@ const int _kSummaryMinLength = 40;
 // ─────────────────────────────────────────────────────────────────────────────
 // Mixin — detecta usuários deletados em tempo real
 // ─────────────────────────────────────────────────────────────────────────────
+// ✅ N1-05: Substituído listener onValue por leitura única .get().
+// deleted_users raramente muda — não precisa de listener em tempo real.
+// Elimina N conexões WebSocket simultâneas (1 por usuário com a tela aberta).
 mixin DeletedUserDetector<T extends StatefulWidget> on State<T> {
-  StreamSubscription? _deletedUsersSubscription;
   final Set<String> _deletedUsers = {};
 
-  void initDeletedUserDetector() {
-    _deletedUsersSubscription =
-        FirebaseDatabase.instance.ref('deleted_users').onValue.listen((event) {
-      if (event.snapshot.exists) {
-        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-        if (mounted) {
-          setState(() {
-            _deletedUsers.clear();
-            _deletedUsers.addAll(data.keys);
-          });
-        }
-      } else {
-        if (mounted) setState(() => _deletedUsers.clear());
+  Future<void> initDeletedUserDetector() async {
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('deleted_users')
+          .get();
+      if (snap.exists && snap.value != null && mounted) {
+        final data = Map<String, dynamic>.from(snap.value as Map);
+        setState(() {
+          _deletedUsers.clear();
+          _deletedUsers.addAll(data.keys);
+        });
       }
-    });
+    } catch (e) {
+      debugPrint('❌ Erro ao carregar deleted_users: \$e');
+    }
   }
 
   bool isUserDeleted(String uid) => _deletedUsers.contains(uid);
 
-  void disposeDeletedUserDetector() {
-    _deletedUsersSubscription?.cancel();
-  }
+  // Mantido para compatibilidade com chamadas existentes
+  void disposeDeletedUserDetector() {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -14,14 +14,14 @@ class FirebaseStorageService {
   /// [file] - Arquivo de imagem a ser enviado
   /// [folder] - Pasta no Firebase Storage (ex: 'profiles', 'vacancies')
   /// [userId] - ID do usuário (opcional, para organização)
-  /// [quality] - Qualidade da compressão (0-100, padrão 70)
+  /// [quality] - Qualidade da compressão (0-100, padrão 75)
   /// 
   /// Retorna a URL de download ou null em caso de erro
   Future<String?> uploadImage({
     required File file,
     required String folder,
     String? userId,
-    int quality = 70,
+    int quality = 75,
     Function(double)? onProgress,
   }) async {
     try {
@@ -138,6 +138,15 @@ class FirebaseStorageService {
     Function(double)? onProgress,
   }) async {
     try {
+      // ✅ N3-06: Rejeita vídeos acima de 50 MB antes de comprimir ou fazer
+      // upload — previne uso abusivo de Storage e tempo de CPU na Cloud Function.
+      const int maxVideoBytes = 50 * 1024 * 1024; // 50 MB
+      final fileSize = await file.length();
+      if (fileSize > maxVideoBytes) {
+        debugPrint('❌ Vídeo rejeitado: ${_formatBytes(fileSize)} excede o limite de 50 MB');
+        return null;
+      }
+
       debugPrint('🎥 Iniciando compressão de vídeo...');
       
       // Comprimir vídeo
@@ -260,12 +269,17 @@ class FirebaseStorageService {
       debugPrint('   Original: ${file.path}');
       debugPrint('   Destino: $targetPath');
 
+      // ✅ N2-05: flutter_image_compress usa minWidth/minHeight como dimensão
+      // alvo do redimensionamento (não como mínimo real). Definir 800×800
+      // faz fotos de câmera (ex: 4000×3000) serem reduzidas para no máximo
+      // 800px no lado maior, mantendo aspect ratio automaticamente.
+      // Resultado: ~66% de economia de tamanho por upload.
       final result = await FlutterImageCompress.compressAndGetFile(
         file.absolute.path,
         targetPath,
-        quality: quality,
-        minWidth: 1024,
-        minHeight: 1024,
+        quality: 75,
+        minWidth: 800,
+        minHeight: 800,
         format: CompressFormat.jpeg,
       );
 

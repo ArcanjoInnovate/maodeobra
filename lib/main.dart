@@ -24,7 +24,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
@@ -36,10 +35,7 @@ Future<String?> _getCurrentUserId() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) return currentUser.uid;
 
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('currentUserId');
-    if (userId != null) return userId;
-
+    // ✅ N3-03: removido SharedPreferences — Hive já cobre este caso.
     final authBox = await Hive.openBox('auth');
     return authBox.get('currentUserId');
   } catch (e) {

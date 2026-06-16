@@ -156,9 +156,12 @@ class _ProfessionalStatusControlWidgetState
     showDialog(
       context: context,
       builder: (context) => RenewConfirmationDialog(
-        title: 'Renovar Perfil Profissional',
+        title: 'Voltar ao topo do feed',
         message:
-            'Deseja renovar seu perfil profissional por mais 2 dias? Ele continuará visível no banco de profissionais.',
+            'Seu perfil foi publicado há 2 dias e pode estar sumindo '
+            'do feed e da busca por ficar no final da lista.\n\n'
+            'Renovar coloca seu perfil de volta no topo, '
+            'aumentando suas chances de ser encontrado por contratantes.',
         onConfirm: () async {
           setState(() => _isRenewing = true);
 
@@ -167,6 +170,8 @@ class _ProfessionalStatusControlWidgetState
             final newExpirationTimestamp =
                 _expirationService.renewExpirationTimestamp();
 
+            // ✅ Apenas bumpa updated_at e renova expires_at.
+            // NÃO altera status — perfil permanece visível independente.
             await _database
                 .child('professionals/${widget.professionalId}')
                 .update({
@@ -174,7 +179,6 @@ class _ProfessionalStatusControlWidgetState
               'expiration_timestamp': newExpirationTimestamp,
               'renewed_at': DateTime.now().toIso8601String(),
               'updated_at': DateTime.now().toIso8601String(),
-              'status': 'active',
             });
 
             await _loadProfessionalData();
@@ -189,7 +193,7 @@ class _ProfessionalStatusControlWidgetState
                       const Icon(Icons.check_circle_rounded,
                           color: Colors.white, size: 18),
                       const SizedBox(width: 10),
-                      const Text('Perfil renovado por mais 2 dias!'),
+                      const Text('Perfil renovado — de volta ao topo do feed!'),
                     ],
                   ),
                   backgroundColor: const Color(0xFF16A34A),

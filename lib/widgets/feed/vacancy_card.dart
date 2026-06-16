@@ -208,15 +208,19 @@ class _VacancyCardWithExpirationState
     showDialog(
       context: context,
       builder: (_) => RenewConfirmationDialog(
-        title: 'Renovar Vaga',
-        message: 'Deseja renovar esta vaga por mais 2 dias?',
+        title: 'Voltar ao topo do feed',
+        message:
+            'Sua vaga foi publicada há 2 dias e pode estar sumindo '
+            'do feed e da busca por ficar no final da lista.\n\n'
+            'Renovar coloca sua vaga de volta no topo, '
+            'aumentando as chances de ser vista por profissionais.',
         onConfirm: () async {
           setState(() => _isRenewing = true);
           final ok = await _vacancyService.renewVacancy(widget.vacancy['id']);
           if (mounted) {
             setState(() => _isRenewing = false);
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(ok ? 'Vaga renovada por mais 2 dias!' : 'Erro ao renovar'),
+              content: Text(ok ? 'Vaga renovada — de volta ao topo do feed!' : 'Erro ao renovar'),
               backgroundColor: ok ? const Color(0xFF059669) : const Color(0xFFDC2626),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

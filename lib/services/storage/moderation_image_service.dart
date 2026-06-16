@@ -1,12 +1,13 @@
 // image_moderation_service.dart
 //
 // ✅ OTIMIZADO: Cache de resultados + timeout reduzido + feedback visual melhor
+// ✅ N1-03 CORRIGIDO: API Key removida do APK — chamada via Cloud Function autenticada
 
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESULTADO DA MODERAÇÃO
@@ -75,9 +76,8 @@ class _ModerationCache {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ImageModerationService {
-  static const String _apiKey = 'AIzaSyDeoq1DDYc4ZqTrNM2zUCxoA9bUq7cYgo8';
-  static const String _visionUrl =
-      'https://vision.googleapis.com/v1/images:annotate?key=$_apiKey';
+  // ✅ N1-03: _apiKey e _visionUrl removidos. Chamada feita via Cloud Function
+  // autenticada (moderateImage), que mantém a chave como secret no servidor.
 
   static const _likelihoodOrder = [
     'UNKNOWN',
@@ -94,7 +94,7 @@ class ImageModerationService {
     return li >= ti && li >= 0 && ti >= 0;
   }
 
-  // ✅ TIMEOUT REDUZIDO: 8 segundos (antes era 15)
+  // ✅ Timeout de 10s (inclui cold start da Cloud Function)
   static Future<ModerationResult> checkImage(File file) async {
     // ✅ Verifica cache primeiro
     final cachedResult = _ModerationCache.get(file);
@@ -107,40 +107,19 @@ class ImageModerationService {
       final bytes = await file.readAsBytes();
       final base64Image = base64Encode(bytes);
 
-      final body = jsonEncode({
-        'requests': [
-          {
-            'image': {'content': base64Image},
-            'features': [
-              {'type': 'SAFE_SEARCH_DETECTION', 'maxResults': 1},
-            ],
-          }
-        ]
-      });
+      // ✅ N1-03: chama Cloud Function autenticada em vez da Vision API diretamente
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'moderateImage',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 10)),
+      );
 
-      // ✅ Timeout reduzido para 8 segundos
-      final response = await http
-          .post(
-            Uri.parse(_visionUrl),
-            headers: {'Content-Type': 'application/json'},
-            body: body,
-          )
-          .timeout(const Duration(seconds: 8));
+      final response = await callable.call({'imageBase64': base64Image});
 
-      if (response.statusCode != 200) {
-        debugPrint('Vision API erro ${response.statusCode}: ${response.body}');
-        final result = const ModerationResult(
-          status: ModerationStatus.error,
-          reason: 'api_error',
-          userMessage:
-              'Não foi possível verificar a imagem agora. Tente novamente.',
-        );
-        return result;
-      }
-
-      final json = jsonDecode(response.body);
-      final safeSearch = json['responses']?[0]?['safeSearchAnnotation']
-          as Map<String, dynamic>?;
+      final rawData = Map<String, dynamic>.from(response.data as Map);
+      final rawSafeSearch = rawData['safeSearch'];
+      final safeSearch = rawSafeSearch != null
+          ? Map<String, dynamic>.from(rawSafeSearch as Map)
+          : null;
 
       if (safeSearch == null) {
         const result = ModerationResult(status: ModerationStatus.approved);
@@ -204,6 +183,17 @@ class ImageModerationService {
       );
     } catch (e) {
       debugPrint('Erro na moderação: $e');
+
+      // Trata erros da Cloud Function (unauthenticated, internal, etc.)
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('unauthenticated')) {
+        return const ModerationResult(
+          status: ModerationStatus.error,
+          reason: 'unauthenticated',
+          userMessage: 'Faça login para enviar imagens.',
+        );
+      }
+
       return const ModerationResult(
         status: ModerationStatus.error,
         reason: 'unknown',
@@ -517,20 +507,20 @@ Future<bool> checkAndShowModerationDialog(
   VoidCallback? onCheckEnd,
 }) async {
   onCheckStart?.call();
-  
+
   // ✅ Mostra dialog otimizado com feedback visual melhor
   final result = await showDialog<ModerationResult>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => _OptimizedLoadingDialog(imageFile: imageFile),
   );
-  
+
   onCheckEnd?.call();
 
   if (!context.mounted) return false;
-  
+
   if (result == null) return false;
-  
+
   return ModerationDialog.show(context, result);
 }
 
@@ -541,7 +531,8 @@ class _OptimizedLoadingDialog extends StatefulWidget {
   const _OptimizedLoadingDialog({required this.imageFile});
 
   @override
-  State<_OptimizedLoadingDialog> createState() => _OptimizedLoadingDialogState();
+  State<_OptimizedLoadingDialog> createState() =>
+      _OptimizedLoadingDialogState();
 }
 
 class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
@@ -557,14 +548,14 @@ class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
   Future<void> _checkImage() async {
     setState(() => _status = 'Preparando análise...');
     await Future.delayed(const Duration(milliseconds: 300));
-    
+
     setState(() {
       _status = 'Analisando conteúdo...';
       _analyzing = true;
     });
-    
+
     final result = await ImageModerationService.checkImage(widget.imageFile);
-    
+
     if (mounted) {
       Navigator.pop(context, result);
     }
@@ -595,7 +586,9 @@ class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _analyzing ? Icons.shield_outlined : Icons.hourglass_empty,
+                      _analyzing
+                          ? Icons.shield_outlined
+                          : Icons.hourglass_empty,
                       size: 32,
                       color: const Color(0xFFFF6B35),
                     ),
@@ -603,23 +596,23 @@ class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
                 );
               },
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // ✅ Indicador de progresso menor e mais elegante
-            SizedBox(
+            const SizedBox(
               width: 40,
               height: 40,
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: const AlwaysStoppedAnimation<Color>(
+                valueColor: AlwaysStoppedAnimation<Color>(
                   Color(0xFFFF6B35),
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             // Status
             Text(
               _status,
@@ -630,14 +623,14 @@ class _OptimizedLoadingDialogState extends State<_OptimizedLoadingDialog> {
               ),
               textAlign: TextAlign.center,
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             // Mensagem de contexto
             Text(
-              _analyzing 
-                ? 'Verificando segurança do conteúdo'
-                : 'Aguarde um momento',
+              _analyzing
+                  ? 'Verificando segurança do conteúdo'
+                  : 'Aguarde um momento',
               style: TextStyle(
                 fontSize: 13,
                 color: Colors.grey.shade600,

@@ -275,25 +275,28 @@ class _ContractorProfileViewState extends State<ContractorProfileView> {
         return;
       }
 
-      // Verificar se já existe chat
-      final chatsSnapshot = await _database.child('Chats').get();
+      // ✅ Query indexada — baixa apenas os chats do contractor (sem full scan)
+      final contractorSnap = await _database
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(widget.myUserId)
+          .get();
 
-      if (chatsSnapshot.exists && chatsSnapshot.value != null) {
-        final chatsData = _safeMapConvert(chatsSnapshot.value);
-        bool chatExists = false;
-
-        for (final chatEntry in chatsData.entries) {
-          final chatData = chatEntry.value is Map
-              ? _safeMapConvert(chatEntry.value)
+      bool chatExists = false;
+      if (contractorSnap.exists && contractorSnap.value != null) {
+        final chatsData = _safeMapConvert(contractorSnap.value);
+        for (final entry in chatsData.entries) {
+          final chatData = entry.value is Map
+              ? _safeMapConvert(entry.value)
               : <String, dynamic>{};
-          if (chatData['contractor']?.toString() == widget.myUserId &&
-              chatData['employee']?.toString() == employeeUid) {
+          if (chatData['employee']?.toString() == employeeUid) {
             chatExists = true;
             break;
           }
         }
+      }
 
-        if (chatExists) {
+      if (chatExists) {
           await _rejectCandidate();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -314,7 +317,6 @@ class _ContractorProfileViewState extends State<ContractorProfileView> {
             ));
           }
           return;
-        }
       }
 
       // Criar novo chat

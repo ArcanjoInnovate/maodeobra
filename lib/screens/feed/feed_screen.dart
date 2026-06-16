@@ -227,9 +227,9 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
     final state = widget.userState.toLowerCase().trim();
 
     final vacancies = controller.filteredVacancies.where((v) {
-      if (v.status.toLowerCase() == 'expirada') return false;
-      if (v.expiresAt.isNotEmpty && ExpirationService().isExpired(v.expiresAt))
-        return false;
+      // ✅ Vagas pausadas são ocultadas no feed público.
+      // Vagas com expires_at vencido permanecem — o dono é avisado para renovar.
+      if (v.status.toLowerCase() == 'pausada') return false;
       switch (_locationFilter) {
         case LocationFilter.sameCity:
           return v.city.toLowerCase().trim() == city;
@@ -245,10 +245,7 @@ class _FeedScreenState extends State<FeedScreen> with TickerProviderStateMixin {
         return aDate.compareTo(bDate);
       });
     final professionals = controller.filteredProfessionals.where((p) {
-      if (p.status.toLowerCase() == 'expired' ||
-          p.status.toLowerCase() == 'expirada') return false;
-      if (p.expiresAt.isNotEmpty && ExpirationService().isExpired(p.expiresAt))
-        return false;
+      // ✅ Perfis permanecem no feed independente do expires_at.
       switch (_locationFilter) {
         case LocationFilter.sameCity:
           return p.city.toLowerCase().trim() == city;

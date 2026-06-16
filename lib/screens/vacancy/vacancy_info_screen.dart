@@ -375,23 +375,28 @@ class _InfoVacancyState extends State<InfoVacancy>
         return;
       }
 
-      final chatsSnapshot = await _database.child('Chats').get();
+      // ✅ Query indexada — baixa apenas os chats do contractor (sem full scan)
+      final contractorSnap = await _database
+          .child('Chats')
+          .orderByChild('contractor')
+          .equalTo(widget.localId)
+          .get();
 
-      if (chatsSnapshot.exists && chatsSnapshot.value != null) {
-        final chatsData = _safeMapConvert(chatsSnapshot.value);
-        bool chatExists = false;
-        for (final chatEntry in chatsData.entries) {
-          final chatData = chatEntry.value is Map
-              ? _safeMapConvert(chatEntry.value)
+      bool chatExists = false;
+      if (contractorSnap.exists && contractorSnap.value != null) {
+        final chatsData = _safeMapConvert(contractorSnap.value);
+        for (final entry in chatsData.entries) {
+          final chatData = entry.value is Map
+              ? _safeMapConvert(entry.value)
               : <String, dynamic>{};
-          if (chatData['contractor']?.toString() == widget.localId &&
-              chatData['employee']?.toString() == employeeUid) {
+          if (chatData['employee']?.toString() == employeeUid) {
             chatExists = true;
             break;
           }
         }
+      }
 
-        if (chatExists) {
+      if (chatExists) {
           await _rejectCandidate(employeeUid);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -412,7 +417,6 @@ class _InfoVacancyState extends State<InfoVacancy>
             ));
           }
           return;
-        }
       }
 
       final DatabaseReference chatRef = _database.child('Chats').push();
@@ -539,15 +543,18 @@ class _InfoVacancyState extends State<InfoVacancy>
               color: const Color(0xFF16A34A).withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.refresh_rounded,
+            child: const Icon(Icons.trending_up_rounded,
                 color: Color(0xFF16A34A), size: 20),
           ),
           const SizedBox(width: 12),
-          const Text('Renovar Vaga',
+          const Text('Voltar ao topo do feed',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ]),
         content: const Text(
-          'Deseja renovar esta vaga por mais 2 dias?\nEla continuará visível para candidatos.',
+          'Sua vaga foi publicada há 2 dias e pode estar sumindo do feed '
+          'e da busca por ficar no final da lista.\n\n'
+          'Renovar coloca ela de volta no topo, aumentando '
+          'as chances de ser vista por profissionais.',
           style: TextStyle(fontSize: 14, height: 1.5),
         ),
         actions: [
@@ -565,7 +572,7 @@ class _InfoVacancyState extends State<InfoVacancy>
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text('Renovar',
+            child: const Text('Renovar e ir ao topo',
                 style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
@@ -578,15 +585,13 @@ class _InfoVacancyState extends State<InfoVacancy>
       setState(() => _isRenewing = false);
       if (success) {
         await _loadExpirationInfo();
-        if (_currentStatus.toLowerCase() == 'expirada') {
-          setState(() => _currentStatus = 'Aberta');
-        }
+        // ✅ Não força mudança de status — vaga nunca saiu do feed
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Row(children: [
-            const Icon(Icons.check_circle_rounded,
+          content: const Row(children: [
+            Icon(Icons.check_circle_rounded,
                 color: Colors.white, size: 18),
-            const SizedBox(width: 10),
-            Text('Vaga renovada! Válida por mais $_daysLeft dias.'),
+            SizedBox(width: 10),
+            Text('Vaga renovada — de volta ao topo do feed!'),
           ]),
           backgroundColor: const Color(0xFF16A34A),
           behavior: SnackBarBehavior.floating,

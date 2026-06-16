@@ -3,8 +3,6 @@ import 'package:dartobra_new/models/search/professional_model.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/search/vacancy_model.dart';
-
-
 import 'package:dartobra_new/services/expiration/expiration_service.dart';
 
 class FirebaseSearchServiceServerPaginated {
@@ -12,6 +10,9 @@ class FirebaseSearchServiceServerPaginated {
   final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
   final ExpirationService _expirationService = ExpirationService();
 
+  // ===============================
+  // BUSCAR VAGAS COM PAGINACAO
+  // ===============================
   Future<PaginatedResult<VacancyModel>> fetchVacanciesPaginated({
     required Set<String> blockedUserIds,
     int limit = 20,
@@ -20,22 +21,22 @@ class FirebaseSearchServiceServerPaginated {
   }) async {
     try {
       final startTime = DateTime.now();
-      int readsEstimated = 0;
 
-      // ✅ Server-side filter: busca apenas vagas 'Aberta' — sem multiplicador
+      // ✅ Busca por updated_at para trazer as mais recentes primeiro
+      // Sem .equalTo('Aberta') — vagas renovadas voltam ao topo independente do status gravado
       Query query = _database
           .child('vacancy')
-          .orderByChild('status')
-          .equalTo('Aberta');
+          .orderByChild('updated_at');
 
       if (endAtValue != null) {
         query = query.endBefore(endAtValue);
       }
 
-      query = query.limitToLast(limit);
+      // Busca com margem para absorver filtros client-side
+      query = query.limitToLast((limit * 2).ceil());
 
       final snapshot = await query.get();
-      readsEstimated = snapshot.exists ? snapshot.children.length : 0;
+      final readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
         debugPrint('Nenhuma vaga encontrada');
@@ -44,17 +45,19 @@ class FirebaseSearchServiceServerPaginated {
       }
 
       final data = snapshot.value as Map<dynamic, dynamic>;
+
+      // Ordena por updated_at desc (mais recente primeiro)
       final sortedEntries = data.entries.toList()
         ..sort((a, b) {
-          final aCreated = a.value['created_at'] ?? '';
-          final bCreated = b.value['created_at'] ?? '';
-          return bCreated.compareTo(aCreated);
+          final aVal = a.value['updated_at'] ?? a.value['created_at'] ?? '';
+          final bVal = b.value['updated_at'] ?? b.value['created_at'] ?? '';
+          return bVal.compareTo(aVal);
         });
 
       final vacancies = <VacancyModel>[];
       String? newLastKey;
       dynamic newLastValue;
-      
+
       for (var entry in sortedEntries) {
         if (vacancies.length >= limit) break;
 
@@ -65,41 +68,41 @@ class FirebaseSearchServiceServerPaginated {
 
         try {
           final vacancy = VacancyModel.fromJson(key, value);
-          
-          // FILTRO 1: Status deve ser "aberta"
+
+          // FILTRO 1: Status deve ser "aberta" (exclui pausadas, encerradas)
           final status = vacancy.status.toLowerCase();
           if (status != 'aberta' && status != 'open') {
-            continue;
-          }
-          
-          // FILTRO 2: NAO EXPIRADA
-          final expiresAt = vacancy.expiresAt;
-          if (expiresAt.isNotEmpty && _expirationService.isExpired(expiresAt)) {
-            debugPrint('  Vaga $key EXCLUIDA NO SERVIDOR - expirada: $expiresAt');
-            continue;
-          }
-          
-          if (blockedUserIds.isNotEmpty &&
-              vacancy.localId.isNotEmpty &&
-              blockedUserIds.contains(vacancy.localId)) {
-            debugPrint('  Excluindo vaga ${vacancy.id} - dono bloqueado: ${vacancy.localId}');
+            debugPrint('  Vaga $key excluída — status: $status');
             continue;
           }
 
-          // PASSOU EM TODOS OS FILTROS!
+          // FILTRO 2: Não expirada pelo campo expires_at
+          final expiresAt = vacancy.expiresAt;
+          if (expiresAt.isNotEmpty && _expirationService.isExpired(expiresAt)) {
+            debugPrint('  Vaga $key excluída — expirada: $expiresAt');
+            continue;
+          }
+
+          // FILTRO 3: Dono não bloqueado
+          if (blockedUserIds.isNotEmpty &&
+              vacancy.localId.isNotEmpty &&
+              blockedUserIds.contains(vacancy.localId)) {
+            debugPrint('  Vaga $key excluída — dono bloqueado: ${vacancy.localId}');
+            continue;
+          }
+
           vacancies.add(vacancy);
           newLastKey = key;
-          newLastValue = value['created_at'];
-          
+          newLastValue = value['updated_at'] ?? value['created_at'];
         } catch (e) {
           debugPrint('Erro ao parsear vaga $key: $e');
         }
       }
 
-      final hasMore = sortedEntries.length >= limit && vacancies.length >= limit;
+      final hasMore = sortedEntries.length >= (limit * 2) && vacancies.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
-      debugPrint('${vacancies.length} vagas validas retornadas (de $readsEstimated lidas)');
+      debugPrint('${vacancies.length} vagas válidas retornadas (de $readsEstimated lidas)');
 
       return PaginatedResult(
         items: vacancies,
@@ -107,7 +110,6 @@ class FirebaseSearchServiceServerPaginated {
         lastKey: newLastKey,
         lastValue: newLastValue,
       );
-
     } catch (e, stack) {
       debugPrint('Erro ao buscar vagas: $e');
       debugPrint('Stack: $stack');
@@ -125,49 +127,42 @@ class FirebaseSearchServiceServerPaginated {
     dynamic endAtValue,
   }) async {
     try {
-      
       final startTime = DateTime.now();
-      int readsEstimated = 0;
 
-      // ✅ Server-side filter: busca apenas profissionais 'active' — sem multiplicador
+      // ✅ Busca por updated_at — sem .equalTo('active')
+      // Profissionais renovados (bump no updated_at) voltam ao topo independente do status gravado
       Query query = _database
           .child('professionals')
-          .orderByChild('status')
-          .equalTo('active');
+          .orderByChild('updated_at');
 
       if (endAtValue != null) {
         query = query.endBefore(endAtValue);
       }
 
-      query = query.limitToLast(limit);
+      query = query.limitToLast((limit * 2).ceil());
 
       final snapshot = await query.get();
-      readsEstimated = snapshot.exists ? snapshot.children.length : 0;
+      final readsEstimated = snapshot.exists ? snapshot.children.length : 0;
 
       if (!snapshot.exists) {
         debugPrint('Nenhum profissional encontrado');
         _printReadStats(startTime, readsEstimated);
-        return PaginatedResult(
-          items: [],
-          hasMore: false,
-          lastKey: null,
-          lastValue: null,
-        );
+        return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
       }
 
       final data = snapshot.value as Map<dynamic, dynamic>;
-      
+
       final sortedEntries = data.entries.toList()
         ..sort((a, b) {
-          final aUpdated = a.value['updated_at'] ?? '';
-          final bUpdated = b.value['updated_at'] ?? '';
-          return bUpdated.compareTo(aUpdated);
+          final aVal = a.value['updated_at'] ?? a.value['created_at'] ?? '';
+          final bVal = b.value['updated_at'] ?? b.value['created_at'] ?? '';
+          return bVal.compareTo(aVal);
         });
 
       final professionals = <ProfessionalModel>[];
       String? newLastKey;
       dynamic newLastValue;
-      
+
       for (var entry in sortedEntries) {
         if (professionals.length >= limit) break;
 
@@ -178,38 +173,35 @@ class FirebaseSearchServiceServerPaginated {
 
         try {
           final prof = ProfessionalModel.fromJson(key, value);
-          
-          // FILTRO 1: Apenas profissionais "ativos" (exclui 'paused')
+
+          // FILTRO 1: Apenas ativos (exclui 'paused' e outros status indesejados)
+          // 'expired' foi migrado para 'active' — não deve mais existir no banco
           final status = prof.status.toLowerCase();
-          if (status != 'active' && status != 'ativo') {
-            debugPrint('  Excluindo profissional ${prof.id} - status: $status');
-            continue;
-          }
-          
-          if (blockedUserIds.isNotEmpty &&
-              prof.localId.isNotEmpty &&
-              blockedUserIds.contains(prof.localId)) {
-            debugPrint('  Excluindo profissional ${prof.id} - bloqueado: ${prof.localId}');
+          if (status == 'paused' || status == 'inactive' || status == 'deleted') {
+            debugPrint('  Profissional $key excluído — status: $status');
             continue;
           }
 
-          // PASSOU!
+          // FILTRO 2: Dono não bloqueado
+          if (blockedUserIds.isNotEmpty &&
+              prof.localId.isNotEmpty &&
+              blockedUserIds.contains(prof.localId)) {
+            debugPrint('  Profissional $key excluído — bloqueado: ${prof.localId}');
+            continue;
+          }
+
           professionals.add(prof);
           newLastKey = key;
           newLastValue = value['updated_at'];
-          
         } catch (e) {
           debugPrint('Erro ao parsear profissional $key: $e');
         }
       }
 
-      const hasMore = false; // com server-side filter, sem cursor confiável aqui
+      final hasMore = sortedEntries.length >= (limit * 2) && professionals.length >= limit;
 
       _printReadStats(startTime, readsEstimated);
       debugPrint('${professionals.length} profissionais retornados (de $readsEstimated lidos)');
-      debugPrint('Taxa aprovacao: ${(professionals.length / readsEstimated * 100).toStringAsFixed(1)}%');
-      debugPrint('Tem mais: $hasMore');
-      debugPrint('========================================\n');
 
       return PaginatedResult(
         items: professionals,
@@ -217,15 +209,10 @@ class FirebaseSearchServiceServerPaginated {
         lastKey: newLastKey,
         lastValue: newLastValue,
       );
-
     } catch (e, stack) {
       debugPrint('Erro ao buscar profissionais: $e');
-      return PaginatedResult(
-        items: [],
-        hasMore: false,
-        lastKey: null,
-        lastValue: null,
-      );
+      debugPrint('Stack: $stack');
+      return PaginatedResult(items: [], hasMore: false, lastKey: null, lastValue: null);
     }
   }
 
@@ -254,7 +241,7 @@ class FirebaseSearchServiceServerPaginated {
         return ids;
       }
 
-      // Fallback: varre apenas vagas abertas (raro — só se user_requests estiver vazio)
+      // Fallback: varre vagas abertas (raro — só se user_requests estiver vazio)
       final snapshot = await _database
           .child('vacancy')
           .orderByChild('status')
@@ -307,7 +294,7 @@ class FirebaseSearchServiceServerPaginated {
         return ids;
       }
 
-      // Fallback: varre apenas profissionais ativos
+      // Fallback
       final snapshot = await _database
           .child('professionals')
           .orderByChild('status')
@@ -334,7 +321,6 @@ class FirebaseSearchServiceServerPaginated {
       });
 
       return requestedProfessionals;
-
     } catch (e) {
       debugPrint('Erro ao buscar requests de profissionais: $e');
       return {};
@@ -347,11 +333,9 @@ class FirebaseSearchServiceServerPaginated {
   Future<bool> requestProfessionalChat(String professionalId) async {
     try {
       if (_currentUserId == null) {
-        debugPrint('Usuario nao autenticado');
+        debugPrint('Usuário não autenticado');
         return false;
       }
-
-      debugPrint('Solicitando chat com profissional: $professionalId');
 
       final requestsRef = _database
           .child('professionals')
@@ -360,27 +344,23 @@ class FirebaseSearchServiceServerPaginated {
 
       final result = await requestsRef.runTransaction((currentValue) {
         List<dynamic> requestsList = [];
-
         if (currentValue is List) {
           requestsList = List.from(currentValue);
         }
-
         if (requestsList.contains(_currentUserId)) {
           return Transaction.abort();
         }
-
         requestsList.add(_currentUserId);
         return Transaction.success(requestsList);
       });
 
       if (result.committed) {
-        debugPrint('Solicitacao enviada com sucesso');
+        debugPrint('Solicitação enviada com sucesso');
         return true;
       } else {
-        debugPrint('Solicitacao ja existe');
+        debugPrint('Solicitação já existe');
         return false;
       }
-
     } catch (e) {
       debugPrint('Erro ao solicitar chat: $e');
       return false;
@@ -390,11 +370,9 @@ class FirebaseSearchServiceServerPaginated {
   Future<bool> requestVacancyChat(String vacancyId) async {
     try {
       if (_currentUserId == null) {
-        debugPrint('Usuario nao autenticado');
+        debugPrint('Usuário não autenticado');
         return false;
       }
-
-      debugPrint('Candidatando-se a vaga: $vacancyId');
 
       final requestsRef = _database
           .child('vacancy')
@@ -403,15 +381,12 @@ class FirebaseSearchServiceServerPaginated {
 
       final result = await requestsRef.runTransaction((currentValue) {
         List<dynamic> requestsList = [];
-
         if (currentValue is List) {
           requestsList = List.from(currentValue);
         }
-
         if (requestsList.contains(_currentUserId)) {
           return Transaction.abort();
         }
-
         requestsList.add(_currentUserId);
         return Transaction.success(requestsList);
       });
@@ -420,10 +395,9 @@ class FirebaseSearchServiceServerPaginated {
         debugPrint('Candidatura enviada com sucesso');
         return true;
       } else {
-        debugPrint('Candidatura ja existe');
+        debugPrint('Candidatura já existe');
         return false;
       }
-
     } catch (e) {
       debugPrint('Erro ao candidatar: $e');
       return false;
@@ -444,12 +418,8 @@ class FirebaseSearchServiceServerPaginated {
       if (!snapshot.exists) return false;
 
       final requests = snapshot.value;
-
-      if (requests is List) {
-        return requests.contains(_currentUserId);
-      } else if (requests is Map) {
-        return requests.containsKey(_currentUserId);
-      }
+      if (requests is List) return requests.contains(_currentUserId);
+      if (requests is Map) return requests.containsKey(_currentUserId);
 
       return false;
     } catch (e) {
@@ -469,12 +439,8 @@ class FirebaseSearchServiceServerPaginated {
       if (!snapshot.exists) return false;
 
       final requests = snapshot.value;
-
-      if (requests is List) {
-        return requests.contains(_currentUserId);
-      } else if (requests is Map) {
-        return requests.containsKey(_currentUserId);
-      }
+      if (requests is List) return requests.contains(_currentUserId);
+      if (requests is Map) return requests.containsKey(_currentUserId);
 
       return false;
     } catch (e) {
@@ -486,16 +452,15 @@ class FirebaseSearchServiceServerPaginated {
   // ===============================
   // HELPERS PRIVADOS
   // ===============================
-
   void _printReadStats(DateTime startTime, int reads) {
     final duration = DateTime.now().difference(startTime);
     final cost = reads * 0.00036;
-    
-    debugPrint('Estatisticas:');
+
+    debugPrint('Estatísticas:');
     debugPrint('   Tempo: ${duration.inMilliseconds}ms');
     debugPrint('   Reads: $reads');
     debugPrint('   Custo: \$${cost.toStringAsFixed(6)}');
-    
+
     if (reads > 50) {
       debugPrint('   ALERTA: Muitos reads! Considere mais filtros server-side');
     }

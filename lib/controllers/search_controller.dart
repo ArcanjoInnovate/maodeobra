@@ -388,7 +388,7 @@ class SearchController extends ChangeNotifier {
       if (_requestsLoaded && _requestedProfessionalIds.contains(prof.localId)) {
         return false;
       }
-      if (prof.status.toLowerCase() == 'expired') return false;
+      // ✅ Perfis permanecem no search independente do expires_at
       if (!_matchesProfessional(prof, _searchQuery)) return false;
       if (_selectedState != null &&
           _selectedState!.isNotEmpty &&
@@ -413,10 +413,8 @@ class SearchController extends ChangeNotifier {
       if (_requestsLoaded && _requestedVacancyIds.contains(vac.id)) {
         return false;
       }
-      final statusLower = vac.status.toLowerCase();
-      if (statusLower == 'expirada' || statusLower == 'pausada') return false;
-      if (vac.expiresAt.isNotEmpty &&
-          _expirationService.isExpired(vac.expiresAt)) return false;
+      // ✅ Vagas pausadas são ocultadas, mas expiradas permanecem no search.
+      if (vac.status.toLowerCase() == 'pausada') return false;
       if (!_matchesVacancy(vac, _searchQuery)) return false;
       if (_selectedState != null &&
           _selectedState!.isNotEmpty &&

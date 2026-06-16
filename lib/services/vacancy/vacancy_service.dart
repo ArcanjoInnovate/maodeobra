@@ -366,7 +366,9 @@ class VacancyService {
   }
 
   // ════════════════════════════════════════════════
-  // 9. RENOVAR VAGA (ADICIONA MAIS 2 DIAS)
+  // 9. RENOVAR VAGA (bump no topo do feed)
+  // Apenas atualiza updated_at e expires_at.
+  // A vaga NUNCA sai do feed — renovar só a coloca no topo da lista.
   // ════════════════════════════════════════════════
 
   Future<bool> renewVacancy(String vacancyId) async {
@@ -374,7 +376,6 @@ class VacancyService {
       final success = await _expirationService.renewVacancy(vacancyId);
       
       if (success) {
-        // Limpa cache para forçar reload
         _vacancyCache.remove(vacancyId);
         
         final vacancy = await getVacancy(vacancyId, forceRefresh: true);

@@ -11,7 +11,7 @@ class FirebaseFeedService {
   final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUSCAR VAGAS — server-side filter por status
+  // BUSCAR VAGAS
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<PaginatedFeedResult<VacancyModel>> fetchVacanciesForFeed({
@@ -25,14 +25,14 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      // ✅ Server-side: busca apenas vagas 'Aberta' via índice
+      // ✅ Ordena por updated_at — sem .equalTo('Aberta')
+      // Vagas renovadas voltam ao topo pelo bump no updated_at
       Query query = _database
           .child('vacancy')
-          .orderByChild('status')
-          .equalTo('Aberta');
+          .orderByChild('updated_at');
 
-      // ✅ Busca exatamente o necessário — sem multiplicador
-      query = query.limitToLast(limit * 2); // 2x mínimo para folga de bloqueados
+      // Margem de ×1.3 para absorver filtros client-side (localização, bloqueados)
+      query = query.limitToLast((limit * 1.3).ceil());
 
       final snapshot = await query.get();
 
@@ -44,15 +44,15 @@ class FirebaseFeedService {
       String? newLastCreatedAt;
       String? newLastKey;
 
-      // Ordenar por updated_at desc client-side (só nos itens já filtrados pelo server)
+      // Ordena por updated_at desc client-side
       final children = snapshot.children.toList();
       children.sort((a, b) {
-        final aVal = (a.value as Map?)?['updated_at'] ?? '';
-        final bVal = (b.value as Map?)?['updated_at'] ?? '';
+        final aVal = (a.value as Map?)?['updated_at'] ?? (a.value as Map?)?['created_at'] ?? '';
+        final bVal = (b.value as Map?)?['updated_at'] ?? (b.value as Map?)?['created_at'] ?? '';
         return bVal.compareTo(aVal);
       });
 
-      // Paginação cursor
+      // Paginação por cursor
       bool pastCursor = lastKey == null;
 
       for (var child in children) {
@@ -67,15 +67,19 @@ class FirebaseFeedService {
           final data = Map<String, dynamic>.from(child.value as Map);
           final vacancy = _parseVacancy(key, data);
 
-          // Já candidatado
+          // FILTRO 1: Apenas vagas abertas (exclui encerradas, pausadas)
+          final status = vacancy.status.toLowerCase();
+          if (status != 'aberta' && status != 'open') continue;
+
+          // FILTRO 2: Não candidatada
           if (requestedVacancyIds.contains(vacancy.id)) continue;
 
-          // Dono bloqueado
+          // FILTRO 3: Dono não bloqueado
           if (blockedUserIds.isNotEmpty &&
               vacancy.localId.isNotEmpty &&
               blockedUserIds.contains(vacancy.localId)) continue;
 
-          // Filtros client-side apenas para localização/profissão
+          // FILTRO 4: Localização
           if (filterState != null &&
               filterState.isNotEmpty &&
               vacancy.state.toUpperCase() != filterState.toUpperCase()) continue;
@@ -84,6 +88,7 @@ class FirebaseFeedService {
               filterCity.isNotEmpty &&
               vacancy.city.toLowerCase() != filterCity.toLowerCase()) continue;
 
+          // FILTRO 5: Profissão preferida
           if (preferredProfession != null &&
               preferredProfession.isNotEmpty &&
               vacancy.profession.toLowerCase() !=
@@ -114,7 +119,7 @@ class FirebaseFeedService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUSCAR PROFISSIONAIS — server-side filter por status
+  // BUSCAR PROFISSIONAIS
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<PaginatedFeedResult<ProfessionalModel>> fetchProfessionalsForFeed({
@@ -128,13 +133,13 @@ class FirebaseFeedService {
     String? lastKey,
   }) async {
     try {
-      // ✅ Server-side: busca apenas profissionais 'active' via índice
+      // ✅ Ordena por updated_at — sem .equalTo('active')
+      // Profissionais com status 'active' ou 'expired' (migrado) aparecem normalmente
       Query query = _database
           .child('professionals')
-          .orderByChild('status')
-          .equalTo('active');
+          .orderByChild('updated_at');
 
-      query = query.limitToLast(limit * 2);
+      query = query.limitToLast((limit * 1.3).ceil());
 
       final snapshot = await query.get();
 
@@ -148,8 +153,8 @@ class FirebaseFeedService {
 
       final children = snapshot.children.toList();
       children.sort((a, b) {
-        final aVal = (a.value as Map?)?['updated_at'] ?? '';
-        final bVal = (b.value as Map?)?['updated_at'] ?? '';
+        final aVal = (a.value as Map?)?['updated_at'] ?? (a.value as Map?)?['created_at'] ?? '';
+        final bVal = (b.value as Map?)?['updated_at'] ?? (b.value as Map?)?['created_at'] ?? '';
         return bVal.compareTo(aVal);
       });
 
@@ -167,15 +172,20 @@ class FirebaseFeedService {
           final data = Map<String, dynamic>.from(child.value as Map);
           final prof = _parseProfessional(key, data);
 
-          // Já solicitado
+          // FILTRO 1: Exclui apenas status explicitamente inativos
+          // 'expired' foi migrado para 'active' — mas mesmo que reste algum, não bloqueia
+          final status = prof.status.toLowerCase();
+          if (status == 'paused' || status == 'inactive' || status == 'deleted') continue;
+
+          // FILTRO 2: Não solicitado
           if (requestedProfessionalIds.contains(prof.id)) continue;
 
-          // Bloqueado
+          // FILTRO 3: Não bloqueado
           if (blockedUserIds.isNotEmpty &&
               prof.localId.isNotEmpty &&
               blockedUserIds.contains(prof.localId)) continue;
 
-          // Filtros localização/profissão
+          // FILTRO 4: Localização
           if (filterState != null &&
               filterState.isNotEmpty &&
               prof.state.toUpperCase() != filterState.toUpperCase()) continue;
@@ -184,6 +194,7 @@ class FirebaseFeedService {
               filterCity.isNotEmpty &&
               prof.city.toLowerCase() != filterCity.toLowerCase()) continue;
 
+          // FILTRO 5: Profissão preferida
           if (preferredProfession != null &&
               preferredProfession.isNotEmpty &&
               prof.profession.toLowerCase() !=
@@ -216,55 +227,33 @@ class FirebaseFeedService {
   // ═══════════════════════════════════════════════════════════════════════════
   // BUSCAR IDs BLOQUEADOS
   // ═══════════════════════════════════════════════════════════════════════════
+
   Future<Set<String>> fetchBlockedUserIds() async {
     if (_currentUserId == null) return {};
     try {
       final ref = FirebaseDatabase.instance.ref();
 
-      Future<Set<String>> readViaListener(String path) async {
-        final completer = Completer<Set<String>>();
-        late StreamSubscription<DatabaseEvent> sub;
-        sub = ref.child(path).onValue.listen(
-          (event) {
-            if (completer.isCompleted) return;
-            final value = event.snapshot.value;
-            if (value is! Map) {
-              completer.complete({});
-              sub.cancel();
-              return;
-            }
-            final ids = value.entries
-                .where((e) {
-                  final v = e.value;
-                  return v == true || v == 1 || v == 'true' || v == '1';
-                })
-                .map((e) => e.key.toString())
-                .toSet();
-            completer.complete(ids);
-            sub.cancel();
-          },
-          onError: (_) {
-            if (!completer.isCompleted) {
-              completer.complete({});
-              sub.cancel();
-            }
-          },
-        );
-        return completer.future.timeout(const Duration(seconds: 10),
-            onTimeout: () {
-          sub.cancel();
-          return {};
-        });
-      }
-
+      // ✅ N2-04: Leitura direta com .get() — elimina listener temporário,
+      // conexão WebSocket extra e timeout desnecessário de 10 segundos.
       final results = await Future.wait([
-        readViaListener('Users/$_currentUserId/blocked_users'),
-        readViaListener('blocked_by/$_currentUserId'),
+        ref.child('Users/$_currentUserId/blocked_users').get(),
+        ref.child('blocked_by/$_currentUserId').get(),
       ]);
 
-      final all = {...results[0], ...results[1]};
-      debugPrint(
-          '✅ fetchBlockedUserIds: ${all.length} bloqueados');
+      Set<String> extractIds(DataSnapshot snapshot) {
+        final value = snapshot.value;
+        if (value is! Map) return {};
+        return value.entries
+            .where((e) {
+              final v = e.value;
+              return v == true || v == 1 || v == 'true' || v == '1';
+            })
+            .map((e) => e.key.toString())
+            .toSet();
+      }
+
+      final all = {...extractIds(results[0]), ...extractIds(results[1])};
+      debugPrint('✅ fetchBlockedUserIds: ${all.length} bloqueados');
       return all;
     } catch (e) {
       debugPrint('❌ fetchBlockedUserIds: $e');
@@ -275,7 +264,6 @@ class FirebaseFeedService {
   // ═══════════════════════════════════════════════════════════════════════════
   // BUSCAR VAGAS CANDIDATADAS
   // ═══════════════════════════════════════════════════════════════════════════
-
   Future<Set<String>> fetchRequestedVacancyIds() async {
     if (_currentUserId == null) return {};
 
@@ -298,7 +286,7 @@ class FirebaseFeedService {
         return requestedIds;
       }
 
-      // Fallback
+      // Fallback (raro)
       final snapshot = await _database
           .child('vacancy')
           .orderByChild('status')

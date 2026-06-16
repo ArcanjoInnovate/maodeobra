@@ -309,11 +309,9 @@ class FeedController with ChangeNotifier {
         return false;
       }
 
-      final statusLower = vac.status.toLowerCase();
-      if (statusLower == 'expirada' || statusLower == 'pausada') return false;
-
-      if (vac.expiresAt.isNotEmpty &&
-          _expirationService.isExpired(vac.expiresAt)) return false;
+      // ✅ Vagas pausadas são ocultadas, mas vagas com expires_at vencido
+      // permanecem no feed — o dono é avisado para renovar (bump no topo).
+      if (vac.status.toLowerCase() == 'pausada') return false;
 
       if (!_matchesVacancy(vac, _searchQuery)) return false;
 

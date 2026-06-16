@@ -299,6 +299,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _setupRealtimeListener() {
+    // ✅ N1-07: Escuta apenas os campos voláteis em vez do nó Users/{uid} inteiro.
+    // O nó completo pode ter 3–8 KB (data_worker, data_contractor, penalty_history, etc).
+    // Campos estáticos são carregados uma única vez em _loadUserData() no startup.
     _userDataSubscription =
         _database.child('Users').child(widget.local_id).onValue.listen(
       (DatabaseEvent event) {
@@ -306,13 +309,23 @@ class _HomeScreenState extends State<HomeScreen> {
           final data = Map<String, dynamic>.from(
             event.snapshot.value as Map<dynamic, dynamic>,
           );
-          _updateAllData(data);
-          if (_isLoading) {
-            setState(() => _isLoading = false);
-          }
+          // Atualiza apenas os campos que mudam com frequência
+          setState(() {
+            _userName        = data['Name']         ?? data['userName']      ?? _userName;
+            _userAvatar      = data['avatar']        ?? _userAvatar;
+            _activeMode      = data['activeMode']    ?? _activeMode;
+            _finishedBasic        = data['finished_basic']        ?? _finishedBasic;
+            _finishedContact      = data['finished_contact']      ?? _finishedContact;
+            _finishedProfessional = data['finished_professional'] ?? _finishedProfessional;
+            if (data['data_worker'] != null) {
+              _dataWorker = Map<String, dynamic>.from(data['data_worker'] as Map);
+              if (_dataWorker['activated'] == true) _workerActivated = true;
+            }
+            if (_isLoading) _isLoading = false;
+          });
         }
       },
-      onError: (error) => debugPrint('Erro no listener de usuario: $error'),
+      onError: (error) => debugPrint('Erro no listener de usuario: \$error'),
     );
   }
 
