@@ -9,7 +9,6 @@
 
 // ignore_for_file: unused_import
 import 'dart:async';
-import 'dart:convert';
 import 'package:chewie/chewie.dart';
 import 'package:dartobra_new/features/notifications/services/notification_history_service.dart';
 import 'package:dartobra_new/screens/vacancy/contractor_profile_view.dart';
@@ -20,7 +19,7 @@ import 'package:dartobra_new/services/vacancy/vacancy_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:http/http.dart' as http;
+import '../../../services/storage/storage_service.dart';
 import 'package:video_player/video_player.dart';
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -97,6 +96,7 @@ class _InfoVacancyState extends State<InfoVacancy>
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final VacancyService _vacancyService = VacancyService();
   final ExpirationService _expirationService = ExpirationService();
+  final FirebaseStorageService _storageService = FirebaseStorageService();
   // ✅ Instância do serviço de histórico de notificações
   final NotificationHistoryService _notificationHistory =
       NotificationHistoryService();
@@ -740,7 +740,10 @@ class _InfoVacancyState extends State<InfoVacancy>
           ...(_currentMedia!['videos'] as List? ?? []).map((u) => u.toString()),
         ];
         if (allUrls.isNotEmpty) {
-          await _deleteMediaViaCloudFunction(allUrls);
+          // ✅ Deleção direta via Firebase Storage — Cloudinary removido
+          await Future.wait(
+            allUrls.map((url) => _storageService.deleteFile(url)),
+          );
         }
       }
 
@@ -787,24 +790,7 @@ class _InfoVacancyState extends State<InfoVacancy>
     }
   }
 
-  /// ✅ SEGURO: chama Cloud Function que assina e deleta no Cloudinary server-side.
-  /// Credenciais Cloudinary NUNCA ficam no APK — estão apenas na Cloud Function.
-  ///
-  /// A CF recebe a lista de URLs e decide se é Cloudinary ou Firebase Storage.
-  /// Fallback silencioso: se a CF falhar, a deleção é ignorada (mídia fica órfã
-  /// mas não impede o fluxo principal de deletar a vaga).
-  Future<void> _deleteMediaViaCloudFunction(List<String> mediaUrls) async {
-    try {
-      await http.post(
-        Uri.parse('https://us-central1-obra-7ebd9.cloudfunctions.net/deleteMediaAssets'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'urls': mediaUrls}),
-      );
-    } catch (e) {
-      // Falha silenciosa — não bloqueia deleção da vaga
-      debugPrint('⚠️ Aviso: não foi possível deletar mídia remota: $e');
-    }
-  }
+
 
   void _showImageFullScreen(String imageUrl) {
     Navigator.push(

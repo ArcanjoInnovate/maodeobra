@@ -97,5 +97,5 @@ flutter:
 
   assets:
     - assets/logo.webp
-    - assets/logo_no_bg.webp
+    - assets/logo_no_bg.png
     - assets/logos.webp

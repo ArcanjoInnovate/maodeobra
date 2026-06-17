@@ -1359,23 +1359,23 @@ class _HomeScreenState extends State<HomeScreen> {
         items: [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
-            label: 'home',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.search),
-            label: 'buscar',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: _buildBadgeIcon(Icons.near_me_outlined, _unreadChats),
-            label: 'chats',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: _buildBadgeIcon(Icons.male, _unreadRequests),
-            label: 'vagas',
+            label: '',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),
-            label: 'Perfil',
+            label: '',
           ),
         ],
       ),
