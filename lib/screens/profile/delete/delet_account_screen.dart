@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:dartobra_new/screens/auth/login/login_screen.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/login/login_screen.dart';
 
 class DeleteAccountScreen extends StatefulWidget {
   final String local_id;

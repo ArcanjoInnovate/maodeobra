@@ -1,7 +1,7 @@
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/providers/block_provider.dart';
-import 'package:dartobra_new/screens/auth/login/login_controller.dart';
-import 'package:dartobra_new/screens/auth/login/password_recovery_screen.dart';
+import 'package:dartobra_new/features/auth/controller/login_controller.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/login/password_recovery_screen.dart';
 import 'package:dartobra_new/screens/vacancy/vacancy_info_screen.dart';
 import 'package:dartobra_new/screens/vacancy/worker_profile_activation_screen.dart';
 import 'package:dartobra_new/services/auth/auth_service.dart';

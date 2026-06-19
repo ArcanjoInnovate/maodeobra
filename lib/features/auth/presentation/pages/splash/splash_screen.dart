@@ -4,8 +4,8 @@ import 'package:dartobra_new/controllers/feed_controller.dart';
 import 'package:dartobra_new/controllers/search_controller.dart' as app_search;
 import 'package:dartobra_new/core/providers/block_provider.dart';
 import 'package:dartobra_new/core/repositories/user_repository.dart';
+import 'package:dartobra_new/features/auth/controller/login_controller.dart';
 import 'package:dartobra_new/main.dart' as MyApp;
-import 'package:dartobra_new/screens/auth/login/login_controller.dart';
 import 'package:dartobra_new/services/notifications/notification_navigation_service.dart';
 import 'package:dartobra_new/services/notifications/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -62,9 +62,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
         debugPrint('🤖 Android SDK ${androidInfo.version.sdkInt}');
 
         if (androidInfo.version.sdkInt >= 33) {
+          // ✅ Android 13+: Photo Picker não precisa de READ_MEDIA_IMAGES.
+          // Apenas notificação e câmera são solicitadas.
           await Permission.notification.request();
-          await Permission.photos.request();
         } else {
+          // Android ≤12: storage cobre acesso à galeria via seletor legado
           await Permission.storage.request();
         }
         await Permission.camera.request();

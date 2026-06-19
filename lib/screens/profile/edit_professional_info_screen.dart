@@ -1,4 +1,4 @@
-import 'package:dartobra_new/screens/auth/register/onboarding_second/components.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/register/onboarding_second/components.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 

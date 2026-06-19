@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:dartobra_new/screens/auth/register/completed_signup/completed_signup_screen.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/register/completed_signup/completed_signup_screen.dart';
 
 class OnboardingAge extends StatefulWidget {
   final String email;

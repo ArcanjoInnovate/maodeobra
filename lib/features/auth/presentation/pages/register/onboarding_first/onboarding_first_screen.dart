@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:dartobra_new/screens/auth/register/onboarding_age/onboarding_age_screen.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/register/onboarding_age/onboarding_age_screen.dart';
 
 class OnboardingFirst extends StatefulWidget {
   const OnboardingFirst({Key? key}) : super(key: key);

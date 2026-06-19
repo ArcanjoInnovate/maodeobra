@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:dartobra_new/models/user_model.dart';
 import 'package:dartobra_new/screens/home/home_screen.dart';
 import 'package:dartobra_new/screens/admin/suspension/suspension_controller.dart';
-import 'package:dartobra_new/screens/auth/login/login_screen.dart';
+import 'package:dartobra_new/features/auth/presentation/pages/login/login_screen.dart';
 
 class SuspensionScreen extends StatefulWidget {
   final String localId;

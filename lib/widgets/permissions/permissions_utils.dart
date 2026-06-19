@@ -16,40 +16,37 @@ class PermissionUtil {
   static Future<PermissionResult> checkAndRequest({
     required bool isCamera,
   }) async {
+    // ✅ No Android, galeria usa Photo Picker (sem permissão necessária).
+    // Apenas câmera requer permissão explícita em qualquer plataforma.
+    if (!isCamera && Platform.isAndroid) {
+      return PermissionResult.granted;
+    }
+
     final Permission permission =
         isCamera ? Permission.camera : Permission.photos;
 
     final PermissionStatus status = await permission.status;
 
-    // Já concedida (inclui .limited no iOS 14+)
     if (status.isGranted || status.isLimited) {
       return PermissionResult.granted;
     }
 
-    // iOS: restrita por controle parental etc. — não adianta pedir
     if (status.isRestricted) {
       return PermissionResult.restricted;
     }
 
-    // Já negada permanentemente — não adianta pedir de novo, vai para Ajustes
     if (status.isPermanentlyDenied) {
       return PermissionResult.permanentlyDenied;
     }
 
-    // iOS: se já foi negada uma vez (denied), o sistema NÃO mostrará o
-    // diálogo novamente — tratar como permanentlyDenied para ir a Ajustes.
     if (Platform.isIOS && status.isDenied) {
-      // Tenta mesmo assim (caso seja a primeira vez — undetermined no iOS
-      // aparece como .denied antes do primeiro request)
       final PermissionStatus result = await permission.request();
       if (result.isGranted || result.isLimited) {
         return PermissionResult.granted;
       }
-      // Se ainda negada após o request, no iOS não há como pedir novamente
       return PermissionResult.permanentlyDenied;
     }
 
-    // Android: pode pedir normalmente
     final PermissionStatus result = await permission.request();
 
     if (result.isGranted || result.isLimited) {
