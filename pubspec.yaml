@@ -88,7 +88,7 @@ dev_dependencies:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/logo.png"
+  image_path: "assets/logo.webp"
   adaptive_icon_background: "#2563EB"
   adaptive_icon_foreground: "assets/logo.webp"
 
